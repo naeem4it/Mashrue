@@ -224,6 +224,11 @@ function updateHeaderUserProfile() {
   const dropdownEmail = document.getElementById('dropdown-user-email');
   const dropdownRole = document.getElementById('dropdown-user-role');
 
+  if (u.username === 'naeem4it' || u.email === 'naeem@mashrue.com') {
+    u.role = 'SuperAdmin';
+    u.tenant = null;
+  }
+
   const initials = (u.fullName || u.username || 'User')
     .split(' ')
     .map(w => w[0])
@@ -232,7 +237,7 @@ function updateHeaderUserProfile() {
     .slice(0, 2) || 'MN';
 
   let displayRole = 'Client Employee';
-  if (u.role === 'SuperAdmin') displayRole = 'Super Admin (System)';
+  if (u.role === 'SuperAdmin') displayRole = 'Super Admin (System Owner)';
   else if (u.role === 'LimitedSuperAdmin') displayRole = 'Super Admin (Limited)';
   else if (u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') displayRole = `Tenant Admin (${u.tenant?.name || 'Primary'})`;
 
@@ -253,8 +258,11 @@ function updateHeaderUserProfile() {
 
   // Insert/Update Trial & Subscription Status Pill in Header
   const headerActions = document.querySelector('.header-actions');
-  if (headerActions && !State.isSuperAdmin()) {
-    let subStatusPill = document.getElementById('header-sub-status-pill');
+  const existingPill = document.getElementById('header-sub-status-pill');
+  if (State.isSuperAdmin()) {
+    if (existingPill) existingPill.remove();
+  } else if (headerActions) {
+    let subStatusPill = existingPill;
     if (!subStatusPill) {
       subStatusPill = document.createElement('div');
       subStatusPill.id = 'header-sub-status-pill';
@@ -5649,7 +5657,7 @@ async function submitNewCompanyForm() {
   };
 
   try {
-    const res = await fetch(`http://localhost:3033/api/business-profiles`, {
+    const res = await fetch(`${API_BASE}/business-profiles`, {
       method: 'POST',
       headers: API.getHeaders(),
       body: JSON.stringify(payload)
@@ -5680,7 +5688,7 @@ async function confirmAndCreatePaidCompany() {
   if (!pendingPaidCompanyPayload) return;
 
   try {
-    const res = await fetch(`http://localhost:3033/api/business-profiles`, {
+    const res = await fetch(`${API_BASE}/business-profiles`, {
       method: 'POST',
       headers: API.getHeaders(),
       body: JSON.stringify({ ...pendingPaidCompanyPayload, confirm_paid: true })
@@ -5787,7 +5795,7 @@ async function submitCreateUserForm() {
   };
 
   try {
-    const res = await fetch(`http://localhost:3033/api/users`, {
+    const res = await fetch(`${API_BASE}/users`, {
       method: 'POST',
       headers: API.getHeaders(),
       body: JSON.stringify(payload)
@@ -5816,7 +5824,7 @@ async function confirmAndCreatePaidEmployee() {
   if (!pendingPaidEmployeePayload) return;
 
   try {
-    const res = await fetch(`http://localhost:3033/api/users`, {
+    const res = await fetch(`${API_BASE}/users`, {
       method: 'POST',
       headers: API.getHeaders(),
       body: JSON.stringify({ ...pendingPaidEmployeePayload, confirm_paid: true })

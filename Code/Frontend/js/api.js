@@ -3,7 +3,10 @@
  * Enterprise Business Management System
  */
 
-const API_BASE = 'http://localhost:3033/api';
+// Dynamically resolve API URL: uses relative /api in production (behind Nginx) or localhost in dev
+const API_BASE = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+  ? (window.location.port && window.location.port !== '3033' ? `${window.location.protocol}//${window.location.hostname}:${window.location.port}/api` : 'http://localhost:3033/api')
+  : '/api';
 
 const API = {
   getHeaders(extra = {}) {

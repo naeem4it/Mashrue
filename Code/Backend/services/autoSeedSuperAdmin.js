@@ -35,7 +35,7 @@ async function autoSeedSuperAdmin() {
     const passwordHash = await bcrypt.hash(DEFAULT_SUPER_ADMIN_PASSWORD, salt);
 
     if (checkRes.rows.length === 0) {
-      console.log(`[AutoSeed] Creating default Super Admin account: ${DEFAULT_SUPER_ADMIN_USERNAME}...`);
+      console.log(`[AutoSeed] Creating primary Super Admin account: ${DEFAULT_SUPER_ADMIN_USERNAME}...`);
       await db.query(
         `INSERT INTO users (id, tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions)
          VALUES (uuid_generate_v4(), NULL, $1, $2, $3, $4, 'SuperAdmin', 'Active', FALSE, TRUE, '{}'::jsonb)`,
@@ -43,15 +43,13 @@ async function autoSeedSuperAdmin() {
       );
       console.log(`✅ [AutoSeed] Super Admin (${DEFAULT_SUPER_ADMIN_USERNAME}) provisioned successfully.`);
     } else {
-      // Ensure role is SuperAdmin and username is set
+      // Ensure naeem4it is permanently assigned the SuperAdmin role at system level
       const existing = checkRes.rows[0];
-      if (existing.role !== 'SuperAdmin' || !existing.username) {
-        await db.query(
-          `UPDATE users SET username = $1, role = 'SuperAdmin', updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-          [DEFAULT_SUPER_ADMIN_USERNAME, existing.id]
-        );
-        console.log(`✅ [AutoSeed] Updated existing account to SuperAdmin (${DEFAULT_SUPER_ADMIN_USERNAME}).`);
-      }
+      await db.query(
+        `UPDATE users SET username = $1, role = 'SuperAdmin', tenant_id = NULL, status = 'Active', updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [DEFAULT_SUPER_ADMIN_USERNAME, existing.id]
+      );
+      console.log(`✅ [AutoSeed] Verified primary Super Admin account: ${DEFAULT_SUPER_ADMIN_USERNAME}`);
     }
   } catch (err) {
     console.error(`⚠️ [AutoSeed] Notice during Super Admin check:`, err.message);
