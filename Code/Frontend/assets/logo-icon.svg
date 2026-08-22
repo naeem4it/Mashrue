@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="100%" height="100%">
+  <defs>
+    <!-- Brand Gradients matching Mashrue Theme -->
+    <linearGradient id="mashrue-grad-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    
+    <linearGradient id="mashrue-grad-blue-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+
+    <linearGradient id="mashrue-grad-indigo-cyan" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+
+    <!-- Subtle Glow Shadow Filter -->
+    <filter id="soft-glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#2563eb" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#soft-glow)">
+    <!-- 1. Top-Left: Stylized 'm' Arch Group -->
+    <g fill="url(#mashrue-grad-cyan-blue)">
+      <!-- Left Pillar -->
+      <rect x="25" y="24" width="13" height="34" rx="2" ry="2" />
+      <!-- Middle Pillar with soft top arch -->
+      <path d="M 40 24 L 46 24 C 50 24 53 27 53 31 L 53 58 L 40 58 Z" />
+      <!-- Right Pillar with distinctive large rounded top-right arch -->
+      <path d="M 55 29 C 55 25 58 24 61 24 C 71 24 78 31 78 41 L 78 58 L 65 58 L 65 43 C 65 37 61 35 55 35 Z" />
+    </g>
+
+    <!-- 2. Top-Right: Horizontal Block + Anchor Dot -->
+    <g fill="url(#mashrue-grad-blue-indigo)">
+      <!-- Horizontal rectangle -->
+      <rect x="84" y="34" width="38" height="18" rx="2" ry="2" />
+      <!-- Small Anchor Pixel Dot near center -->
+      <rect x="79" y="51" width="7" height="7" rx="1.5" ry="1.5" />
+    </g>
+
+    <!-- 3. Bottom-Left: Horizontal Block + Anchor Dot -->
+    <g fill="url(#mashrue-grad-indigo-cyan)">
+      <!-- Horizontal rectangle -->
+      <rect x="30" y="74" width="38" height="18" rx="2" ry="2" />
+      <!-- Small Anchor Pixel Dot near center -->
+      <rect x="69" y="66" width="7" height="7" rx="1.5" ry="1.5" />
+    </g>
+
+    <!-- 4. Bottom-Right: Vertical Block + Anchor Dot -->
+    <g fill="url(#mashrue-grad-cyan-blue)">
+      <!-- Vertical rectangle -->
+      <rect x="94" y="69" width="18" height="34" rx="2" ry="2" />
+      <!-- Small Anchor Pixel Dot near center -->
+      <rect x="88" y="63" width="7" height="7" rx="1.5" ry="1.5" />
+    </g>
+  </g>
+</svg>

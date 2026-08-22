@@ -1,0 +1,2403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mashrue - Enterprise Business Management System</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <!-- =========================================================================
+       LOGIN SCREEN OVERLAY (Light theme, prominent left brand, vertically centered)
+       ========================================================================= -->
+  <div class="login-overlay-wrapper" id="login-view" style="display: flex;">
+    <div class="login-split-container">
+      <!-- Left Branding Column -->
+      <div class="login-brand-col">
+        <div class="login-brand-logo-prominent">
+          <svg viewBox="0 0 240 64" width="280" height="74" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="brand-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0284c7"/>
+                <stop offset="50%" stop-color="#2563eb"/>
+                <stop offset="100%" stop-color="#1d4ed8"/>
+              </linearGradient>
+              <linearGradient id="brand-blue-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3b82f6"/>
+                <stop offset="50%" stop-color="#4f46e5"/>
+                <stop offset="100%" stop-color="#312e81"/>
+              </linearGradient>
+              <linearGradient id="brand-indigo-cyan" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#4f46e5"/>
+                <stop offset="100%" stop-color="#0284c7"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Emblem -->
+            <g transform="translate(4, 4) scale(0.55)">
+              <g fill="url(#brand-cyan-blue)">
+                <rect x="25" y="24" width="13" height="34" rx="2" ry="2" />
+                <path d="M 40 24 L 46 24 C 50 24 53 27 53 31 L 53 58 L 40 58 Z" />
+                <path d="M 55 29 C 55 25 58 24 61 24 C 71 24 78 31 78 41 L 78 58 L 65 58 L 65 43 C 65 37 61 35 55 35 Z" />
+              </g>
+              <g fill="url(#brand-blue-indigo)">
+                <rect x="84" y="34" width="38" height="18" rx="2" ry="2" />
+                <rect x="79" y="51" width="7" height="7" rx="1.5" ry="1.5" />
+              </g>
+              <g fill="url(#brand-indigo-cyan)">
+                <rect x="30" y="74" width="38" height="18" rx="2" ry="2" />
+                <rect x="69" y="66" width="7" height="7" rx="1.5" ry="1.5" />
+              </g>
+              <g fill="url(#brand-cyan-blue)">
+                <rect x="94" y="69" width="18" height="34" rx="2" ry="2" />
+                <rect x="88" y="63" width="7" height="7" rx="1.5" ry="1.5" />
+              </g>
+            </g>
+
+            <!-- Prominent Brand Typography (High Contrast for Light Background) -->
+            <g transform="translate(80, 0)">
+              <text x="0" y="36" font-family="'Inter', -apple-system, sans-serif" font-size="24" font-weight="900" fill="#0f172a" letter-spacing="3.5">MASHRUE</text>
+              <text x="1" y="52" font-family="'Inter', -apple-system, sans-serif" font-size="9" font-weight="800" fill="#2563eb" letter-spacing="2.2">ENTERPRISE BMS</text>
+            </g>
+          </svg>
+        </div>
+
+        <h1 class="brand-hero-title">B2B Tender, Bidding & FBR Digital Invoicing</h1>
+        <p class="brand-hero-desc">
+          Complete end-to-end commercial procurement, multi-tenant company isolation, earnest money registry, costing margins, and live PRAL digital tax compliance.
+        </p>
+
+        <div class="brand-feature-list">
+          <div class="brand-feature-item">
+            <span class="brand-feature-icon">🛡️</span>
+            <div>
+              <strong>Multi-Tenant Isolation</strong>
+              <p>Strict data segregation & multi-company accounts</p>
+            </div>
+          </div>
+          <div class="brand-feature-item">
+            <span class="brand-feature-icon">🇵🇰</span>
+            <div>
+              <strong>FBR PRAL Digital Invoicing</strong>
+              <p>Direct live digital invoice reporting & QR codes</p>
+            </div>
+          </div>
+          <div class="brand-feature-item">
+            <span class="brand-feature-icon">👥</span>
+            <div>
+              <strong>Role-Based Access Control</strong>
+              <p>Super Admin, Client Admin & Granular RBAC</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right/Center Login Form Card (Styled to match the Dark Navy App Menu/Sidebar) -->
+      <div class="login-form-col">
+        <div class="login-form-card">
+          <div class="login-form-header">
+            <h2 class="login-card-title">Sign In</h2>
+            <p class="login-card-subtitle">Access your enterprise workspace</p>
+          </div>
+
+          <div class="login-error-box" id="login-error-msg"></div>
+
+          <form class="login-form" id="login-form" onsubmit="event.preventDefault(); handleUserLogin();">
+            <div class="form-group">
+              <label class="form-label" for="login-username">Username or Email</label>
+              <input type="text" class="login-input" id="login-username" placeholder="e.g. naeem4it or naeem@mashrue.com" required autofocus autocomplete="username">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="login-password">Password</label>
+              <input type="password" class="login-input" id="login-password" placeholder="Enter your password" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="login-btn" id="login-submit-btn">
+              <span>🚀 Sign In</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MAIN APPLICATION LAYOUT
+       ========================================================================= -->
+  <div class="app-container" id="app-container" style="display: none;">
+    <!-- Left Navigation Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-brand-logo-container" onclick="switchView('dashboard')" title="Mashrue Enterprise BMS">
+          <svg class="brand-logo-full-svg" viewBox="0 0 240 64" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="mashrue-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00f2fe"/>
+                <stop offset="50%" stop-color="#38bdf8"/>
+                <stop offset="100%" stop-color="#2563eb"/>
+              </linearGradient>
+              <linearGradient id="mashrue-blue-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#38bdf8"/>
+                <stop offset="50%" stop-color="#3b82f6"/>
+                <stop offset="100%" stop-color="#6366f1"/>
+              </linearGradient>
+              <linearGradient id="mashrue-indigo-cyan" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="100%" stop-color="#00f2fe"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Emblem (Transparent background) -->
+            <g transform="translate(4, 4) scale(0.55)">
+              <g fill="url(#mashrue-cyan-blue)">
+                <rect x="25" y="24" width="13" height="34" rx="2" ry="2" />
+                <path d="M 40 24 L 46 24 C 50 24 53 27 53 31 L 53 58 L 40 58 Z" />
+                <path d="M 55 29 C 55 25 58 24 61 24 C 71 24 78 31 78 41 L 78 58 L 65 58 L 65 43 C 65 37 61 35 55 35 Z" />
+              </g>
+              <g fill="url(#mashrue-blue-indigo)">
+                <rect x="84" y="34" width="38" height="18" rx="2" ry="2" />
+                <rect x="79" y="51" width="7" height="7" rx="1.5" ry="1.5" />
+              </g>
+              <g fill="url(#mashrue-indigo-cyan)">
+                <rect x="30" y="74" width="38" height="18" rx="2" ry="2" />
+                <rect x="69" y="66" width="7" height="7" rx="1.5" ry="1.5" />
+              </g>
+              <g fill="url(#mashrue-cyan-blue)">
+                <rect x="94" y="69" width="18" height="34" rx="2" ry="2" />
+                <rect x="88" y="63" width="7" height="7" rx="1.5" ry="1.5" />
+              </g>
+            </g>
+
+            <g transform="translate(80, 0)">
+              <text x="0" y="36" font-family="'Inter', -apple-system, sans-serif" font-size="22" font-weight="900" fill="#ffffff" letter-spacing="3.5">MASHRUE</text>
+              <text x="1" y="51" font-family="'Inter', -apple-system, sans-serif" font-size="8.5" font-weight="800" fill="#00f2fe" letter-spacing="2.2">ENTERPRISE BMS</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Dynamic Sidebar Navigation container -->
+      <div id="dynamic-sidebar-container">
+        <!-- Rendered based on user role & permissions -->
+      </div>
+
+      <div class="sidebar-footer">
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1; cursor: pointer; overflow: hidden;" onclick="openUserProfileModal()" title="Click to view User Profile">
+          <div class="user-avatar" id="sidebar-user-avatar">MN</div>
+          <div class="user-meta">
+            <div class="user-name" id="sidebar-user-name">Muhammad Naeem Khan</div>
+            <div class="user-role" id="sidebar-user-role">Company Admin</div>
+          </div>
+        </div>
+        <button type="button" class="sidebar-logout-btn" onclick="event.stopPropagation(); handleUserLogout();" title="Sign Out / Logout" style="background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #f87171; font-size: 0.95rem; cursor: pointer; padding: 5px 8px; border-radius: 6px; transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
+          🚪
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      <!-- Top Application Header -->
+      <header class="top-header">
+        <div class="header-title-box">
+          <h1 id="view-title">Executive KPI Dashboard</h1>
+          <p id="view-subtitle">Financial overview for All Entities (Amounts in PKR)</p>
+        </div>
+
+        <div class="header-actions">
+          <!-- Active Legal Entity Switcher -->
+          <div class="business-switcher-box" id="header-entity-switcher">
+            <span class="business-switcher-label">Active Entity:</span>
+            <select class="business-select" id="business-select" onchange="State.setBusinessProfile(this.value)">
+              <option value="all">🏢 All Business Entities (Consolidated)</option>
+            </select>
+          </div>
+
+          <!-- User Profile & Account Dropdown -->
+          <div class="user-dropdown-container" id="user-dropdown-container">
+            <div class="user-profile-header-chip" id="user-profile-header-chip" onclick="toggleUserDropdown(event)" title="Click to view user account & settings">
+              <div class="user-chip-avatar" id="header-user-avatar">MN</div>
+              <div class="user-chip-details">
+                <span class="user-chip-name" id="header-user-name">Muhammad Naeem</span>
+                <span class="user-chip-role" id="header-user-role">Super Admin</span>
+              </div>
+              <span class="user-chip-chevron">▾</span>
+            </div>
+
+            <!-- Dynamic Floating User Dropdown Menu -->
+            <div class="user-dropdown-menu" id="user-dropdown-menu">
+              <div class="user-dropdown-header">
+                <div class="user-dropdown-header-name" id="dropdown-user-fullname">Muhammad Naeem Khan</div>
+                <div class="user-dropdown-header-email" id="dropdown-user-email">naeem@mashrue.com</div>
+                <span class="user-dropdown-header-role" id="dropdown-user-role">Super Admin</span>
+              </div>
+              <ul class="user-dropdown-list" id="user-dropdown-list">
+                <!-- Dynamically populated with role-based visibility -->
+              </ul>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Dynamic Page Content -->
+      <main class="content-area" id="main-content">
+        <!-- Content dynamically injected by js/app.js -->
+      </main>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODALS & POPUPS
+       ========================================================================= -->
+
+  <!-- 1. Add New Tender / Opportunity Modal (with item auto-population & quick add customer) -->
+  <div class="modal-backdrop" id="modal-add-tender">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700;">📑 Register New Tender / Opportunity</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-tender')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-tender">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Tender Name (String) *</label>
+              <input type="text" class="form-input" id="tender-name" required placeholder="e.g. Substation 132kV Expansion Project">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tender Source *</label>
+              <select class="form-select" id="tender-source" required>
+                <option value="PPRA" selected>PPRA (Federal / Punjab / Sindh / KPK)</option>
+                <option value="DGP">DGP (Directorate General of Procurement)</option>
+                <option value="RFQ">RFQ (Request for Quotation)</option>
+                <option value="LPQ">LPQ (Local Purchase Quotation)</option>
+                <option value="OTHER">OTHER (Open Market / Autonomous)</option>
+                <option value="DIRECT SALES">DIRECT SALES (Corporate / Direct Quotation)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Internal Opportunity #</label>
+              <input type="text" class="form-input" id="tender-opp-no" placeholder="Auto-generated if blank (e.g. TND-2026-9912)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">External Tender / RFQ Reference #</label>
+              <input type="text" class="form-input" id="tender-ext-no" placeholder="e.g. WAPDA-PROC-2026-09">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Customer / Department *</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.75rem; height:auto;" onclick="openQuickAddModal('customer', 'tender-customer')">+ New Customer</button>
+              </div>
+              <div class="input-with-action">
+                <select class="form-select" id="tender-customer" required></select>
+                <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('customer', 'tender-customer')" title="Quick Add New Customer">+</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Submitting Business Entity *</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.75rem; height:auto;" onclick="openQuickAddModal('company', 'tender-business-profile')">+ New Company</button>
+              </div>
+              <div class="input-with-action">
+                <select class="form-select" id="tender-business-profile" required></select>
+                <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('company', 'tender-business-profile')" title="Quick Add Business Profile">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Estimated Value (PKR) *</label>
+              <input type="number" class="form-input" id="tender-est-value" required placeholder="e.g. 14500000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Submission Deadline *</label>
+              <input type="datetime-local" class="form-input" id="tender-closing-date" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tender Opening Date</label>
+              <input type="datetime-local" class="form-input" id="tender-opening-date">
+            </div>
+          </div>
+
+          <!-- Tender Item Auto-Population Section -->
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h4 style="font-size: 0.88rem; font-weight: 700; color: var(--primary);">📦 Auto-Populate Tender Line Items (Catalog)</h4>
+              <span class="admin-price-tag" title="Quantity and Price visible only to Company Admin">🔒 Admin Price Protected</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <label class="form-label" style="margin-bottom:0;">Select Item from Catalog</label>
+                  <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.75rem; height:auto;" onclick="openQuickAddModal('product', 'tender-item-select')">+ New Item SKU</button>
+                </div>
+                <div class="input-with-action">
+                  <select class="form-select" id="tender-item-select" onchange="autoPopulateTenderItemDetails(this.value)">
+                    <option value="">-- Choose item to auto-fill description & price --</option>
+                  </select>
+                  <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('product', 'tender-item-select')" title="Quick Add Item SKU to Catalog">+</button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Item Description</label>
+                <input type="text" class="form-input" id="tender-item-desc" placeholder="Scope / Item Description">
+              </div>
+            </div>
+            <div class="form-row-3">
+              <div class="form-group">
+                <label class="form-label">Quantity</label>
+                <input type="number" class="form-input" id="tender-item-qty" value="1" min="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Unit</label>
+                <input type="text" class="form-input" id="tender-item-unit" value="PCS">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Est. Unit Price (Admin Only)</label>
+                <input type="number" class="form-input" id="tender-item-price" placeholder="Cost/Price (PKR)">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Scope Description & Compliance Requirements</label>
+            <textarea class="form-textarea" id="tender-description" rows="2" placeholder="Detail scope, PEC/ISO compliance, warranty, and special conditions..."></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="secondary-btn" onclick="closeModal('modal-add-tender')">Cancel</button>
+        <button class="primary-btn" onclick="submitNewTenderForm()">💾 Save Tender Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Mandatory Bid Security Modal (Triggered directly after Tender creation) -->
+  <div class="modal-backdrop" id="modal-add-bid-security">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700;">🛡️ Mandatory Bid Security Instrument</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-bid-security')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); padding:10px 14px; margin-bottom:16px; font-size:0.82rem; color:#1e40af;">
+          ℹ️ <strong>Workflow Requirement:</strong> Without an attached Bid Security instrument, this Tender cannot be marked as <em>Ready to Submit</em> or completed.
+        </div>
+        <form id="form-add-bid-security">
+          <input type="hidden" id="sec-opportunity-id">
+          <div class="form-group">
+            <label class="form-label">Linked Tender / Opportunity</label>
+            <input type="text" class="form-input" id="sec-opp-title" readonly>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">1. Account Title * (Mandatory)</label>
+              <input type="text" class="form-input" id="sec-account-title" required placeholder="e.g. Clifton Engineering Pvt Ltd">
+            </div>
+            <div class="form-group">
+              <label class="form-label">2. Beneficiary * (Mandatory)</label>
+              <input type="text" class="form-input" id="sec-beneficiary" required placeholder="e.g. Chairman WAPDA Lahore">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">3. Instrument Type * (Mandatory)</label>
+              <select class="form-select" id="sec-instrument-type" required>
+                <option value="PO" selected>PO (Pay Order)</option>
+                <option value="CDR">CDR (Call Deposit Receipt)</option>
+                <option value="BG">BG (Bank Guarantee)</option>
+                <option value="Insurance Bond">Insurance Bond</option>
+                <option value="Other">Other Instrument</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">4. Instrument Number * (Mandatory)</label>
+              <input type="text" class="form-input" id="sec-instrument-no" required placeholder="e.g. CDR-HBL-992019">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">5. Amount (PKR) * (Mandatory)</label>
+              <input type="number" class="form-input" id="sec-amount" required placeholder="e.g. 290000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">6. Expiry Date * (Mandatory)</label>
+              <input type="date" class="form-input" id="sec-expiry-date" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Issuing Bank & Branch</label>
+            <input type="text" class="form-input" id="sec-bank-name" placeholder="e.g. Habib Bank Limited (HBL) Corporate Branch Lahore">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">7. Comments / Remarks (Optional)</label>
+            <textarea class="form-textarea" id="sec-comments" rows="2" placeholder="e.g. 2% Earnest money submitted against Clause 14"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="secondary-btn" onclick="closeModal('modal-add-bid-security')">Cancel</button>
+        <button class="primary-btn" onclick="submitBidSecurityForm()">💾 Attach Bid Security</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Add New Customer Modal (Comprehensive Master Data) -->
+  <div class="modal-backdrop" id="modal-add-customer">
+    <div class="modal-card modal-lg" style="max-width: 820px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">👥 Register New Customer / Client</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-customer')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-customer" onsubmit="event.preventDefault(); submitNewCustomerForm();">
+          <input type="hidden" id="cust-edit-id">
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Customer Code</label>
+              <input type="text" class="form-input" id="cust-code" placeholder="Auto (e.g. CUST-PK-0012)">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">Customer / Organization Name * (Mandatory)</label>
+              <input type="text" class="form-input" id="cust-name" required placeholder="e.g. Water & Power Development Authority (WAPDA)">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Organization Type *</label>
+              <select class="form-select" id="cust-org-type" required>
+                <option value="Government Department" selected>Government Department</option>
+                <option value="Government Agency">Government Agency / Autonomous</option>
+                <option value="Semi-Government">Semi-Government Corporation</option>
+                <option value="MNC">MNC / Multinational</option>
+                <option value="Private Company">Private Limited Company</option>
+                <option value="Open-Market Customer">Open-Market / Autonomous</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Department / Wing / Directorate</label>
+              <input type="text" class="form-input" id="cust-department" placeholder="e.g. Procurement & Stores Directorate">
+            </div>
+            <div class="form-group">
+              <label class="form-label">City *</label>
+              <input type="text" class="form-input" id="cust-city" value="Lahore" required>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Province</label>
+              <select class="form-select" id="cust-province">
+                <option value="Punjab" selected>Punjab</option>
+                <option value="Sindh">Sindh</option>
+                <option value="Khyber Pakhtunkhwa">Khyber Pakhtunkhwa</option>
+                <option value="Balochistan">Balochistan</option>
+                <option value="Islamabad Capital">Islamabad Capital Territory</option>
+                <option value="Gilgit-Baltistan">Gilgit-Baltistan</option>
+                <option value="Azad Jammu & Kashmir">Azad Jammu & Kashmir</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">National Tax # (NTN)</label>
+              <input type="text" class="form-input" id="cust-ntn" placeholder="e.g. 901920-3">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sales Tax # (STRN)</label>
+              <input type="text" class="form-input" id="cust-strn" placeholder="e.g. 03-09-9920-001-19">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Registered Billing Address</label>
+              <input type="text" class="form-input" id="cust-address" placeholder="e.g. WAPDA House, The Mall, Lahore">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Delivery Site / Warehouse Location</label>
+              <input type="text" class="form-input" id="cust-delivery-address" placeholder="e.g. Central Grid Station Store, Sheikhupura Road">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Primary Contact Person</label>
+              <input type="text" class="form-input" id="cust-contact" placeholder="e.g. Engr. Tariq Mahmood (Chief Engineer)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Official Phone</label>
+              <input type="text" class="form-input" id="cust-phone" placeholder="042-99202211 / 0300-1234567">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Official Email</label>
+              <input type="email" class="form-input" id="cust-email" placeholder="procurement@wapda.gov.pk">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Payment Terms</label>
+              <select class="form-select" id="cust-terms">
+                <option value="Net 30" selected>Net 30 Days</option>
+                <option value="Net 60">Net 60 Days</option>
+                <option value="Against Delivery Challan">Against Delivery Challan (100%)</option>
+                <option value="20% Advance + 80% Inspection">20% Adv + 80% on Inspection</option>
+                <option value="Letter of Credit (LC)">Letter of Credit (LC)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Credit Limit (PKR)</label>
+              <input type="number" class="form-input" id="cust-credit-limit" placeholder="e.g. 50000000" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Account Status</label>
+              <select class="form-select" id="cust-status">
+                <option value="Active" selected>Active</option>
+                <option value="Inactive">Inactive / Suspended</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Bank Name & Branch</label>
+              <input type="text" class="form-input" id="cust-bank-name" placeholder="e.g. National Bank of Pakistan (NBP) Main Branch">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bank Account Title & IBAN</label>
+              <input type="text" class="form-input" id="cust-bank-iban" placeholder="e.g. PK36NBPA0000001920192801">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Special Notes & Compliance Requirements</label>
+            <textarea class="form-textarea" id="cust-notes" rows="2" placeholder="e.g. Requires 2% CDR earnest money and original testing certificate with delivery."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-customer')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Customer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Add Supplier Modal (Comprehensive Local & International Master Data) -->
+  <div class="modal-backdrop" id="modal-add-supplier">
+    <div class="modal-card modal-lg" style="max-width: 860px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">🏭 Register New Supplier (Local & International)</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-supplier')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-supplier" onsubmit="event.preventDefault(); submitNewSupplierForm();">
+          <input type="hidden" id="sup-edit-id">
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Supplier Code</label>
+              <input type="text" class="form-input" id="sup-code" placeholder="Auto (e.g. SUP-INT-0081)">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">Supplier / OEM Name * (Mandatory)</label>
+              <input type="text" class="form-input" id="sup-name" required placeholder="e.g. Siemens Pakistan Engineering / Schneider Electric FZE">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Supplier Type *</label>
+              <select class="form-select" id="sup-type" required onchange="handleSupplierTypeChanged(this.value)">
+                <option value="Local Supplier" selected>Local Supplier (Pakistan)</option>
+                <option value="International Supplier">International Supplier (Import)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Country of Origin *</label>
+              <select class="form-select" id="sup-country" required>
+                <option value="Pakistan" selected>Pakistan</option>
+                <option value="United Arab Emirates">United Arab Emirates (UAE)</option>
+                <option value="China">China</option>
+                <option value="Germany">Germany</option>
+                <option value="United States">United States (USA)</option>
+                <option value="United Kingdom">United Kingdom (UK)</option>
+                <option value="Turkey">Turkey</option>
+                <option value="Japan">Japan</option>
+                <option value="Saudi Arabia">Saudi Arabia</option>
+                <option value="Italy">Italy</option>
+                <option value="France">France</option>
+                <option value="South Korea">South Korea</option>
+                <option value="Singapore">Singapore</option>
+                <option value="Malaysia">Malaysia</option>
+                <option value="Sweden">Sweden</option>
+                <option value="Switzerland">Switzerland</option>
+                <option value="Canada">Canada</option>
+                <option value="Australia">Australia</option>
+                <option value="Other">Other Country</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Origin Port / City</label>
+              <input type="text" class="form-input" id="sup-origin-port" placeholder="e.g. Jebel Ali / Shanghai / Karachi Port">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Billing Currency *</label>
+              <select class="form-select" id="sup-currency" required>
+                <option value="PKR" selected>PKR (Pakistani Rupee)</option>
+                <option value="USD">USD (US Dollar)</option>
+                <option value="EUR">EUR (Euro)</option>
+                <option value="AED">AED (UAE Dirham)</option>
+                <option value="GBP">GBP (British Pound)</option>
+                <option value="CNY">CNY (Chinese Yuan)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Commercial Incoterms</label>
+              <select class="form-select" id="sup-incoterms">
+                <option value="FOB" selected>FOB (Free on Board - Port of Origin)</option>
+                <option value="CIF">CIF (Cost, Insurance & Freight - Destination Port)</option>
+                <option value="CFR">CFR (Cost & Freight)</option>
+                <option value="Ex-Works">Ex-Works (Factory Pickup)</option>
+                <option value="DDP">DDP (Delivered Duty Paid - Customer Site)</option>
+                <option value="CIP">CIP (Carriage and Insurance Paid)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Supplier Rating</label>
+              <select class="form-select" id="sup-rating">
+                <option value="5" selected>⭐⭐⭐⭐⭐ (5 - Premier Tier 1)</option>
+                <option value="4">⭐⭐⭐⭐ (4 - Approved Vendor)</option>
+                <option value="3">⭐⭐⭐ (3 - Standard)</option>
+                <option value="2">⭐⭐ (2 - Conditional)</option>
+                <option value="1">⭐ (1 - Under Review)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">NTN / Tax ID / VAT</label>
+              <input type="text" class="form-input" id="sup-ntn" placeholder="e.g. 192019-2 / VAT-1002910">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sales Tax # (STRN)</label>
+              <input type="text" class="form-input" id="sup-strn" placeholder="e.g. STRN-039102">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Terms</label>
+              <select class="form-select" id="sup-terms">
+                <option value="Net 30" selected>Net 30 Days</option>
+                <option value="LC at Sight">Letter of Credit (LC at Sight)</option>
+                <option value="Usance LC (90 Days)">Usance LC (90 Days)</option>
+                <option value="20% Adv + 80% against BL">20% Adv + 80% against BL</option>
+                <option value="CAD (Cash Against Documents)">CAD (Cash Against Documents)</option>
+                <option value="100% Advance">100% Advance Payment</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Contact Person</label>
+              <input type="text" class="form-input" id="sup-contact" placeholder="e.g. Zhang Wei (Export Sales Manager)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone (with Country Code)</label>
+              <input type="text" class="form-input" id="sup-phone" placeholder="e.g. +86-21-58819200 / +92-321-4455667">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Official Email</label>
+              <input type="email" class="form-input" id="sup-email" placeholder="export@supplier.com">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Bank Name & Branch</label>
+              <input type="text" class="form-input" id="sup-bank-name" placeholder="e.g. Standard Chartered Bank / Bank of China">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Account Title / IBAN</label>
+              <input type="text" class="form-input" id="sup-bank-iban" placeholder="e.g. AE07033000001920192801">
+            </div>
+            <div class="form-group">
+              <label class="form-label">SWIFT / BIC Code</label>
+              <input type="text" class="form-input" id="sup-bank-swift" placeholder="e.g. SCBLAEADXXX / BKCHCNBJ">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Product Categories / Supplied Lines</label>
+            <input type="text" class="form-input" id="sup-categories" placeholder="e.g. Power Transformers, Protection Relays, Circuit Breakers, Switchgear">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Commercial Notes & Supplier Qualifications</label>
+            <textarea class="form-textarea" id="sup-notes" rows="2" placeholder="e.g. Exclusive authorized distributor for Pakistan region. ISO 9001 certified."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-supplier')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Supplier</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4B. Add / Edit Product & Item SKU Modal (Item Master Catalog) -->
+  <div class="modal-backdrop" id="modal-add-product">
+    <div class="modal-card modal-lg" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">📦 Add Master Item / SKU to Catalog</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-product')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-product" onsubmit="event.preventDefault(); submitNewProductForm();">
+          <input type="hidden" id="prod-edit-id">
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">SKU / Item Code *</label>
+              <input type="text" class="form-input" id="prod-sku" required placeholder="e.g. TRF-132KV-01">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">Item / Product Name *</label>
+              <input type="text" class="form-input" id="prod-name" required placeholder="e.g. 132kV Power Transformer 20/26 MVA ONAN/ONAF">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Item Type *</label>
+              <select class="form-select" id="prod-type" required>
+                <option value="Product" selected>Physical Product / Equipment</option>
+                <option value="Service">Engineering / Technical Service</option>
+                <option value="Consumable">Consumable / Spare Part</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit of Measure (UOM) *</label>
+              <select class="form-select" id="prod-unit" required>
+                <option value="PCS" selected>PCS (Pieces)</option>
+                <option value="SET">SET</option>
+                <option value="MTR">MTR (Meters)</option>
+                <option value="KG">KG (Kilograms)</option>
+                <option value="LTR">LTR (Liters)</option>
+                <option value="JOB">JOB</option>
+                <option value="LOT">LOT</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Pakistan Customs HS Code</label>
+              <input type="text" class="form-input" id="prod-hs-code" placeholder="e.g. 8504.2200">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Country of Origin</label>
+              <select class="form-select" id="prod-country">
+                <option value="Pakistan" selected>Pakistan</option>
+                <option value="Germany">Germany</option>
+                <option value="China">China</option>
+                <option value="United Arab Emirates">United Arab Emirates (UAE)</option>
+                <option value="United States">United States (USA)</option>
+                <option value="Japan">Japan</option>
+                <option value="Turkey">Turkey</option>
+                <option value="Other">Other Country</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Default Preferred Supplier</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto;" onclick="openQuickAddModal('supplier', 'prod-supplier-select')">+ New Supplier</button>
+              </div>
+              <div class="input-with-action">
+                <select class="form-select" id="prod-supplier-select">
+                  <option value="">-- Select Preferred Supplier --</option>
+                </select>
+                <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('supplier', 'prod-supplier-select')" title="Quick Add New Supplier">+</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reorder Stock Alert Level</label>
+              <input type="number" class="form-input" id="prod-reorder-level" value="10" min="0">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Cost Price Currency</label>
+              <select class="form-select" id="prod-currency">
+                <option value="PKR" selected>PKR (Landed)</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="AED">AED</option>
+                <option value="CNY">CNY</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Est. Landed Cost Price (PKR) *</label>
+              <input type="number" class="form-input" id="prod-cost-pkr" required placeholder="e.g. 6200000" min="0" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Benchmark Selling Price (PKR)</label>
+              <input type="number" class="form-input" id="prod-selling-price" placeholder="e.g. 7800000" min="0" step="any">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Technical Scope & Item Specifications</label>
+            <textarea class="form-textarea" id="prod-description" rows="2" placeholder="Detail specifications, voltage grade, compliance standards (IEC 60076 / IEEE), and warranty terms..."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-product')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Master Product</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Issue Award Letter Modal (Item-Level Partial & Quantity Award Engine) -->
+  <div class="modal-backdrop" id="modal-add-award">
+    <div class="modal-card modal-lg" style="max-width: 860px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">🏆 Enter Award Letter (LOA) & Item-Level Award</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-award')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-award" onsubmit="event.preventDefault(); submitAwardLetterForm();">
+          <input type="hidden" id="award-opp-id">
+          
+          <div style="background: #f8fafc; border: 1px solid var(--border); padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Awarded Tender / Project:</span>
+              <div style="font-size: 1rem; font-weight: 700; color: #0f172a;" id="award-opp-title">WAPDA Substation 132kV Project</div>
+            </div>
+            <div>
+              <span class="badge badge-won">Status: Won</span>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Award Letter / LOA Reference # *</label>
+              <input type="text" class="form-input" id="award-no" required placeholder="e.g. LOA-WAPDA-2026-781">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Award Date *</label>
+              <input type="date" class="form-input" id="award-date" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Acceptance Deadline</label>
+              <input type="date" class="form-input" id="award-deadline">
+            </div>
+          </div>
+
+          <!-- Item-Level Partial Award Table -->
+          <div style="background: #ffffff; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h4 style="font-size: 0.9rem; font-weight: 700; color: #1e293b; margin: 0;">
+                📋 Item-Level & Partial Quantity Award Allocation
+              </h4>
+              <span style="font-size: 0.78rem; color: #64748b;">Toggle checkboxes to mark Won/Lost items or edit awarded quantities</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" style="font-size: 0.84rem;">
+                <thead>
+                  <tr>
+                    <th style="width: 40px; text-align: center;">Won?</th>
+                    <th>Item Description</th>
+                    <th>Bid Qty</th>
+                    <th>Awarded Qty *</th>
+                    <th>Unit</th>
+                    <th>Awarded Rate (PKR) *</th>
+                    <th>Line Total (PKR)</th>
+                  </tr>
+                </thead>
+                <tbody id="award-items-tbody">
+                  <!-- Dynamically populated from tender items -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Total Calculated Award Value (PKR) *</label>
+              <input type="number" class="form-input" id="award-amount" required readonly style="font-weight: 700; color: #059669; background: #f0fdf4; font-size: 1.1rem;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Performance Guarantee % Required</label>
+              <select class="form-select" id="award-pbg-pct" onchange="calculatePBGRequirement(this.value)">
+                <option value="10" selected>10% of Awarded Contract Value</option>
+                <option value="5">5% of Awarded Contract Value</option>
+                <option value="2">2% Retention / Security</option>
+                <option value="0">None / No PBG Required</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Remarks & Special Contract Conditions</label>
+            <textarea class="form-textarea" id="award-remarks" rows="2" placeholder="e.g. Formal acceptance required within 10 days followed by 10% Performance Guarantee and phased supply schedule..."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-award')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save & Accept Award Letter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5B. Multi-PO Creation Modal (1 Award -> Multiple POs Architecture) -->
+  <div class="modal-backdrop" id="modal-add-po">
+    <div class="modal-card modal-lg" style="max-width: 860px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">📦 Create Purchase Order (PO) Against Award</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-po')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-po" onsubmit="event.preventDefault(); submitCreatePOForm();">
+          <input type="hidden" id="po-award-id">
+          <input type="hidden" id="po-opp-id">
+          <input type="hidden" id="po-cust-id">
+
+          <div style="background: #f8fafc; border: 1px solid var(--border); padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span style="font-size:0.8rem; color:#64748b; text-transform:uppercase;">Award Reference:</span>
+                <div style="font-size:1rem; font-weight:700; color:#0f172a;" id="po-award-ref-display">LOA-WAPDA-2026-781</div>
+                <div style="font-size:0.82rem; color:#475569;" id="po-cust-name-display">Customer: WAPDA Hydro Wing</div>
+              </div>
+              <span class="badge badge-sec-attached">Multi-PO Phased Supply</span>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Purchase Order (PO) # *</label>
+              <input type="text" class="form-input" id="po-number" required placeholder="e.g. PO-001 (or WAPDA-PO-8812)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">PO Issue Date *</label>
+              <input type="date" class="form-input" id="po-date" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Delivery Deadline *</label>
+              <input type="date" class="form-input" id="po-deadline" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Designated Delivery Site / Location *</label>
+              <input type="text" class="form-input" id="po-delivery-location" required placeholder="e.g. 132kV Substation Site, Sheikhupura Road">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Customer Department / Directorate</label>
+              <input type="text" class="form-input" id="po-department" placeholder="e.g. Grid System Operations (GSO) Wing">
+            </div>
+          </div>
+
+          <!-- PO Item Allocation Table with Remaining Balance Validation -->
+          <div style="background: #ffffff; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h4 style="font-size: 0.9rem; font-weight: 700; color: #1e293b; margin: 0;">
+                📦 Item Quantities Allocated to THIS Purchase Order
+              </h4>
+              <span style="font-size: 0.78rem; color: #0284c7; font-weight: 600;">Validation: PO Qty ≤ Unallocated Awarded Qty</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" style="font-size: 0.84rem;">
+                <thead>
+                  <tr>
+                    <th>Item Description</th>
+                    <th>Awarded Qty</th>
+                    <th>Prior POs Qty</th>
+                    <th>Available Qty</th>
+                    <th>This PO Qty *</th>
+                    <th>Unit Rate (PKR)</th>
+                    <th>Line Total (PKR)</th>
+                  </tr>
+                </thead>
+                <tbody id="po-allocation-tbody">
+                  <!-- Dynamically populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Total Calculated PO Net Value (PKR) *</label>
+              <input type="number" class="form-input" id="po-total-amount" required readonly style="font-weight: 700; color: #0284c7; background: #f0f9ff; font-size: 1.1rem;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Terms for this PO</label>
+              <select class="form-select" id="po-payment-terms">
+                <option value="100% Against Delivery Challan" selected>100% Against Delivery Challan</option>
+                <option value="Net 30 Days after DC">Net 30 Days after DC</option>
+                <option value="20% Advance + 80% on Site Inspection">20% Advance + 80% on Site Inspection</option>
+                <option value="90% Delivery + 10% PBG Release">90% Delivery + 10% PBG Release</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">PO Remarks & Delivery Instructions</label>
+            <textarea class="form-textarea" id="po-remarks" rows="2" placeholder="e.g. Delivery Lot 1 of 4. Requires prior 48-hour delivery intimation to site in-charge."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-po')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Issue Purchase Order</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Issue Performance Guarantee Modal -->
+  <div class="modal-backdrop" id="modal-add-guarantee">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700;">🏦 Issue Performance Guarantee</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-guarantee')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-guarantee" onsubmit="event.preventDefault(); submitPerformanceGuaranteeForm();">
+          <input type="hidden" id="pg-contract-id">
+          <div class="form-group">
+            <label class="form-label">Contract / Award Reference</label>
+            <input type="text" class="form-input" id="pg-contract-no" readonly>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Guarantee / PBG Number *</label>
+              <input type="text" class="form-input" id="pg-number" required placeholder="e.g. PBG-MEEZAN-5519">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Issuing Bank *</label>
+              <input type="text" class="form-input" id="pg-bank" required placeholder="e.g. Meezan Bank Ltd Gulberg Lahore">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Amount (PKR) *</label>
+              <input type="number" class="form-input" id="pg-amount" required placeholder="e.g. 1450000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Expiry Date *</label>
+              <input type="date" class="form-input" id="pg-expiry" required>
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-guarantee')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Issue Guarantee</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Delivery Challan Modal (Dual-Mode: Own Warehouse vs Direct Drop-Shipment + Phased DC Engine) -->
+  <div class="modal-backdrop" id="modal-add-dc">
+    <div class="modal-card modal-lg" style="max-width: 880px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">🚚 Supply & Delivery Challan (DC) Dispatch Engine</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-dc')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-dc" onsubmit="event.preventDefault(); submitDeliveryChallanForm();">
+          <input type="hidden" id="dc-edit-id">
+          
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 14px; font-size: 0.82rem; color: #166534; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              🔒 <strong>Logistics Rule:</strong> Delivery can originate from <strong>Own Warehouse</strong> (stock decrement) or <strong>Direct Drop-Shipment from Supplier/Port</strong>.
+            </div>
+            <span class="badge badge-won">Phased DC Tracking</span>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">Select Approved Purchase Order (PO) *</label>
+              <select class="form-select" id="dc-po-select" required onchange="handleDCPOSSelected(this.value)"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Delivery Date *</label>
+              <input type="date" class="form-input" id="dc-date" required>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Delivery Fulfillment Mode *</label>
+              <select class="form-select" id="dc-delivery-mode" required onchange="handleDCDeliveryModeChanged(this.value)">
+                <option value="Own Warehouse" selected>🏬 From Own Warehouse (Stock Picking)</option>
+                <option value="Direct Drop-Shipment">🌐 Direct Drop-Shipment (Supplier/Port to Client)</option>
+              </select>
+            </div>
+            <div class="form-group" id="dc-wh-container">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Dispatch Warehouse *</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto;" onclick="openQuickAddModal('warehouse', 'dc-warehouse-select')">+ New Warehouse</button>
+              </div>
+              <div class="input-with-action">
+                <select class="form-select" id="dc-warehouse-select"></select>
+                <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('warehouse', 'dc-warehouse-select')" title="Quick Add New Warehouse">+</button>
+              </div>
+            </div>
+            <div class="form-group" id="dc-sup-container" style="display: none;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Origin Supplier / OEM *</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto;" onclick="openQuickAddModal('supplier', 'dc-supplier-select')">+ New Supplier</button>
+              </div>
+              <div class="input-with-action">
+                <select class="form-select" id="dc-supplier-select"></select>
+                <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('supplier', 'dc-supplier-select')" title="Quick Add New Supplier">+</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">DC Number</label>
+              <input type="text" class="form-input" id="dc-number" placeholder="Auto (e.g. DC-CE-2026-0091)">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Origin Departure Point</label>
+              <input type="text" class="form-input" id="dc-origin-location" placeholder="e.g. Central Warehouse Lahore / Port Qasim Terminal 2">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Destination Customer Site *</label>
+              <input type="text" class="form-input" id="dc-destination-site" required placeholder="e.g. WAPDA 132kV Grid Substation Sheikhupura Site">
+            </div>
+          </div>
+
+          <!-- Phased Item Dispatch Allocation Table -->
+          <div style="background: #ffffff; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h4 style="font-size: 0.9rem; font-weight: 700; color: #1e293b; margin: 0;">
+                📦 Phased Item Quantities Dispatched in THIS Delivery Challan
+              </h4>
+              <span style="font-size: 0.78rem; color: #166534; font-weight: 600;">Rule: Dispatched Qty ≤ Remaining Undelivered Qty</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" style="font-size: 0.84rem;">
+                <thead>
+                  <tr>
+                    <th>Item Description</th>
+                    <th>PO Total Qty</th>
+                    <th>Prior Delivered</th>
+                    <th>Remaining Undelivered</th>
+                    <th>Dispatch in this DC *</th>
+                    <th>UOM</th>
+                  </tr>
+                </thead>
+                <tbody id="dc-dispatch-items-tbody">
+                  <!-- Dynamically populated from PO items -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Logistics, 3PL Carrier, & Contractor-Borne Freight Section -->
+          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h4 style="font-size: 0.9rem; font-weight: 700; color: #92400e; margin: 0;">
+                🚛 Logistics, 3PL Carrier & Contractor-Borne Freight Costs
+              </h4>
+              <span style="font-size: 0.75rem; color: #b45309; font-weight: 600;">💰 Borne by Us (Deducted from Net Project Profit)</span>
+            </div>
+
+            <div class="form-row-3">
+              <div class="form-group">
+                <label class="form-label">Logistics Carrier / Provider *</label>
+                <input type="text" class="form-input" id="dc-logistics-provider" required placeholder="e.g. Bilal Cargo / TCS Heavy / Hired 22-Wheeler">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Bilty / Consignment / AWB #</label>
+                <input type="text" class="form-input" id="dc-tracking" placeholder="e.g. BLT-KHI-88912">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Vehicle Reg #</label>
+                <input type="text" class="form-input" id="dc-vehicle" placeholder="e.g. TKA-8819 (Flatbed)">
+              </div>
+            </div>
+
+            <div class="form-row-3">
+              <div class="form-group">
+                <label class="form-label">Driver Name & Mobile</label>
+                <input type="text" class="form-input" id="dc-driver" placeholder="e.g. Tariq Khan (0300-8812901)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Freight & Transport Paid (PKR) *</label>
+                <input type="number" class="form-input" id="dc-freight-cost" min="0" step="any" placeholder="e.g. 120000" style="font-weight:700; color:#b45309;">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Customs / Port Clearance Paid (PKR)</label>
+                <input type="number" class="form-input" id="dc-customs-cost" min="0" step="any" placeholder="e.g. 45000">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Delivery Remarks & Special Instructions</label>
+            <textarea class="form-textarea" id="dc-remarks" rows="2" placeholder="e.g. Direct drop-shipment from Port Qasim. Inspection team will receive at site."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-dc')">Cancel</button>
+            <button type="submit" class="primary-btn">🚚 Dispatch Delivery Challan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Payment Received Modal -->
+  <div class="modal-backdrop" id="modal-add-payment">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700;">💵 Record Payment Received</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-payment')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-payment">
+          <div class="form-group">
+            <label class="form-label">Select Invoice *</label>
+            <select class="form-select" id="pay-invoice-select" required onchange="updatePayInvoiceOutstanding(this.value)"></select>
+          </div>
+
+          <div id="pay-invoice-meta" style="background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px; margin-bottom:14px; font-size:0.85rem; display:none;">
+            <!-- Injected outstanding info -->
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Payment Date *</label>
+              <input type="date" class="form-input" id="pay-date" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Amount (PKR) *</label>
+              <input type="number" class="form-input" id="pay-amount" required placeholder="e.g. 10000000">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Check / Cheque Number</label>
+              <input type="text" class="form-input" id="pay-check-no" placeholder="e.g. CHQ-NBP-0049281">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Check From / Issuer</label>
+              <input type="text" class="form-input" id="pay-check-from" placeholder="e.g. WAPDA Hydro Wing">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Deposited in Bank Account</label>
+              <input type="text" class="form-input" id="pay-bank-acc" placeholder="e.g. HBL Corporate A/C 0192-881920-01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bank Voucher / Ref #</label>
+              <input type="text" class="form-input" id="pay-ref" placeholder="e.g. VCHR-8820">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="secondary-btn" onclick="closeModal('modal-add-payment')">Cancel</button>
+        <button class="primary-btn" onclick="submitPaymentForm()">💾 Save Payment Receipt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. General Company Expense Logger Modal (13 Categories + Expense Types) -->
+  <div class="modal-backdrop" id="modal-add-expense">
+    <div class="modal-card modal-lg" style="max-width: 820px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">💳 Log Business & Project Expenditure (3-Tier Engine)</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-expense')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-expense" onsubmit="event.preventDefault(); submitGeneralExpenseForm();">
+          
+          <!-- 1. 3-Tier Classification Selector -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Expense Tier & Lifecycle Stage *</label>
+              <select class="form-select" id="exp-tier" onchange="handleExpenseTierChange(this.value)" required>
+                <option value="Tier 1 - Tender Direct" selected>🎯 Tier 1: Tender & Quotation Pre-Bid Direct Expense</option>
+                <option value="Tier 2 - PO Execution">🚚 Tier 2: PO & Delivery Execution Logistics Cost</option>
+                <option value="Tier 3 - General Overheads">🏢 Tier 3: General Administrative & Operational Overhead</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Expense Date *</label>
+              <input type="date" class="form-input" id="exp-date" required>
+            </div>
+          </div>
+
+          <!-- 2A. Dynamic Field: Searchable Project Linkage (Tenders / Quotations for Tier 1; POs for Tier 2) -->
+          <div class="form-group" id="group-exp-linked">
+            <label class="form-label" id="exp-linked-label">Link to Specific Tender / Quotation *</label>
+            <div class="searchable-dropdown-wrapper" id="exp-searchable-wrapper">
+              <input type="text" class="form-input" id="exp-linked-search" placeholder="Type to search tender by name, customer, or number..." autocomplete="off" onfocus="openLinkedDropdown()" oninput="filterLinkedOpportunities(this.value)">
+              <input type="hidden" id="exp-opportunity-id">
+              <input type="hidden" id="exp-po-id">
+              <div id="exp-linked-dropdown" class="searchable-dropdown-menu"></div>
+            </div>
+            <div id="exp-linked-selected-badge" style="display:none; margin-top:6px; font-size:0.82rem; color:var(--primary); font-weight:600;"></div>
+          </div>
+
+          <!-- 2B. PO Selector for Tier 2 Logistics -->
+          <div class="form-group" id="group-exp-po-select" style="display: none;">
+            <label class="form-label">Link to Specific Purchase Order (PO) *</label>
+            <select class="form-select" id="exp-po-select" onchange="handleExpensePOSelected(this.value)"></select>
+          </div>
+
+          <!-- 3. Dynamic Category Selector based on Tier -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Expense Category *</label>
+              <select class="form-select" id="exp-category" required onchange="handleExpenseCategorySelected(this.value)">
+                <!-- Dynamically populated based on Tier -->
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Expense Title / Item Description *</label>
+              <input type="text" class="form-input" id="exp-name" required placeholder="e.g. Dielectric lab sample test charges / Client executive dinner...">
+            </div>
+          </div>
+
+          <!-- 4. Amount, Paid To & Payment Mode -->
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Amount (PKR) *</label>
+              <input type="number" class="form-input" id="exp-amount" required placeholder="e.g. 45000" min="1" step="any" style="font-weight:700; color:#b45309;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Paid To / Vendor</label>
+              <input type="text" class="form-input" id="exp-paid-to" placeholder="e.g. PCSIR Testing Labs / TCS / Hotel">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Mode</label>
+              <select class="form-select" id="exp-mode">
+                <option value="Cash">Cash</option>
+                <option value="Online Bank Transfer" selected>Online Bank Transfer (IBFT)</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Company Card">Company Card / Petty Cash</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 5. Remarks / Project Cost Attribution Notes -->
+          <div class="form-group">
+            <label class="form-label">Remarks & Cost Allocation Notes</label>
+            <textarea class="form-textarea" id="exp-remarks" rows="2" placeholder="e.g. High voltage insulation sample test report required for technical qualification submission..."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-expense')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Record Expenditure</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9B. Tender Loss & Grievance Lifecycle Modal -->
+  <div class="modal-backdrop" id="modal-tender-loss-eval">
+    <div class="modal-card modal-lg" style="max-width: 780px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #dc2626;">📉 Record Tender Loss, Competitor Intelligence & Grievance</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-tender-loss-eval')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-tender-loss" onsubmit="event.preventDefault(); submitTenderLossForm();">
+          <input type="hidden" id="loss-opp-id">
+
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 14px; font-size: 0.82rem; color: #991b1b; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              🔒 <strong>Automated Action:</strong> Recording a Loss or Withdrawal will automatically initiate the <strong>Bid Security / CDR Release Protocol</strong> to restore your Bank Credit Line.
+            </div>
+            <span class="badge badge-withdraw">EMD Release Trigger</span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Tender Reference</label>
+              <input type="text" class="form-input" id="loss-tender-ref" readonly style="background:#f8fafc; font-weight:600;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Evaluation Date *</label>
+              <input type="date" class="form-input" id="loss-eval-date" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Disqualification / Loss Stage *</label>
+              <select class="form-select" id="loss-stage" required onchange="handleLossStageChanged(this.value)">
+                <option value="Financial Opening - Competitor Lower Price" selected>1. Financial Opening (Competitor Lower in Price)</option>
+                <option value="Technical Disqualification - Specs Mismatch">2. Technical Disqualification (Specs / Sample Mismatch)</option>
+                <option value="Technical Disqualification - Experience/Eligibility">3. Technical Disqualification (Lack of Required Experience)</option>
+                <option value="Bid Security / CDR Deviation">4. Disqualified on Bid Bond / CDR Deviation</option>
+                <option value="Client Canceled / Re-Tendered">5. Client Canceled / Re-Tendering Intimated</option>
+                <option value="Voluntarily Withdrawn">6. Voluntarily Withdrawn by Us</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Winning Competitor / L1 Bidder</label>
+              <input type="text" class="form-input" id="loss-competitor-name" placeholder="e.g. Siemens Pakistan / PEL / Transfopower">
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Our Bid Value (PKR)</label>
+              <input type="number" class="form-input" id="loss-our-bid" readonly style="background:#f8fafc; font-weight:700; color:#0284c7;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Winning Bid Value (PKR) *</label>
+              <input type="number" class="form-input" id="loss-winning-bid" placeholder="e.g. 24800000" oninput="calculateLossVariance()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Price Gap / Variance</label>
+              <input type="text" class="form-input" id="loss-variance-display" readonly style="background:#f8fafc; font-weight:700; color:#dc2626;">
+            </div>
+          </div>
+
+          <!-- Grievance Redressal Section -->
+          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h4 style="font-size: 0.88rem; font-weight: 700; color: #92400e; margin: 0;">
+                ⚖️ Grievance Filing & PPRA Review Committee Status
+              </h4>
+              <label style="font-size: 0.82rem; font-weight: 600; color: #b45309; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="loss-grievance-filed" onchange="toggleGrievanceFields(this.checked)">
+                Grievance Filed
+              </label>
+            </div>
+            <div class="form-row" id="loss-grievance-row" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">Grievance Tracking / Diary #</label>
+                <input type="text" class="form-input" id="loss-grievance-track" placeholder="e.g. GRV-PPRA-2026-0819">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Grievance Committee Status</label>
+                <select class="form-select" id="loss-grievance-status">
+                  <option value="Under Review by Committee" selected>Under Review by Committee</option>
+                  <option value="Technical Re-evaluation Ordered">Technical Re-evaluation Ordered</option>
+                  <option value="Rejected / Upheld Client Decision">Rejected / Upheld Client Decision</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Loss Debrief Notes & Competitor Advantage Analysis</label>
+            <textarea class="form-textarea" id="loss-remarks" rows="2" placeholder="e.g. Competitor offered lower ex-factory price due to local assembly. Will improve component sourcing in next revision."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-tender-loss-eval')">Cancel</button>
+            <button type="submit" class="primary-btn" style="background:#dc2626;">📉 Save Loss & Release Bid Security</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9C. Consolidated Tender 360° Cockpit Drawer / Modal -->
+  <div class="modal-backdrop" id="modal-tender-360-cockpit">
+    <div class="modal-card modal-lg" style="max-width: 1050px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header" style="border-bottom: 2px solid var(--border); padding-bottom: 12px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size: 1.25rem;">🌐</span>
+            <h2 style="font-size: 1.25rem; font-weight: 700; color: #1e293b; margin: 0;" id="cockpit-title">Tender 360° Cockpit</h2>
+          </div>
+          <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 3px;" id="cockpit-subtitle">Complete end-to-end lifecycle & financial governance overview</div>
+        </div>
+        <button class="modal-close-btn" onclick="closeModal('modal-tender-360-cockpit')">&times;</button>
+      </div>
+      <div class="modal-body" id="cockpit-body-content" style="padding: 16px 0;">
+        <!-- Dynamically injected full 360 lifecycle and financial telemetry -->
+      </div>
+      <div class="modal-footer" style="border-top: 1px solid var(--border); padding-top: 14px;">
+        <button type="button" class="secondary-btn" onclick="closeModal('modal-tender-360-cockpit')">Close Cockpit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. Add New Company / Profile Modal (Multi-Company 2 Free limit) -->
+  <div class="modal-backdrop" id="modal-add-company">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700;">🏢 Configure Company / Business Profile</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-company')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="company-limit-alert" class="company-limit-banner">
+          <div>
+            <strong>Tier Limit Notice:</strong> Up to 2 companies can be configured for free. Additional profiles incur PKR 2,500/month.
+          </div>
+        </div>
+        <form id="form-add-company">
+          <div class="form-group">
+            <label class="form-label">Business Display Name *</label>
+            <input type="text" class="form-input" id="comp-name" required placeholder="e.g. Clifton Global Logistics">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Legal Name *</label>
+            <input type="text" class="form-input" id="comp-legal" required placeholder="e.g. Clifton Global Logistics (Pvt) Limited">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">National Tax Number (NTN)</label>
+              <input type="text" class="form-input" id="comp-ntn" placeholder="e.g. 551920-8">
+            </div>
+            <div class="form-group">
+              <label class="form-label">City</label>
+              <input type="text" class="form-input" id="comp-city" value="Lahore">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Invoice Prefix</label>
+              <input type="text" class="form-input" id="comp-inv-prefix" value="INV-CGL">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Enable FBR PRAL Gateway</label>
+              <select class="form-select" id="comp-fbr">
+                <option value="true" selected>Yes (Active)</option>
+                <option value="false">No (Skip FBR)</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="secondary-btn" onclick="closeModal('modal-add-company')">Cancel</button>
+        <button class="primary-btn" onclick="submitNewCompanyForm()">💾 Save Business Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10B. Add New Warehouse Modal -->
+  <div class="modal-backdrop" id="modal-add-warehouse">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🏬 Add Warehouse / Storage Location</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-warehouse')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-warehouse" onsubmit="event.preventDefault(); submitNewWarehouseForm();">
+          <input type="hidden" id="wh-edit-id">
+          <div class="form-group">
+            <label class="form-label">Warehouse Name * (Mandatory)</label>
+            <input type="text" class="form-input" id="wh-name" required placeholder="e.g. Central Distribution Warehouse Lahore">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">City *</label>
+              <input type="text" class="form-input" id="wh-city" value="Lahore" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Location / Area Address</label>
+              <input type="text" class="form-input" id="wh-location" placeholder="e.g. Sheikhupura Road / Sundar Industrial Estate">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Warehouse Manager Name</label>
+              <input type="text" class="form-input" id="wh-manager" placeholder="e.g. Bilal Saeed">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Contact Phone</label>
+              <input type="text" class="form-input" id="wh-phone" placeholder="e.g. 0300-9876543">
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-warehouse')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Warehouse</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. Universal Dynamic Edit Modal (For all listing tables) -->
+  <div class="modal-backdrop" id="modal-universal-edit">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2 id="edit-modal-title" style="font-size: 1.15rem; font-weight: 700;">✏️ Edit Record</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-universal-edit')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-universal-edit" onsubmit="event.preventDefault(); submitUniversalEdit();">
+          <input type="hidden" id="edit-entity-type">
+          <input type="hidden" id="edit-entity-id">
+          <div id="edit-fields-container">
+            <!-- Dynamically injected edit form fields -->
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="secondary-btn" onclick="closeModal('modal-universal-edit')">Cancel</button>
+        <button type="button" class="primary-btn" onclick="submitUniversalEdit()">💾 Update Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       USER MODULE, RBAC, ONBOARDING & WARNING MODALS
+       ========================================================================= -->
+
+  <!-- 12. Mandatory First-Time Password Setup Modal -->
+  <div class="modal-backdrop" id="modal-force-password" style="z-index: 10000;">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🔐 First-Time Password Setup</h2>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: #64748b; margin-bottom: 16px;">
+          Welcome to Mashrue! For security reasons, you must set a new permanent password before proceeding to configure your companies and access the workspace.
+        </p>
+        <div class="login-error-box" id="force-password-error-msg"></div>
+        <form id="form-force-password" onsubmit="event.preventDefault(); handleFirstPasswordChange();">
+          <div class="form-group">
+            <label class="form-label">New Password *</label>
+            <input type="password" class="form-input" id="force-new-password" required minlength="6" placeholder="Enter new strong password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password *</label>
+            <input type="password" class="form-input" id="force-confirm-password" required minlength="6" placeholder="Re-enter new password">
+          </div>
+          <div class="modal-footer" style="padding: 12px 0 0; margin-top: 16px; border-top: 1px solid var(--border);">
+            <button type="submit" class="primary-btn" style="width: 100%; justify-content: center;">
+              🔒 Set New Password & Proceed
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 13. First Company Onboarding Modal -->
+  <div class="modal-backdrop" id="modal-onboard-company" style="z-index: 9999;">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🏢 Register Your First Business Entity</h2>
+      </div>
+      <div class="modal-body">
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px;">
+          <h4 style="font-size: 0.9rem; font-weight: 700; color: #1d4ed8; margin-bottom: 4px;">🚀 Step 1 of 2: Company Setup</h4>
+          <p style="font-size: 0.82rem; color: #3b82f6; margin-bottom: 0;">
+            Enter your primary business profile. You can register up to <strong>2 companies free</strong>. If you enable FBR integration, you will be guided to the FBR gateway configuration.
+          </p>
+        </div>
+        <form id="form-onboard-company" onsubmit="event.preventDefault(); submitOnboardCompanyForm();">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Business Display Name *</label>
+              <input type="text" class="form-input" id="onboard-comp-name" required placeholder="e.g. Clifton Engineering Pvt Ltd">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Full Legal Name *</label>
+              <input type="text" class="form-input" id="onboard-comp-legal" required placeholder="e.g. Clifton Engineering Private Limited">
+            </div>
+          </div>
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">National Tax # (NTN)</label>
+              <input type="text" class="form-input" id="onboard-comp-ntn" placeholder="e.g. 492019-1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sales Tax # (STRN)</label>
+              <input type="text" class="form-input" id="onboard-comp-strn" placeholder="e.g. STRN-492019">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Operating City</label>
+              <input type="text" class="form-input" id="onboard-comp-city" value="Lahore">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Invoice Prefix</label>
+              <input type="text" class="form-input" id="onboard-comp-prefix" value="INV-CE" placeholder="e.g. INV-CE">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Official Email</label>
+              <input type="email" class="form-input" id="onboard-comp-email" placeholder="contact@company.pk">
+            </div>
+          </div>
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-top: 10px;">
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+              <input type="checkbox" id="onboard-comp-fbr" class="permissions-checkbox" style="margin-top: 3px;" checked>
+              <div>
+                <strong style="color: #0f172a; font-size: 0.9rem;">🇵🇰 Enable FBR PRAL Digital Invoicing Integration</strong>
+                <p style="font-size: 0.8rem; color: #64748b; margin-top: 2px; margin-bottom: 0;">
+                  If checked, you will be redirected to configure your FBR digital invoicing API token & sandbox settings immediately after saving.
+                </p>
+              </div>
+            </label>
+          </div>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 18px;">
+            <button type="submit" class="primary-btn" style="width: 100%; justify-content: center;">
+              💾 Save Company & Continue
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 14. Paid Company Limit Warning Modal -->
+  <div class="modal-backdrop" id="modal-paid-company-warning" style="z-index: 10001;">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-body" style="padding: 24px;">
+        <div class="warning-icon-box">🏢</div>
+        <h3 class="warning-title">Free Company Limit Reached</h3>
+        <p class="warning-desc">
+          You have reached your limit of <strong>2 Free Companies</strong>. Creating an additional company profile will incur an add-on subscription fee.
+        </p>
+        <div class="fee-highlight-badge">
+          💰 Additional Monthly Charge: PKR 2,500 / month
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button type="button" class="secondary-btn" onclick="closeModal('modal-paid-company-warning')">Cancel</button>
+          <button type="button" class="primary-btn" id="btn-confirm-paid-company" onclick="confirmAndCreatePaidCompany()">
+            ✅ Accept & Create 3rd Company
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 15. Paid Employee Limit Warning Modal -->
+  <div class="modal-backdrop" id="modal-paid-employee-warning" style="z-index: 10001;">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-body" style="padding: 24px;">
+        <div class="warning-icon-box">👥</div>
+        <h3 class="warning-title">Free Employee Limit Reached</h3>
+        <p class="warning-desc">
+          You have used all <strong>2 Free Employee Seats</strong> for your organization. Adding an extra employee will add a seat to your subscription.
+        </p>
+        <div class="fee-highlight-badge">
+          💰 Additional Seat Charge: PKR 1,500 / month
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button type="button" class="secondary-btn" onclick="closeModal('modal-paid-employee-warning')">Cancel</button>
+          <button type="button" class="primary-btn" id="btn-confirm-paid-employee" onclick="confirmAndCreatePaidEmployee()">
+            ✅ Accept & Add Employee Seat
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 16. FBR Missing Configuration Warning Modal -->
+  <div class="modal-backdrop" id="modal-fbr-warning" style="z-index: 10002;">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-body" style="padding: 24px;">
+        <div class="warning-icon-box" style="background: #ecfeff; color: #0891b2;">🇵🇰</div>
+        <h3 class="warning-title">FBR Configuration Notice</h3>
+        <p class="warning-desc" id="fbr-warning-text">
+          FBR Digital Invoicing integration credentials are not configured for this submitting company. Would you like to configure your FBR PRAL Gateway now or proceed with local quotation submission?
+        </p>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button type="button" class="secondary-btn" onclick="closeModal('modal-fbr-warning'); proceedSubmissionWithoutFBR();">
+            Proceed Without FBR
+          </button>
+          <button type="button" class="primary-btn" onclick="closeModal('modal-fbr-warning'); switchView('settings');">
+            ⚙️ Configure FBR Gateway
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 17. Create User / Employee Modal with Granular RBAC Matrix -->
+  <div class="modal-backdrop" id="modal-create-user">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2 id="modal-create-user-title" style="font-size: 1.15rem; font-weight: 700;">👤 Add New User / Employee</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-create-user')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-create-user" onsubmit="event.preventDefault(); submitCreateUserForm();">
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Full Name *</label>
+              <input type="text" class="form-input" id="newuser-fullname" required placeholder="e.g. Tariq Javed">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Username *</label>
+              <input type="text" class="form-input" id="newuser-username" required placeholder="e.g. tariq_ops">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Address *</label>
+              <input type="email" class="form-input" id="newuser-email" required placeholder="tariq@company.pk">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Initial Password *</label>
+              <input type="password" class="form-input" id="newuser-password" required minlength="6" value="Password123!">
+            </div>
+            <div class="form-group">
+              <label class="form-label">User Role *</label>
+              <select class="form-select" id="newuser-role" onchange="handleUserRoleSelection(this.value)">
+                <option value="ClientEmployee" selected>Client Employee (Configurable Access)</option>
+                <option value="ClientAdmin">Client Admin (Tenant Admin)</option>
+                <option value="SuperAdmin">Super Admin (System Owner)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Price & Bidding Security Setting -->
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+              <input type="checkbox" id="newuser-can-see-prices" class="permissions-checkbox" checked>
+              <div>
+                <strong style="color: #0f172a; font-size: 0.88rem;">💰 Allow Bidding & Costing Price Visibility</strong>
+                <p style="font-size: 0.78rem; color: #64748b; margin-top: 1px; margin-bottom: 0;">
+                  If unchecked, all tender margins, estimated values, costing sheets, and unit prices will be completely masked from this employee.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <!-- Company Profile Access Restriction -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label">🏢 Assigned Company Entities (Select visible companies)</label>
+            <div id="newuser-company-checkboxes" style="display: flex; gap: 12px; flex-wrap: wrap; background: #f8fafc; border: 1px solid var(--border); padding: 10px 14px; border-radius: var(--radius-md);">
+              <!-- Injected dynamically -->
+            </div>
+          </div>
+
+          <!-- Granular Permissions Matrix -->
+          <div id="rbac-matrix-container">
+            <label class="form-label" style="font-weight: 700; margin-bottom: 4px;">📋 Granular Module Permissions Matrix</label>
+            <table class="permissions-matrix-table">
+              <thead>
+                <tr>
+                  <th>Application Module / Menu</th>
+                  <th class="center">View (Read)</th>
+                  <th class="center">Add (Create)</th>
+                  <th class="center">Edit (Update)</th>
+                </tr>
+              </thead>
+              <tbody id="permissions-matrix-tbody">
+                <tr>
+                  <td><strong>📑 Tenders & Quotations</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="edit" checked></td>
+                </tr>
+                <tr>
+                  <td><strong>🛡️ Bid Security Registry</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>💰 Costing & Margin Sheet</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="add"></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>📦 Purchase Orders (PO)</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>🏬 Warehouse & Stock</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="edit" checked></td>
+                </tr>
+                <tr>
+                  <td><strong>🚚 Supply & Delivery Challans (DC)</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>🧾 Invoices & FBR PRAL</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="add"></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>💵 Payments Received</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="add"></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>💳 Expenses & Overheads</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="edit"></td>
+                </tr>
+                <tr>
+                  <td><strong>👥 Customers & Suppliers Directories</strong></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="view" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="add" checked></td>
+                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="edit" checked></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 18px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-create-user')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save User / Employee</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 18. Super Admin Tenant Provisioning Modal -->
+  <div class="modal-backdrop" id="modal-create-tenant">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🏢 Provision New Tenant Organization</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-create-tenant')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-create-tenant" onsubmit="event.preventDefault(); submitCreateTenantForm();">
+          <div class="form-group">
+            <label class="form-label">Client / Organization Name *</label>
+            <input type="text" class="form-input" id="tenant-company-name" required placeholder="e.g. Falcon Enterprises PK">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Subdomain Slug</label>
+              <input type="text" class="form-input" id="tenant-subdomain" placeholder="e.g. falcon">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Subscription Plan</label>
+              <select class="form-select" id="tenant-plan">
+                <option value="Standard" selected>Standard (2 Free Companies, 2 Free Users)</option>
+                <option value="Pro">Pro Enterprise Plan</option>
+              </select>
+            </div>
+          </div>
+          <div style="background:#f8fafc; border:1px solid var(--border); padding:12px; border-radius:var(--radius-md); margin-top:10px;">
+            <h4 style="font-size:0.85rem; font-weight:700; color:#1e293b; margin-bottom:8px;">🔑 Initial Client Admin Account</h4>
+            <div class="form-group">
+              <label class="form-label">Admin Full Name</label>
+              <input type="text" class="form-input" id="tenant-admin-name" placeholder="e.g. Tariq Khan (Client Admin)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Admin Email *</label>
+              <input type="email" class="form-input" id="tenant-admin-email" required placeholder="admin@falcon.pk">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Initial Password *</label>
+              <input type="password" class="form-input" id="tenant-admin-password" required value="Password123!">
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 16px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-create-tenant')">Cancel</button>
+            <button type="submit" class="primary-btn">🚀 Provision Tenant & Admin</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 19. Admin Password Reset Modal -->
+  <div class="modal-backdrop" id="modal-reset-password">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🔑 Reset User Password</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-reset-password')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: #64748b; margin-bottom: 14px;">
+          Set a new temporary password for <strong id="reset-user-display-name">User</strong>.
+        </p>
+        <form id="form-reset-password" onsubmit="event.preventDefault(); submitResetPasswordForm();">
+          <input type="hidden" id="reset-user-id">
+          <div class="form-group">
+            <label class="form-label">New Password *</label>
+            <input type="password" class="form-input" id="reset-new-password" required minlength="6" value="TempPass123!">
+          </div>
+          <div style="margin-top: 10px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+              <input type="checkbox" id="reset-force-change" class="permissions-checkbox" checked>
+              <span>Require password change on next login</span>
+            </label>
+          </div>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 16px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-reset-password')">Cancel</button>
+            <button type="submit" class="primary-btn">🔒 Save & Reset Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 20. Super Admin Configure Subscription, Custom Pricing & Trial Modal -->
+  <div class="modal-backdrop" id="modal-configure-subscription">
+    <div class="modal-card modal-lg" style="max-width: 760px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">⚙️ Configure Tenant Subscription & Pricing</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-configure-subscription')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-configure-subscription" onsubmit="event.preventDefault(); submitConfigureSubscriptionForm();">
+          <input type="hidden" id="sub-tenant-id">
+          
+          <div style="background: #f1f5f9; padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-size: 0.82rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Configuring Tenant:</span>
+              <div style="font-size: 1.05rem; font-weight: 700; color: #0f172a;" id="sub-tenant-name-display">Falcon Enterprises PK</div>
+            </div>
+            <div id="sub-tenant-current-badge">
+              <span class="badge badge-won">Active Advance Plan</span>
+            </div>
+          </div>
+
+          <!-- 1. Plan Tier Selection -->
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label" style="font-weight: 700;">Select Subscription Plan Tier *</label>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px;">
+              <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-basic">
+                <input type="radio" name="sub-plan-choice" value="Basic" onchange="onPlanSelectionChanged('Basic')" style="margin-bottom: 6px;">
+                <div style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Basic Plan</div>
+                <div style="font-size: 0.78rem; color: #64748b;">10 Tenders / 10 Quotes / mo<br>1 Company, 1 User</div>
+                <div style="font-weight: 700; color: var(--primary); margin-top: 6px; font-size: 0.88rem;">PKR 4,000 / mo</div>
+              </label>
+
+              <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-advance">
+                <input type="radio" name="sub-plan-choice" value="Advance" checked onchange="onPlanSelectionChanged('Advance')" style="margin-bottom: 6px;">
+                <div style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Advance Plan</div>
+                <div style="font-size: 0.78rem; color: #64748b;">Unlimited Bidding<br>2 Free Co, 3 Users</div>
+                <div style="font-weight: 700; color: var(--primary); margin-top: 6px; font-size: 0.88rem;">PKR 14,000 / mo</div>
+              </label>
+
+              <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-custom">
+                <input type="radio" name="sub-plan-choice" value="Custom" onchange="onPlanSelectionChanged('Custom')" style="margin-bottom: 6px;">
+                <div style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Custom (Modular)</div>
+                <div style="font-size: 0.78rem; color: #64748b;">A La Carte Modules<br>Itemized Pricing</div>
+                <div style="font-weight: 700; color: #8b5cf6; margin-top: 6px; font-size: 0.88rem;">Calculated Base</div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 2. Flexible Trial Period Settings -->
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 700; color: #1e40af; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+              <span>⏳ Free Trial Period Configuration</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">Trial Duration</label>
+                <select class="form-select" id="sub-trial-duration" onchange="onTrialDurationChanged(this.value)">
+                  <option value="none">No Trial (Standard Billing)</option>
+                  <option value="15">15 Days Free Trial</option>
+                  <option value="30" selected>1 Month (30 Days) Free Trial</option>
+                  <option value="60">2 Months (60 Days) Free Trial</option>
+                  <option value="90">3 Months (90 Days) Free Trial</option>
+                  <option value="custom">Custom Trial Expiry Date</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;" id="box-sub-trial-end">
+                <label class="form-label">Trial Expiry Date</label>
+                <input type="date" class="form-input" id="sub-trial-end-date">
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Per-Tenant Custom Price Overrides -->
+          <div style="background: #fafaf9; border: 1px solid #e7e5e4; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 700; color: #292524; font-size: 0.9rem; margin-bottom: 8px;">
+              💵 Super Admin Custom Price Overrides (For this specific tenant)
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Monthly Base Plan Fee (PKR) *</label>
+                <input type="number" class="form-input" id="sub-custom-base-price" value="14000" min="0" oninput="recalcSubscriptionBillPreview()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Extra Company Surcharge (PKR/mo)</label>
+                <input type="number" class="form-input" id="sub-custom-extra-company" value="2500" min="0" oninput="recalcSubscriptionBillPreview()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Extra Employee Seat (PKR/mo)</label>
+                <input type="number" class="form-input" id="sub-custom-extra-seat" value="1500" min="0" oninput="recalcSubscriptionBillPreview()">
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Modular Catalog (Visible for Custom Plan) -->
+          <div id="sub-modules-selector-container" style="display: none; margin-bottom: 16px;">
+            <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem; margin-bottom: 8px;">
+              📦 Subscribed Modules & Itemized Pricing (A La Carte)
+            </div>
+            <div id="sub-modules-checklist" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+              <!-- Dynamically populated from State.MODULE_CATALOG -->
+            </div>
+          </div>
+
+          <!-- Real-Time Calculated Billing Summary -->
+          <div style="background: #0f172a; color: white; padding: 14px 18px; border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 600;">Calculated Monthly Invoice:</div>
+              <div style="font-size: 0.78rem; color: #cbd5e1;" id="sub-billing-breakdown-text">Base Plan: PKR 14,000 + 0 Extra Co + 0 Extra Seats</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 1.35rem; font-weight: 800; color: #38bdf8;" id="sub-calculated-total-display">PKR 14,000 / mo</div>
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 16px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-configure-subscription')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Subscription & Pricing</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 21. Super Admin Record Payment & Tenant Activation Modal -->
+  <div class="modal-backdrop" id="modal-record-payment">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">💳 Record Payment & Enable Tenant</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-record-payment')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-record-payment" onsubmit="event.preventDefault(); submitRecordPaymentForm();">
+          <input type="hidden" id="pay-tenant-id">
+          
+          <div style="background: #f8fafc; border: 1px solid var(--border); padding: 12px 14px; border-radius: var(--radius-md); margin-bottom: 14px;">
+            <span style="font-size: 0.8rem; color: #64748b;">Tenant Account:</span>
+            <div style="font-size: 1rem; font-weight: 700; color: #0f172a;" id="pay-tenant-name-display">Falcon Enterprises PK</div>
+            <div style="font-size: 0.82rem; color: #059669; font-weight: 600;" id="pay-monthly-fee-display">Monthly Agreed: PKR 14,000</div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Amount Received (PKR) *</label>
+              <input type="number" class="form-input" id="pay-amount-received" required min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Method *</label>
+              <select class="form-select" id="pay-method" required>
+                <option value="Bank Transfer (IBFT)" selected>Bank Transfer (IBFT)</option>
+                <option value="Cheque / Pay Order">Cheque / Pay Order</option>
+                <option value="Online Direct Deposit">Online Direct Deposit</option>
+                <option value="Cash Receipt">Cash Receipt</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Transaction Ref / Slip # *</label>
+              <input type="text" class="form-input" id="pay-reference-no" required placeholder="e.g. HBL-FT-9910294">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Date *</label>
+              <input type="date" class="form-input" id="pay-date" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Extend Subscription Period *</label>
+            <select class="form-select" id="pay-extension-months">
+              <option value="1" selected>+ 1 Month (Next Billing in 30 Days)</option>
+              <option value="3">+ 3 Months (Quarterly Renewal)</option>
+              <option value="6">+ 6 Months (Semi-Annual)</option>
+              <option value="12">+ 12 Months (Annual Pre-Paid)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Payment Remarks / Notes</label>
+            <input type="text" class="form-input" id="pay-remarks" placeholder="e.g. Received via Meezan Bank Gulberg branch">
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 16px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-record-payment')">Cancel</button>
+            <button type="submit" class="primary-btn" style="background: #059669;">✓ Verify Payment & Activate Tenant</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 22. Basic Plan Quota Exceeded Interceptor Modal -->
+  <div class="modal-backdrop" id="modal-quota-upgrade">
+    <div class="modal-card" style="max-width: 480px; text-align: center;">
+      <div class="modal-header" style="justify-content: center; border: none; padding-bottom: 0;">
+        <div style="font-size: 3rem;">⚡</div>
+      </div>
+      <div class="modal-body" style="padding-top: 10px;">
+        <h3 style="font-size: 1.25rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Monthly Limit Reached</h3>
+        <p style="font-size: 0.9rem; color: #64748b; line-height: 1.5; margin-bottom: 18px;">
+          You have reached the limit of <strong>10 Tenders / Quotes</strong> included in your <strong>Basic Plan</strong> this month.
+        </p>
+
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; text-align: left; margin-bottom: 18px;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px;">🚀 Upgrade to Advance Plan for:</div>
+          <ul style="font-size: 0.85rem; color: #475569; padding-left: 20px; line-height: 1.6;">
+            <li><strong>Unlimited</strong> commercial tenders & quotations</li>
+            <li><strong>2 Free</strong> company profiles included</li>
+            <li><strong>3 Free</strong> employee accounts & access control</li>
+            <li>Full FBR PRAL Digital Invoicing integration</li>
+          </ul>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button type="button" class="secondary-btn" onclick="closeModal('modal-quota-upgrade')">Close</button>
+          <button type="button" class="primary-btn" onclick="requestPlanUpgradeFromModal()">Request Advance Upgrade</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 23. User Profile Modal -->
+  <div class="modal-backdrop" id="modal-user-profile">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">👤 User Profile & Account Details</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-user-profile')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; padding:16px; background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-md);">
+          <div class="user-chip-avatar" id="modal-profile-avatar" style="width:54px; height:54px; font-size:1.3rem;">MN</div>
+          <div>
+            <div style="font-size:1.15rem; font-weight:800; color:#0f172a;" id="modal-profile-fullname">Muhammad Naeem Khan</div>
+            <div style="font-size:0.85rem; color:#64748b;" id="modal-profile-email">naeem@mashrue.com</div>
+            <div style="margin-top:4px;">
+              <span class="user-dropdown-header-role" id="modal-profile-role-badge">Super Admin</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:14px;">
+          <div>
+            <label class="form-label" style="color:#64748b;">Username</label>
+            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-username">naeem4it</div>
+          </div>
+          <div>
+            <label class="form-label" style="color:#64748b;">Organization / Tenant</label>
+            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-tenant">Mashrue System</div>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:14px;">
+          <div>
+            <label class="form-label" style="color:#64748b;">Account Status</label>
+            <div><span class="badge badge-won" id="modal-profile-status">Active</span></div>
+          </div>
+          <div>
+            <label class="form-label" style="color:#64748b;">Bidding Price Masking</label>
+            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-price-access">🔓 Unmasked (Full Visibility)</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+          <label class="form-label" style="font-weight:700; margin-bottom:6px;">📋 Assigned Role & System Permissions</label>
+          <div id="modal-profile-permissions-summary" style="font-size:0.82rem; color:#475569; background:#f1f5f9; padding:10px 14px; border-radius:var(--radius-sm); line-height:1.6;">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button type="button" class="danger-btn" style="padding: 7px 14px; font-size: 0.84rem; display: flex; align-items: center; gap: 6px;" onclick="closeModal('modal-user-profile'); handleUserLogout();">
+          🚪 Sign Out / Logout
+        </button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="secondary-btn" onclick="closeModal('modal-user-profile')">Close</button>
+          <button type="button" class="primary-btn" onclick="closeModal('modal-user-profile'); openChangePasswordModal();">🔑 Change Password</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 24. Change Password Modal -->
+  <div class="modal-backdrop" id="modal-change-password">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🔑 Change Password</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-change-password')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.86rem; color: #64748b; margin-bottom: 16px;">
+          Update your login password. Must be at least 6 characters.
+        </p>
+        <div class="login-error-box" id="user-change-password-error-msg"></div>
+        <form id="form-user-change-password" onsubmit="event.preventDefault(); submitUserChangePasswordForm();">
+          <div class="form-group">
+            <label class="form-label">New Password *</label>
+            <input type="password" class="form-input" id="user-new-password" required minlength="6" placeholder="Enter new strong password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password *</label>
+            <input type="password" class="form-input" id="user-confirm-password" required minlength="6" placeholder="Re-enter new password">
+          </div>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 18px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-change-password')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Update Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enterprise Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- JavaScript Modules -->
+  <script src="js/api.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
