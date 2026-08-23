@@ -1644,3 +1644,189 @@ body {
   }
 }
 
+/* ==========================================================================
+   Real-Time Loss, Negative Margin & Selling vs Landed Cost Indicators
+   ========================================================================== */
+.loss-text {
+  color: #dc2626 !important;
+  font-weight: 700 !important;
+}
+
+.loss-row {
+  background-color: #fef2f2 !important;
+}
+
+.loss-row td {
+  background-color: #fef2f2 !important;
+}
+
+.badge-loss {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #f87171 !important;
+  font-weight: 700 !important;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+}
+
+.loss-alert-box {
+  background: #fef2f2;
+  border: 1px solid #f87171;
+  color: #991b1b;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.1);
+  animation: pulseLoss 2s infinite ease-in-out;
+}
+
+@keyframes pulseLoss {
+  0%, 100% { border-color: #f87171; }
+  50% { border-color: #dc2626; box-shadow: 0 0 8px rgba(220, 38, 38, 0.25); }
+}
+
+/* ==========================================================================
+   A4 LETTERHEAD & PRINT STYLING (DELIVERY CHALLAN & OFFICIAL DOCUMENTS)
+   ========================================================================== */
+.a4-letterhead-container {
+  width: 210mm;
+  min-height: 285mm;
+  padding: 18mm 16mm;
+  margin: 0 auto;
+  background: white;
+  color: #0f172a;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
+  position: relative;
+}
+
+.lh-header-block {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 3px solid #0f172a;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.lh-company-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+.lh-company-meta {
+  font-size: 11px;
+  color: #475569;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.lh-doc-badge {
+  text-align: right;
+}
+
+.lh-doc-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.lh-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.lh-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  font-size: 12px;
+}
+
+.lh-table th {
+  background: #0f172a;
+  color: white;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 11.5px;
+  text-transform: uppercase;
+}
+
+.lh-table td {
+  border: 1px solid #cbd5e1;
+  padding: 8px 10px;
+}
+
+.lh-sign-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-top: 30px;
+  padding-top: 10px;
+}
+
+.lh-sign-box {
+  border-top: 1.5px dashed #475569;
+  text-align: center;
+  padding-top: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #334155;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #modal-print-dc, #modal-print-dc .modal-backdrop, #modal-print-dc .modal-card, #modal-print-dc .modal-body, #dc-printable-area, #dc-printable-area * {
+    visibility: visible;
+  }
+  #modal-print-dc {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white !important;
+  }
+  #modal-print-dc .modal-header, #modal-print-dc .modal-close-btn {
+    display: none !important;
+  }
+  .a4-letterhead-container {
+    width: 100% !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+}
+
+

@@ -257,23 +257,25 @@
        ========================================================================= -->
 
   <!-- 1. Add New Tender / Opportunity Modal (with item auto-population & quick add customer) -->
+  <!-- 1. Add New Tender / Opportunity Modal (with dynamic multi-item builder, currency & PPRA updates) -->
   <div class="modal-backdrop" id="modal-add-tender">
-    <div class="modal-card modal-lg">
+    <div class="modal-card modal-lg" style="max-width: 900px;">
       <div class="modal-header">
         <h2 style="font-size: 1.15rem; font-weight: 700;">📑 Register New Tender / Opportunity</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-tender')">&times;</button>
       </div>
       <div class="modal-body">
-        <form id="form-add-tender">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Tender Name (String) *</label>
+        <form id="form-add-tender" onsubmit="event.preventDefault(); submitNewTenderForm();">
+          <div class="form-row-3">
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">Tender / Project Name *</label>
               <input type="text" class="form-input" id="tender-name" required placeholder="e.g. Substation 132kV Expansion Project">
             </div>
             <div class="form-group">
               <label class="form-label">Tender Source *</label>
               <select class="form-select" id="tender-source" required>
-                <option value="PPRA" selected>PPRA (Federal / Punjab / Sindh / KPK)</option>
+                <option value="PPRA (Federal)" selected>PPRA (Federal)</option>
+                <option value="PPRA (Punjab)">PPRA (Punjab)</option>
                 <option value="DGP">DGP (Directorate General of Procurement)</option>
                 <option value="RFQ">RFQ (Request for Quotation)</option>
                 <option value="LPQ">LPQ (Local Purchase Quotation)</option>
@@ -283,14 +285,26 @@
             </div>
           </div>
 
-          <div class="form-row">
+          <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Internal Opportunity #</label>
-              <input type="text" class="form-input" id="tender-opp-no" placeholder="Auto-generated if blank (e.g. TND-2026-9912)">
+              <input type="text" class="form-input" id="tender-opp-no" placeholder="Auto (e.g. TND-2026-9912)">
             </div>
             <div class="form-group">
-              <label class="form-label">External Tender / RFQ Reference #</label>
+              <label class="form-label">External Tender / RFQ Ref #</label>
               <input type="text" class="form-input" id="tender-ext-no" placeholder="e.g. WAPDA-PROC-2026-09">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bidding Currency *</label>
+              <select class="form-select" id="tender-currency" onchange="updateTenderCurrencyLabels(this.value)">
+                <option value="PKR" selected>PKR - Pakistani Rupee</option>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
+                <option value="GBP">GBP - British Pound</option>
+                <option value="AED">AED - UAE Dirham</option>
+                <option value="SAR">SAR - Saudi Riyal</option>
+                <option value="CNY">CNY - Chinese Yuan</option>
+              </select>
             </div>
           </div>
 
@@ -317,57 +331,98 @@
             </div>
           </div>
 
-          <div class="form-row-3">
-            <div class="form-group">
-              <label class="form-label">Estimated Value (PKR) *</label>
-              <input type="number" class="form-input" id="tender-est-value" required placeholder="e.g. 14500000">
+          <!-- Dynamic Multi-Item Specification Section -->
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--primary); margin:0;">📦 Tender Line Items (Multiple Items Supported)</h4>
+                <span class="admin-price-tag" title="Quantity and Price visible only to Company Admin">🔒 Admin Price Protected</span>
+              </div>
+              <button type="button" class="secondary-btn" style="padding:3px 9px; font-size:0.78rem; background:white;" onclick="addTenderItemRow()">+ Add Item Row</button>
             </div>
-            <div class="form-group">
-              <label class="form-label">Submission Deadline *</label>
-              <input type="datetime-local" class="form-input" id="tender-closing-date" required>
+
+            <!-- Price warning alert placeholder -->
+            <div id="tender-price-warning" class="loss-alert-box" style="display:none; padding:10px 14px; margin-bottom:10px;">
+              ⚠️ <span id="tender-price-warning-msg">Loss Alert: One or more scope items have a Selling Price lower than the Landed Cost! Negative margin detected.</span>
             </div>
-            <div class="form-group">
-              <label class="form-label">Tender Opening Date</label>
-              <input type="datetime-local" class="form-input" id="tender-opening-date">
+
+            <div class="table-responsive" style="max-height: 220px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: white;">
+              <table class="data-table" style="font-size:0.82rem; margin:0;" id="tender-items-table">
+                <thead>
+                  <tr style="background:#f1f5f9;">
+                    <th style="min-width: 150px;">Item / Catalog SKU</th>
+                    <th style="min-width: 160px;">Description *</th>
+                    <th style="width: 80px;">Qty *</th>
+                    <th style="width: 100px;">Unit</th>
+                    <th style="width: 120px;">Unit Price (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 120px;">Total (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 36px; text-align:center;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="tender-items-tbody">
+                  <!-- Dynamic item rows injected here -->
+                </tbody>
+              </table>
+            </div>
+            <datalist id="uom-datalist">
+              <option value="PCS">
+              <option value="SET">
+              <option value="LOT">
+              <option value="MTR">
+              <option value="KG">
+              <option value="LTR">
+              <option value="PKT">
+              <option value="BOX">
+              <option value="JOB">
+              <option value="SQFT">
+              <option value="DOZ">
+              <option value="ROLL">
+              <option value="DRUM">
+              <option value="TON">
+            </datalist>
+          </div>
+
+          <!-- Dynamic GST Tax Controls (Inclusive / Exempt Mutual Exclusion) -->
+          <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+              <div style="display:flex; align-items:center; gap:16px;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:700; color:#334155; cursor:pointer;">
+                  <input type="checkbox" id="tender-gst-inclusive" onchange="handleTenderGSTToggles('inclusive')">
+                  <span>Inclusive GST</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:700; color:#334155; cursor:pointer;">
+                  <input type="checkbox" id="tender-gst-exempt" onchange="handleTenderGSTToggles('exempt')">
+                  <span>Exempt GST</span>
+                </label>
+                <div id="tender-gst-rate-wrapper" style="display:inline-flex; align-items:center; gap:4px;">
+                  <span style="font-size:0.8rem; font-weight:600; color:#475569;">GST Rate:</span>
+                  <input type="number" id="tender-gst-rate" value="18" min="0" max="100" step="0.5" style="width:58px; padding:3px 6px; font-size:0.82rem; font-weight:700;" class="form-input" oninput="recalculateTenderItemsSum()">
+                  <span style="font-size:0.8rem; font-weight:700;">%</span>
+                </div>
+              </div>
+              <div style="display:flex; gap:14px; font-size:0.82rem; align-items:center;">
+                <div><span style="color:#64748b;">Items Subtotal:</span> <strong id="tender-items-subtotal-disp">0</strong></div>
+                <div><span style="color:#64748b;">GST (<span id="tender-gst-rate-disp">18%</span>):</span> <strong id="tender-gst-amount-disp">0</strong></div>
+                <div><span style="color:#64748b;">Estimated Total:</span> <strong id="tender-grand-total-disp" style="color:#0f172a; font-size:0.95rem;">0</strong></div>
+              </div>
             </div>
           </div>
 
-          <!-- Tender Item Auto-Population Section -->
-          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <h4 style="font-size: 0.88rem; font-weight: 700; color: var(--primary);">📦 Auto-Populate Tender Line Items (Catalog)</h4>
-              <span class="admin-price-tag" title="Quantity and Price visible only to Company Admin">🔒 Admin Price Protected</span>
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Total Estimated Value (<span class="currency-label">PKR</span>) *</label>
+              <input type="text" class="form-input" id="tender-est-value" required placeholder="e.g. 14,500,000" oninput="formatCurrencyInput(this)">
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                  <label class="form-label" style="margin-bottom:0;">Select Item from Catalog</label>
-                  <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.75rem; height:auto;" onclick="openQuickAddModal('product', 'tender-item-select')">+ New Item SKU</button>
-                </div>
-                <div class="input-with-action">
-                  <select class="form-select" id="tender-item-select" onchange="autoPopulateTenderItemDetails(this.value)">
-                    <option value="">-- Choose item to auto-fill description & price --</option>
-                  </select>
-                  <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('product', 'tender-item-select')" title="Quick Add Item SKU to Catalog">+</button>
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Item Description</label>
-                <input type="text" class="form-input" id="tender-item-desc" placeholder="Scope / Item Description">
+            <div class="form-group">
+              <label class="form-label">Submission Deadline (DD/MM/YYYY) *</label>
+              <div class="custom-dt-picker-wrapper" style="position:relative;">
+                <input type="text" class="form-input" id="tender-closing-date" required placeholder="DD/MM/YYYY hh:mm A" autocomplete="off">
               </div>
             </div>
-            <div class="form-row-3">
-              <div class="form-group">
-                <label class="form-label">Quantity</label>
-                <input type="number" class="form-input" id="tender-item-qty" value="1" min="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Unit</label>
-                <input type="text" class="form-input" id="tender-item-unit" value="PCS">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Est. Unit Price (Admin Only)</label>
-                <input type="number" class="form-input" id="tender-item-price" placeholder="Cost/Price (PKR)">
+            <div class="form-group">
+              <label class="form-label">Tender Opening Date</label>
+              <div class="custom-dt-picker-wrapper" style="position:relative;">
+                <input type="text" class="form-input" id="tender-opening-date" placeholder="DD/MM/YYYY hh:mm A" autocomplete="off">
               </div>
             </div>
           </div>
@@ -376,18 +431,19 @@
             <label class="form-label">Scope Description & Compliance Requirements</label>
             <textarea class="form-textarea" id="tender-description" rows="2" placeholder="Detail scope, PEC/ISO compliance, warranty, and special conditions..."></textarea>
           </div>
+
+          <div class="modal-footer" style="padding: 10px 0 0; margin-top: 10px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-tender')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Tender Record</button>
+          </div>
         </form>
-      </div>
-      <div class="modal-footer">
-        <button class="secondary-btn" onclick="closeModal('modal-add-tender')">Cancel</button>
-        <button class="primary-btn" onclick="submitNewTenderForm()">💾 Save Tender Record</button>
       </div>
     </div>
   </div>
 
-  <!-- 2. Mandatory Bid Security Modal (Triggered directly after Tender creation) -->
+  <!-- 2. Mandatory Bid Security Modal (With dynamic autocomplete search for tenders missing security) -->
   <div class="modal-backdrop" id="modal-add-bid-security">
-    <div class="modal-card">
+    <div class="modal-card modal-lg" style="max-width: 680px;">
       <div class="modal-header">
         <h2 style="font-size: 1.15rem; font-weight: 700;">🛡️ Mandatory Bid Security Instrument</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-bid-security')">&times;</button>
@@ -396,11 +452,13 @@
         <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); padding:10px 14px; margin-bottom:16px; font-size:0.82rem; color:#1e40af;">
           ℹ️ <strong>Workflow Requirement:</strong> Without an attached Bid Security instrument, this Tender cannot be marked as <em>Ready to Submit</em> or completed.
         </div>
-        <form id="form-add-bid-security">
+        <form id="form-add-bid-security" onsubmit="event.preventDefault(); submitBidSecurityForm();">
           <input type="hidden" id="sec-opportunity-id">
-          <div class="form-group">
-            <label class="form-label">Linked Tender / Opportunity</label>
-            <input type="text" class="form-input" id="sec-opp-title" readonly>
+          
+          <div class="form-group" style="position:relative;">
+            <label class="form-label">Select / Search Tender (Tenders Missing Security) *</label>
+            <input type="text" class="form-input" id="sec-opp-title" required placeholder="Type tender name or ID (e.g. TND-2026-001 or Substation)" autocomplete="off" oninput="handleTenderSecuritySearch(this.value)" onfocus="handleTenderSecuritySearch(this.value)">
+            <div id="sec-opp-suggestions" class="autocomplete-suggestions-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:180px; overflow-y:auto; background:white; border:1px solid var(--border); border-radius:var(--radius-sm); z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
           </div>
 
           <div class="form-row">
@@ -433,12 +491,12 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">5. Amount (PKR) * (Mandatory)</label>
-              <input type="number" class="form-input" id="sec-amount" required placeholder="e.g. 290000">
+              <label class="form-label">5. Amount (<span class="sec-currency-label">PKR</span>) * (Mandatory)</label>
+              <input type="text" class="form-input" id="sec-amount" required placeholder="e.g. 290,000" oninput="formatCurrencyInput(this)">
             </div>
             <div class="form-group">
-              <label class="form-label">6. Expiry Date * (Mandatory)</label>
-              <input type="date" class="form-input" id="sec-expiry-date" required>
+              <label class="form-label">6. Expiry Date (DD/MM/YYYY) * (Mandatory)</label>
+              <input type="text" class="form-input" id="sec-expiry-date" required placeholder="DD/MM/YYYY" autocomplete="off">
             </div>
           </div>
 
@@ -451,13 +509,31 @@
             <label class="form-label">7. Comments / Remarks (Optional)</label>
             <textarea class="form-textarea" id="sec-comments" rows="2" placeholder="e.g. 2% Earnest money submitted against Clause 14"></textarea>
           </div>
+
+          <div class="modal-footer" style="padding: 10px 0 0; margin-top: 10px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-bid-security')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Attach Bid Security</button>
+          </div>
         </form>
       </div>
+    </div>
+  </div>
+
+  <!-- 2B. View / Manage Attached Bid Security Modal -->
+  <div class="modal-backdrop" id="modal-view-bid-security">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🛡️ Attached Bid Security Details</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-view-bid-security')">&times;</button>
+      </div>
+      <div class="modal-body" id="view-bid-security-content">
+        <!-- Injected via openAttachedBidSecurityModal() -->
+      </div>
       <div class="modal-footer">
-        <button class="secondary-btn" onclick="closeModal('modal-add-bid-security')">Cancel</button>
-        <button class="primary-btn" onclick="submitBidSecurityForm()">💾 Attach Bid Security</button>
+        <button type="button" class="secondary-btn" onclick="closeModal('modal-view-bid-security')">Close</button>
       </div>
     </div>
+  </div>
   </div>
 
   <!-- 3. Add New Customer Modal (Comprehensive Master Data) -->
@@ -544,8 +620,8 @@
               <input type="text" class="form-input" id="cust-contact" placeholder="e.g. Engr. Tariq Mahmood (Chief Engineer)">
             </div>
             <div class="form-group">
-              <label class="form-label">Official Phone</label>
-              <input type="text" class="form-input" id="cust-phone" placeholder="042-99202211 / 0300-1234567">
+              <label class="form-label">Official Phone *</label>
+              <input type="tel" class="form-input" id="cust-phone" required placeholder="e.g. +92 300 1234567 / 042-35870011" oninput="formatPhoneNumberInput(this)">
             </div>
             <div class="form-group">
               <label class="form-label">Official Email</label>
@@ -556,17 +632,21 @@
           <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Payment Terms</label>
-              <select class="form-select" id="cust-terms">
+              <select class="form-select" id="cust-terms" onchange="toggleCustomerOtherTerms(this.value)">
                 <option value="Net 30" selected>Net 30 Days</option>
                 <option value="Net 60">Net 60 Days</option>
                 <option value="Against Delivery Challan">Against Delivery Challan (100%)</option>
                 <option value="20% Advance + 80% Inspection">20% Adv + 80% on Inspection</option>
                 <option value="Letter of Credit (LC)">Letter of Credit (LC)</option>
+                <option value="Other">Other Terms</option>
               </select>
+              <div id="cust-other-terms-container" style="display:none; margin-top:8px;">
+                <input type="text" class="form-input" id="cust-other-terms" placeholder="Specify custom payment terms (e.g. 50% Adv, 50% 30-day PDC)">
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">Credit Limit (PKR)</label>
-              <input type="number" class="form-input" id="cust-credit-limit" placeholder="e.g. 50000000" min="0">
+              <input type="text" class="form-input" id="cust-credit-limit" placeholder="e.g. 50,000,000" oninput="formatCurrencyInput(this)">
             </div>
             <div class="form-group">
               <label class="form-label">Account Status</label>
@@ -862,12 +942,17 @@
             </div>
             <div class="form-group">
               <label class="form-label">Est. Landed Cost Price (PKR) *</label>
-              <input type="number" class="form-input" id="prod-cost-pkr" required placeholder="e.g. 6200000" min="0" step="any">
+              <input type="text" class="form-input" id="prod-cost-pkr" required placeholder="e.g. 6,200,000" oninput="formatCurrencyInput(this); checkProductSellingPriceMargin();">
             </div>
             <div class="form-group">
-              <label class="form-label">Benchmark Selling Price (PKR)</label>
-              <input type="number" class="form-input" id="prod-selling-price" placeholder="e.g. 7800000" min="0" step="any">
+              <label class="form-label">Benchmark Selling Price (PKR) *</label>
+              <input type="text" class="form-input" id="prod-selling-price" required placeholder="e.g. 7,800,000" oninput="formatCurrencyInput(this); checkProductSellingPriceMargin();">
             </div>
+          </div>
+
+          <!-- Real-Time Product Loss Alert Banner -->
+          <div id="prod-price-warning" class="loss-alert-box" style="display: none;">
+            ⚠️ <span id="prod-price-warning-msg">Loss Alert: Benchmark Selling Price is lower than Est. Landed Cost Price. Negative margin detected!</span>
           </div>
 
           <div class="form-group">
@@ -897,11 +982,11 @@
           
           <div style="background: #f8fafc; border: 1px solid var(--border); padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-              <span style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Awarded Tender / Project:</span>
-              <div style="font-size: 1rem; font-weight: 700; color: #0f172a;" id="award-opp-title">WAPDA Substation 132kV Project</div>
+              <span style="font-size: 0.78rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Tender Reference & Title:</span>
+              <div style="font-size: 1.05rem; font-weight: 800; color: #0f172a;" id="award-opp-title">TND-2026-001 - WAPDA Substation 132kV Project</div>
             </div>
             <div>
-              <span class="badge badge-won">Status: Won</span>
+              <span class="badge badge-won" style="font-size:0.82rem; padding:4px 8px;">Status: Won / Awarded</span>
             </div>
           </div>
 
@@ -948,7 +1033,7 @@
             </div>
           </div>
 
-          <div class="form-row">
+          <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Total Calculated Award Value (PKR) *</label>
               <input type="number" class="form-input" id="award-amount" required readonly style="font-weight: 700; color: #059669; background: #f0fdf4; font-size: 1.1rem;">
@@ -961,6 +1046,14 @@
                 <option value="2">2% Retention / Security</option>
                 <option value="0">None / No PBG Required</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Stamp Duty (0.25% Default - Editable) <span style="color:#ef4444;">*</span></label>
+              <div style="display:flex; gap:6px;">
+                <input type="number" class="form-input" id="award-stamp-duty-pct" value="0.25" min="0" step="0.01" style="width:75px; font-weight:700;" placeholder="0.25%" oninput="updateAwardStampDutyCalc()">
+                <input type="text" class="form-input" id="award-stamp-duty-amount" style="font-weight:700; color:#dc2626; background:#fef2f2;" placeholder="PKR Amount" oninput="formatCurrencyInput(this)">
+              </div>
+              <span style="font-size:0.72rem; color:#dc2626; font-weight:600;">⚠️ E-Challan required for check clearance</span>
             </div>
           </div>
 
@@ -1056,11 +1149,29 @@
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Total Calculated PO Net Value (PKR) *</label>
-              <input type="number" class="form-input" id="po-total-amount" required readonly style="font-weight: 700; color: #0284c7; background: #f0f9ff; font-size: 1.1rem;">
+          <!-- Dynamic Universal GST on Purchase Orders -->
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 14px;">
+            <div class="form-row-3" style="margin-bottom:0; align-items:flex-end;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:0.8rem; color:#64748b;">Items Net Subtotal (PKR)</label>
+                <input type="text" class="form-input" id="po-subtotal-amount" readonly style="font-weight:600; background:#f1f5f9;">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:0.8rem; color:#64748b;">Sales Tax / GST Rate</label>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <input type="number" class="form-input" id="po-gst-rate" value="18" min="0" max="100" step="0.5" style="width:75px; font-weight:700;" oninput="updatePOAllocationTotal()">
+                  <span style="font-weight:700; font-size:0.85rem;">%</span>
+                  <input type="text" class="form-input" id="po-gst-amount" readonly style="font-weight:600; background:#f1f5f9;" placeholder="GST PKR">
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:0.8rem; color:#0284c7; font-weight:700;">Grand PO Value (Inc. GST) *</label>
+                <input type="text" class="form-input" id="po-total-amount" required readonly style="font-weight: 800; color: #0284c7; background: #f0f9ff; font-size: 1.15rem;">
+              </div>
             </div>
+          </div>
+
+          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Payment Terms for this PO</label>
               <select class="form-select" id="po-payment-terms">
@@ -1070,11 +1181,10 @@
                 <option value="90% Delivery + 10% PBG Release">90% Delivery + 10% PBG Release</option>
               </select>
             </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">PO Remarks & Delivery Instructions</label>
-            <textarea class="form-textarea" id="po-remarks" rows="2" placeholder="e.g. Delivery Lot 1 of 4. Requires prior 48-hour delivery intimation to site in-charge."></textarea>
+            <div class="form-group">
+              <label class="form-label">PO Remarks & Delivery Instructions</label>
+              <textarea class="form-textarea" id="po-remarks" rows="1" placeholder="e.g. Delivery Lot 1 of 4. Requires prior 48-hour delivery intimation..."></textarea>
+            </div>
           </div>
 
           <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
@@ -1082,6 +1192,70 @@
             <button type="submit" class="primary-btn">💾 Issue Purchase Order</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5C. Record Stamp Duty E-Challan Payment Modal -->
+  <div class="modal-backdrop" id="modal-record-stamp-duty">
+    <div class="modal-card modal-md" style="max-width: 540px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">📜 Record Stamp Duty Payment (0.25%)</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-record-stamp-duty')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:var(--radius-md); padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#991b1b;">
+          ⚠️ <strong>Public Sector Payment Prerequisite:</strong> Treasury & AGPR disbursement requires official stamp duty payment challan verification.
+        </div>
+        <form id="form-record-stamp-duty" onsubmit="event.preventDefault(); submitStampDutyPayment();">
+          <input type="hidden" id="sd-award-id">
+          <div class="form-group">
+            <label class="form-label">Linked Contract / LOA #</label>
+            <input type="text" class="form-input" id="sd-award-no" readonly style="background:#f8fafc; font-weight:700;">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">E-Challan / 32-A Challan # *</label>
+              <input type="text" class="form-input" id="sd-challan-no" required placeholder="e.g. CHN-PB-2026-98129">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Date *</label>
+              <input type="date" class="form-input" id="sd-paid-date" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Stamp Duty Amount Paid (PKR) *</label>
+              <input type="text" class="form-input" id="sd-amount" required style="font-weight:700; color:#059669;" oninput="formatCurrencyInput(this)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Deposit Bank / Treasury Office *</label>
+              <input type="text" class="form-input" id="sd-bank" required value="National Bank of Pakistan (NBP) Treasury">
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 12px 0 0; margin-top: 12px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-record-stamp-duty')">Cancel</button>
+            <button type="submit" class="primary-btn" style="background:#059669;">✓ Confirm Stamp Duty Paid</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5D. Printable A4 Delivery Challan (Official Company Letterhead) Modal -->
+  <div class="modal-backdrop" id="modal-print-dc">
+    <div class="modal-card modal-lg" style="max-width: 900px; max-height: 92vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="background: #1e293b; color: white;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: white;">🖨️ Delivery Challan (Official A4 Letterhead Format)</h2>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="primary-btn" style="background:#059669; padding:4px 12px; font-size:0.82rem;" onclick="executeDCPrint()">🖨️ Print / Export PDF</button>
+          <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-print-dc')">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y:auto; padding:20px; background:#e2e8f0;">
+        <div id="dc-printable-area" class="a4-letterhead-container">
+          <!-- Injected dynamically by printDeliveryChallan(dcId) -->
+        </div>
       </div>
     </div>
   </div>
@@ -1567,7 +1741,7 @@
 
   <!-- 10. Add New Company / Profile Modal (Multi-Company 2 Free limit) -->
   <div class="modal-backdrop" id="modal-add-company">
-    <div class="modal-card">
+    <div class="modal-card modal-lg" style="max-width: 680px;">
       <div class="modal-header">
         <h2 style="font-size: 1.15rem; font-weight: 700;">🏢 Configure Company / Business Profile</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-company')">&times;</button>
@@ -1578,43 +1752,61 @@
             <strong>Tier Limit Notice:</strong> Up to 2 companies can be configured for free. Additional profiles incur PKR 2,500/month.
           </div>
         </div>
-        <form id="form-add-company">
-          <div class="form-group">
-            <label class="form-label">Business Display Name *</label>
-            <input type="text" class="form-input" id="comp-name" required placeholder="e.g. Clifton Global Logistics">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Legal Name *</label>
-            <input type="text" class="form-input" id="comp-legal" required placeholder="e.g. Clifton Global Logistics (Pvt) Limited">
-          </div>
+        <form id="form-add-company" onsubmit="event.preventDefault(); submitNewCompanyForm();">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">National Tax Number (NTN)</label>
-              <input type="text" class="form-input" id="comp-ntn" placeholder="e.g. 551920-8">
+              <label class="form-label">Business Display Name * (Mandatory)</label>
+              <input type="text" class="form-input" id="comp-name" required placeholder="e.g. Clifton Global Logistics">
             </div>
             <div class="form-group">
-              <label class="form-label">City</label>
+              <label class="form-label">Company Abbreviation / Short Code</label>
+              <input type="text" class="form-input" id="comp-abbrev" placeholder="e.g. CGL, ABC" maxlength="10">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Legal Entity Name * (Mandatory)</label>
+            <input type="text" class="form-input" id="comp-legal" required placeholder="e.g. Clifton Global Logistics (Pvt) Limited">
+          </div>
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">National Tax Number (NTN) * (Numeric)</label>
+              <input type="text" class="form-input" id="comp-ntn" required pattern="[0-9]+" placeholder="e.g. 5519208" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sales Tax Registration (STRN) * (Numeric)</label>
+              <input type="text" class="form-input" id="comp-strn" required pattern="[0-9]+" placeholder="e.g. 327787612345" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Operating City</label>
               <input type="text" class="form-input" id="comp-city" value="Lahore">
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
+              <label class="form-label">Official Email (Restricted Format) *</label>
+              <div class="input-with-action">
+                <input type="email" class="form-input" id="comp-email" required placeholder="admin@clifton.pk">
+                <button type="button" class="secondary-btn" style="white-space:nowrap; padding:4px 10px; font-size:0.75rem;" onclick="sendEmailVerificationLink('comp-email')">📧 Send Link</button>
+              </div>
+              <span id="comp-email-verify-status" style="font-size:0.75rem; color:#10b981; display:none; margin-top:3px;"></span>
+            </div>
+            <div class="form-group">
               <label class="form-label">Invoice Prefix</label>
               <input type="text" class="form-input" id="comp-inv-prefix" value="INV-CGL">
             </div>
-            <div class="form-group">
-              <label class="form-label">Enable FBR PRAL Gateway</label>
-              <select class="form-select" id="comp-fbr">
-                <option value="true" selected>Yes (Active)</option>
-                <option value="false">No (Skip FBR)</option>
-              </select>
-            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Enable FBR PRAL Gateway</label>
+            <select class="form-select" id="comp-fbr">
+              <option value="true" selected>Yes (Active)</option>
+              <option value="false">No (Skip FBR)</option>
+            </select>
+          </div>
+          <div class="modal-footer" style="padding:10px 0 0; margin-top:10px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-company')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Business Profile</button>
           </div>
         </form>
-      </div>
-      <div class="modal-footer">
-        <button class="secondary-btn" onclick="closeModal('modal-add-company')">Cancel</button>
-        <button class="primary-btn" onclick="submitNewCompanyForm()">💾 Save Business Profile</button>
       </div>
     </div>
   </div>
@@ -1733,24 +1925,28 @@
           </p>
         </div>
         <form id="form-onboard-company" onsubmit="event.preventDefault(); submitOnboardCompanyForm();">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Business Display Name *</label>
+          <div class="form-row-3">
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">Business Display Name * (Mandatory)</label>
               <input type="text" class="form-input" id="onboard-comp-name" required placeholder="e.g. Clifton Engineering Pvt Ltd">
             </div>
             <div class="form-group">
-              <label class="form-label">Full Legal Name *</label>
-              <input type="text" class="form-input" id="onboard-comp-legal" required placeholder="e.g. Clifton Engineering Private Limited">
+              <label class="form-label">Abbreviation / Short Code</label>
+              <input type="text" class="form-input" id="onboard-comp-abbrev" placeholder="e.g. CE, CLG" maxlength="10">
             </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Full Legal Entity Name * (Mandatory)</label>
+            <input type="text" class="form-input" id="onboard-comp-legal" required placeholder="e.g. Clifton Engineering Private Limited">
           </div>
           <div class="form-row-3">
             <div class="form-group">
-              <label class="form-label">National Tax # (NTN)</label>
-              <input type="text" class="form-input" id="onboard-comp-ntn" placeholder="e.g. 492019-1">
+              <label class="form-label">National Tax # (NTN) * (Numeric)</label>
+              <input type="text" class="form-input" id="onboard-comp-ntn" required pattern="[0-9]+" placeholder="e.g. 4920191" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
             </div>
             <div class="form-group">
-              <label class="form-label">Sales Tax # (STRN)</label>
-              <input type="text" class="form-input" id="onboard-comp-strn" placeholder="e.g. STRN-492019">
+              <label class="form-label">Sales Tax # (STRN) * (Numeric)</label>
+              <input type="text" class="form-input" id="onboard-comp-strn" required pattern="[0-9]+" placeholder="e.g. 327787612345" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
             </div>
             <div class="form-group">
               <label class="form-label">Operating City</label>
@@ -1759,12 +1955,16 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Invoice Prefix</label>
-              <input type="text" class="form-input" id="onboard-comp-prefix" value="INV-CE" placeholder="e.g. INV-CE">
+              <label class="form-label">Official Email (Restricted Format) *</label>
+              <div class="input-with-action">
+                <input type="email" class="form-input" id="onboard-comp-email" required placeholder="contact@company.pk">
+                <button type="button" class="secondary-btn" style="white-space:nowrap; padding:4px 10px; font-size:0.75rem;" onclick="sendEmailVerificationLink('onboard-comp-email')">📧 Send Link</button>
+              </div>
+              <span id="onboard-comp-email-verify-status" style="font-size:0.75rem; color:#10b981; display:none; margin-top:3px;"></span>
             </div>
             <div class="form-group">
-              <label class="form-label">Official Email</label>
-              <input type="email" class="form-input" id="onboard-comp-email" placeholder="contact@company.pk">
+              <label class="form-label">Invoice Prefix</label>
+              <input type="text" class="form-input" id="onboard-comp-prefix" value="INV-CE" placeholder="e.g. INV-CE">
             </div>
           </div>
           <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-top: 10px;">
@@ -2396,8 +2596,8 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=2.2"></script>
-  <script src="js/state.js?v=2.2"></script>
-  <script src="js/app.js?v=2.2"></script>
+  <script src="js/api.js?v=2.9"></script>
+  <script src="js/state.js?v=2.9"></script>
+  <script src="js/app.js?v=2.9"></script>
 </body>
 </html>

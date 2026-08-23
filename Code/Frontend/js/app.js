@@ -33,6 +33,101 @@ function showToast(message, type = 'info', duration = 4000) {
   }, duration);
 }
 
+// Universal Currency & Formatting Helpers
+function formatCurrency(amount, currency = 'PKR') {
+  const num = parseFloat(amount || 0);
+  const formatted = isNaN(num) ? '0' : num.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const curr = currency || 'PKR';
+  if (curr === 'USD') return `$ ${formatted}`;
+  if (curr === 'EUR') return `€ ${formatted}`;
+  if (curr === 'GBP') return `£ ${formatted}`;
+  return `${curr} ${formatted}`;
+}
+
+function parseCurrency(val) {
+  if (typeof val === 'number') return val;
+  if (!val) return 0;
+  const clean = String(val).replace(/[^0-9.-]/g, '');
+  return parseFloat(clean) || 0;
+}
+
+function formatCurrencyInput(el) {
+  if (!el) return;
+  const raw = el.value.replace(/[^0-9.]/g, '');
+  if (!raw) return;
+  const parts = raw.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  el.value = parts.join('.');
+}
+
+function formatPhoneNumberInput(el) {
+  if (!el) return;
+  let val = el.value.replace(/[^\d+]/g, '');
+  if (val.startsWith('03') && val.length > 4) {
+    val = val.slice(0, 4) + '-' + val.slice(4, 11);
+  } else if (val.startsWith('+923') && val.length > 5) {
+    val = val.slice(0, 5) + ' ' + val.slice(5, 12);
+  }
+  el.value = val;
+}
+
+function formatDateDDMMYYYY(dateStr) {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+function formatDateTimeDDMMYYYY(dateStr) {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${day}/${month}/${year} ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+function sendEmailVerificationLink(inputId) {
+  const emailInput = document.getElementById(inputId);
+  if (!emailInput || !emailInput.value || !emailInput.checkValidity()) {
+    alert('Please enter a valid official email address first.');
+    return;
+  }
+  const email = emailInput.value.trim();
+  const statusEl = document.getElementById(`${inputId}-verify-status`);
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.innerText = `✓ Verification link sent to ${email}. Check inbox to verify.`;
+  }
+  showToast(`Verification link sent to ${email}`, 'success');
+}
+
+function toggleCustomerOtherTerms(val) {
+  const container = document.getElementById('cust-other-terms-container');
+  if (container) {
+    container.style.display = (val === 'Other') ? 'block' : 'none';
+    if (val === 'Other') {
+      document.getElementById('cust-other-terms')?.focus();
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await initApp();
 });
@@ -657,7 +752,7 @@ async function renderActiveView() {
     case 'costing':
       viewTitle.innerText = 'Interactive Bid Costing & Estimation Engine';
       viewSubtitle.innerText = 'Live itemized pricing, direct costs, markup %, and margin calculation';
-      contentArea.innerHTML = renderCostingCalculatorHTML();
+      contentArea.innerHTML = await renderCostingCalculatorHTML();
       setupCostingCalculator();
       break;
 
@@ -895,8 +990,8 @@ async function renderDashboardHTML() {
                 </td>
                 <td>
                   ${o.active_bid_securities_count > 0 
-                    ? `<span class="badge badge-active">🛡️ Attached</span>` 
-                    : `<span class="badge badge-loose" title="Mandatory before submission">⚠️ Missing</span>`}
+                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
+                    : `<button type="button" class="danger-btn" style="padding:3px 8px; font-size:0.75rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
                 </td>
                 <td><span class="badge badge-${(o.status || 'new').toLowerCase().replace(/\s+/g, '')}">${o.status}</span></td>
                 <td>
@@ -916,13 +1011,14 @@ async function renderDashboardHTML() {
 // --------------------------------------------------------------------------
 async function renderOpportunitiesHTML() {
   const opps = await API.getOpportunities(State.currentBusinessProfileId);
-  const isAdmin = State.currentUser.role === 'CompanyAdmin';
+  const isAdmin = State.currentUser?.role === 'CompanyAdmin' || State.isClientAdmin();
 
   return `
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="tab-btn active" onclick="filterTendersBySource('all', this)">All Sources</button>
-        <button class="tab-btn" onclick="filterTendersBySource('PPRA', this)">PPRA</button>
+        <button class="tab-btn" onclick="filterTendersBySource('PPRA (Federal)', this)">PPRA (Federal)</button>
+        <button class="tab-btn" onclick="filterTendersBySource('PPRA (Punjab)', this)">PPRA (Punjab)</button>
         <button class="tab-btn" onclick="filterTendersBySource('DGP', this)">DGP</button>
         <button class="tab-btn" onclick="filterTendersBySource('RFQ', this)">RFQ</button>
         <button class="tab-btn" onclick="filterTendersBySource('LPQ', this)">LPQ</button>
@@ -961,31 +1057,31 @@ async function renderOpportunitiesHTML() {
                 </td>
               </tr>
             ` : opps.map(o => `
-              <tr data-source="${o.tender_source || 'PPRA'}">
+              <tr data-source="${o.tender_source || 'PPRA (Federal)'}">
                 <td>
                   <strong>${o.tender_name || o.title}</strong><br>
-                  <span style="font-size:0.75rem; color:var(--text-muted);">${o.opportunity_number} ${o.external_tender_number ? `(${o.external_tender_number})` : ''}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted);">${o.opportunity_number || ''} ${o.external_tender_number ? `(${o.external_tender_number})` : ''}</span>
                 </td>
-                <td><span class="pill-source">${o.tender_source || 'PPRA'}</span></td>
+                <td><span class="pill-source">${o.tender_source || 'PPRA (Federal)'}</span></td>
                 <td>
                   <strong>${o.customer_name || 'N/A'}</strong><br>
                   <span style="font-size:0.72rem; color:var(--text-muted);">${o.customer_org_type || 'Government'}</span>
                 </td>
-                <td>${o.closing_date ? new Date(o.closing_date).toLocaleDateString() : 'Open'}</td>
+                <td>${formatDateDDMMYYYY(o.closing_date)}</td>
                 <td class="amount-cell">
                   ${State.canSeeBiddingPrices() 
-                    ? `<strong>PKR ${parseFloat(o.estimated_value || 0).toLocaleString()}</strong>` 
+                    ? `<strong>${formatCurrency(o.estimated_value, o.currency || 'PKR')}</strong>` 
                     : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
                 </td>
                 <td>
                   ${o.active_bid_securities_count > 0 
-                    ? `<span class="badge badge-active">🛡️ Attached</span>` 
-                    : `<button class="danger-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}')">+ Attach Security</button>`}
+                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
+                    : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
                 </td>
                 <td><span class="badge badge-${(o.status || 'new').toLowerCase().replace(/\s+/g, '')}">${o.status}</span></td>
                 <td>
                   <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
-                    <!-- 360 Cockpit Action -->
+                    <!-- 360 Cockpit Action / Manage -->
                     <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#0f172a; color:#ffffff; font-weight:700; border-color:#1e293b;" onclick="openTender360Cockpit('${o.id}')" title="Open Full 360 Project Cockpit">
                       🌐 360° Cockpit
                     </button>
@@ -1026,30 +1122,25 @@ function filterTendersBySource(source, btnEl) {
 
   const rows = document.querySelectorAll('#tenders-table tbody tr');
   rows.forEach(r => {
-    if (source === 'all' || r.dataset.source.toUpperCase() === source.toUpperCase()) {
+    if (source === 'all') {
       r.style.display = '';
     } else {
-      r.style.display = 'none';
+      const rowSrc = (r.getAttribute('data-source') || '').toLowerCase();
+      const targetSrc = source.toLowerCase();
+      r.style.display = (rowSrc === targetSrc || rowSrc.includes(targetSrc)) ? '' : 'none';
     }
   });
 }
 
 async function handleBidSubmission(oppId) {
-  const curProf = State.getCurrentBusinessProfile();
-  if (curProf && !curProf.fbr_enabled) {
-    const warnEl = document.getElementById('fbr-warning-text');
-    if (warnEl) {
-      warnEl.innerText = `FBR Digital Invoicing integration credentials are not configured for '${curProf.business_name}'. Would you like to configure your FBR PRAL Gateway now or proceed with internal quotation submission?`;
-    }
-    openModal('modal-fbr-warning');
-    return;
-  }
-
   try {
-    if (API.submitBid) {
-      await API.submitBid(oppId);
+    const res = await API.submitBid(oppId);
+    if (res && res.success === false && res.message) {
+      alert(`⚠️ ${res.message}`);
+      return;
     }
-    alert('🚀 Bid / Quotation submitted successfully!');
+    showToast('🚀 Bid submitted successfully! Forwarded to Bid Approvals.', 'success');
+    alert('🚀 Bid / Quotation submitted successfully! Status changed to Submitted.');
     await renderActiveView();
   } catch (err) {
     alert(`Submission notice: ${err.message}`);
@@ -1058,8 +1149,8 @@ async function handleBidSubmission(oppId) {
 
 async function handleTenderSelection(oppId, status) {
   try {
-    if (API.selectTender) {
-      await API.selectTender(oppId, status);
+    if (API.selectOpportunity) {
+      await API.selectOpportunity(oppId, status, 'Selected for submission');
     }
     alert(`✓ Tender marked as ${status}.`);
     await renderActiveView();
@@ -1190,6 +1281,7 @@ async function renderAwardsHTML() {
               <th>Won Tender & Customer</th>
               <th>Awarded Amount (PKR)</th>
               <th>Item-Level Breakdown</th>
+              <th>Stamp Duty (0.25%)</th>
               <th>Acceptance & Deadline</th>
               <th>Status</th>
               <th>Workflow Actions</th>
@@ -1198,7 +1290,7 @@ async function renderAwardsHTML() {
           <tbody>
             ${awards.length === 0 ? `
               <tr>
-                <td colspan="7" style="text-align:center; padding:36px 20px; color:#64748b;">
+                <td colspan="8" style="text-align:center; padding:36px 20px; color:#64748b;">
                   🏆 <strong>No Award Letters recorded yet.</strong><br>
                   <span style="font-size:0.85rem;">When a tender or quotation is Won, record the official Letter of Award (LOA) with partial/full item quantities.</span>
                 </td>
@@ -1207,6 +1299,8 @@ async function renderAwardsHTML() {
               const childPOs = pos.filter(p => p.award_letter_id === a.id || p.opportunity_id === a.opportunity_id);
               const itemsCount = (a.items && a.items.length) ? a.items.length : 1;
               const awardedItemsCount = (a.items && a.items.length) ? a.items.filter(i => i.is_awarded !== false).length : 1;
+              const stampDutyAmt = parseFloat(a.stamp_duty_amount) || Math.round((parseFloat(a.award_amount) || 0) * (parseFloat(a.stamp_duty_pct || 0.25) / 100));
+              const isSdPaid = (a.stamp_duty_status === 'Paid');
 
               return `
                 <tr>
@@ -1215,8 +1309,8 @@ async function renderAwardsHTML() {
                     <span style="font-size:0.75rem; color:var(--text-muted);">${a.award_date}</span>
                   </td>
                   <td>
-                    <strong>${a.tender_name || a.opportunity_number || 'Won Project'}</strong><br>
-                    <span style="font-size:0.78rem; color:#475569;">${a.customer_name || 'Government Department'}</span>
+                    <strong>${a.opportunity_number ? `<span style="color:var(--primary); font-family:monospace;">[${a.opportunity_number}]</span> ` : ''}${a.tender_name || 'Won Project'}</strong><br>
+                    <span style="font-size:0.78rem; color:#475569;">${a.customer_name || 'Government Client'}</span>
                   </td>
                   <td>
                     <strong style="color:#059669; font-size:0.95rem;">PKR ${parseFloat(a.award_amount).toLocaleString()}</strong>
@@ -1226,6 +1320,15 @@ async function renderAwardsHTML() {
                       ${awardedItemsCount} of ${itemsCount} Item(s) Awarded
                     </span><br>
                     <span style="font-size:0.75rem; color:var(--text-muted);">${childPOs.length} Child PO(s) generated</span>
+                  </td>
+                  <td>
+                    ${isSdPaid ? `
+                      <span class="badge badge-won" style="font-size:0.75rem;">✓ Paid (Challan: ${a.stamp_duty_challan_no || 'Verified'})</span>
+                    ` : `
+                      <span class="badge badge-loss" style="font-size:0.75rem; cursor:pointer;" onclick="openStampDutyModal('${a.id}', '${a.award_number}', ${stampDutyAmt})" title="Click to Record Stamp Duty E-Challan">
+                        ⚠️ Unpaid: PKR ${stampDutyAmt.toLocaleString()} (+ Pay)
+                      </span>
+                    `}
                   </td>
                   <td>
                     <span style="font-size:0.82rem;">
@@ -1396,6 +1499,10 @@ async function renderPurchaseOrdersHTML() {
                   </td>
                   <td>
                     <strong style="color:#0284c7; font-size:0.95rem;">PKR ${parseFloat(po.net_amount || po.total_amount || 0).toLocaleString()}</strong>
+                    <div style="font-size:0.72rem; color:#64748b; margin-top:2px;">
+                      Subtotal: PKR ${parseFloat(po.subtotal || (parseFloat(po.net_amount || po.total_amount || 0) / 1.18)).toLocaleString()}<br>
+                      <span style="color:#059669; font-weight:600;">+ 18% GST: PKR ${parseFloat(po.gst_amount || po.tax_amount || (parseFloat(po.net_amount || po.total_amount || 0) - parseFloat(po.subtotal || 0))).toLocaleString()}</span>
+                    </div>
                   </td>
                   <td>
                     <span class="badge ${matchedDCs.length > 0 ? 'badge-won' : 'badge-hold'}">
@@ -1540,6 +1647,9 @@ async function renderDeliveryChallansHTML() {
                   </td>
                   <td>
                     <div class="action-buttons-group">
+                      <button type="button" class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#0f172a; color:white;" onclick="printDeliveryChallan('${dc.id}')" title="Print Official A4 Letterhead Delivery Challan">
+                        🖨️ Print DC
+                      </button>
                       <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669;" onclick="promptGenerateInvoiceFromDC('${dc.id}', '${dc.dc_number}', '${dc.customer_name}')" title="Generate commercial invoice for this DC">
                         🧾 Invoice
                       </button>
@@ -1651,7 +1761,11 @@ async function renderInvoicesHTML() {
                     <span style="font-size:0.72rem; color:#475569;">📍 ${p.delivery_location || 'Site'}</span>
                   </td>
                   <td>
-                    <strong style="color:#0284c7;">PKR ${poVal.toLocaleString()}</strong>
+                    <strong style="color:#0284c7; font-size:0.95rem;">PKR ${poVal.toLocaleString()}</strong>
+                    <div style="font-size:0.72rem; color:#64748b; margin-top:2px;">
+                      Subtotal: PKR ${(parseFloat(p.subtotal || (poVal / 1.18))).toLocaleString()}<br>
+                      <span style="color:#059669; font-weight:600;">+ 18% GST: PKR ${(parseFloat(p.gst_amount || p.tax_amount || (poVal - parseFloat(p.subtotal || (poVal / 1.18))))).toLocaleString()}</span>
+                    </div>
                   </td>
                   <td>
                     <strong>PKR ${poInvoicedTotal.toLocaleString()}</strong>
@@ -2814,8 +2928,14 @@ async function renderProductsHTML() {
             ` : products.map(p => {
               const sup = suppliers.find(s => s.id === p.default_supplier_id || s.id === p.supplier_id);
               const isLowStock = (parseFloat(p.current_stock) || 0) <= (parseFloat(p.reorder_level) || 10);
+              const costPrice = parseFloat(p.cost_price || 0);
+              const sellingPrice = parseFloat(p.selling_price || 0);
+              const isLoss = (costPrice > 0 && sellingPrice > 0 && sellingPrice < costPrice);
+              const lossAmt = costPrice - sellingPrice;
+              const lossPct = costPrice > 0 ? ((lossAmt / costPrice) * 100).toFixed(1) : '0';
+
               return `
-                <tr>
+                <tr class="${isLoss ? 'loss-row' : ''}">
                   <td><strong><code>${p.sku || 'SKU'}</code></strong></td>
                   <td>
                     <strong>${p.name}</strong><br>
@@ -2832,10 +2952,13 @@ async function renderProductsHTML() {
                     </span>
                   </td>
                   <td>
-                    <span style="font-weight:600;">PKR ${parseFloat(p.cost_price || 0).toLocaleString()}</span><br>
+                    <span style="font-weight:600;">PKR ${costPrice.toLocaleString()}</span><br>
                     ${p.cost_price_foreign && p.currency && p.currency !== 'PKR' ? `<span style="font-size:0.72rem; color:var(--text-muted);">${p.currency} ${parseFloat(p.cost_price_foreign).toLocaleString()}</span>` : ''}
                   </td>
-                  <td><strong>PKR ${parseFloat(p.selling_price || 0).toLocaleString()}</strong></td>
+                  <td>
+                    <strong class="${isLoss ? 'loss-text' : ''}">PKR ${sellingPrice.toLocaleString()}</strong>
+                    ${isLoss ? `<br><span class="badge badge-loss" title="Loss detected: Selling Price is lower than Landed Cost Price!">⚠️ Loss: -PKR ${lossAmt.toLocaleString()} (-${lossPct}%)</span>` : ''}
+                  </td>
                   <td>
                     <span class="badge ${isLowStock ? 'badge-withdraw' : 'badge-won'}">
                       ${p.current_stock || 0} ${p.unit || 'PCS'}
@@ -2881,7 +3004,7 @@ async function renderBusinessProfilesHTML() {
         <table class="data-table">
           <thead>
             <tr>
-              <th>Business Name</th>
+              <th>Business Name & Abbrev</th>
               <th>Legal Entity Name</th>
               <th>NTN</th>
               <th>STRN</th>
@@ -2901,9 +3024,12 @@ async function renderBusinessProfilesHTML() {
               </tr>
             ` : profiles.map((p, idx) => `
               <tr>
-                <td><strong>${p.business_name}</strong></td>
+                <td>
+                  <strong>${p.business_name}</strong>
+                  ${p.abbreviation ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-size:0.75rem; margin-left:6px;">${p.abbreviation}</span>` : ''}
+                </td>
                 <td>${p.legal_name || p.business_name}</td>
-                <td>${p.ntn || 'N/A'}</td>
+                <td><strong>${p.ntn || 'N/A'}</strong></td>
                 <td>${p.strn || 'N/A'}</td>
                 <td>${p.city || 'Lahore'}</td>
                 <td><span class="badge ${p.fbr_enabled ? 'badge-fbr' : 'badge-withdraw'}">${p.fbr_enabled ? 'Enabled' : 'Disabled'}</span></td>
@@ -3157,35 +3283,84 @@ function renderSettingsHTML() {
 }
 
 // --------------------------------------------------------------------------
-// COSTING CALCULATOR SETUP
+// COSTING CALCULATOR & BID GOVERNANCE ENGINE
 // --------------------------------------------------------------------------
-function renderCostingCalculatorHTML() {
+let _selectedCostingOpportunity = null;
+
+async function renderCostingCalculatorHTML() {
+  const customers = await API.getCustomers();
+  const tenders = await API.getOpportunities(State.currentBusinessProfileId);
+
   return `
+    <!-- Top Filter Bar: Customer Wise, Cascading Tender Wise, Date Range -->
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="card-body" style="padding: 14px 18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div style="font-weight:700; color:#0f172a; font-size:0.92rem; display:flex; align-items:center; gap:6px;">
+            <span>🔍 Costing Filters:</span>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; flex:1; justify-content:flex-end;">
+            <!-- Customer Filter -->
+            <div style="min-width: 180px;">
+              <select class="form-select" id="costing-filter-customer" style="font-size:0.8rem; padding:5px 8px;" onchange="onCostingCustomerChanged(this.value)">
+                <option value="all">-- All Customers --</option>
+                ${customers.map(c => `<option value="${c.id}">${c.business_name}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Cascading Tender Filter -->
+            <div style="min-width: 220px;">
+              <select class="form-select" id="costing-filter-tender" style="font-size:0.8rem; padding:5px 8px;" onchange="onCostingTenderChanged(this.value)">
+                <option value="all">-- All Tenders & Quotations --</option>
+                ${tenders.map(t => `<option value="${t.id}" data-customer="${t.customer_id || ''}" data-val="${t.estimated_value || 0}" data-closing="${t.closing_date || ''}">[${t.opportunity_number || 'TND'}] ${t.tender_name || t.title}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Date Range Filters -->
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.75rem; color:#64748b;">From:</span>
+              <input type="date" class="form-input" id="costing-filter-from" style="font-size:0.8rem; padding:4px 6px;" onchange="filterCostingTendersByDate()">
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.75rem; color:#64748b;">To:</span>
+              <input type="date" class="form-input" id="costing-filter-to" style="font-size:0.8rem; padding:4px 6px;" onchange="filterCostingTendersByDate()">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Landed Price Warning Alert -->
+    <div id="costing-loss-warning" style="display:none; background:#fef2f2; border:1px solid #f87171; color:#991b1b; border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px;">
+      ⚠️ <strong>Loss Alert:</strong> Recommended Bid Submission Price is lower than Landed Direct Cost. Negative profit margin detected!
+    </div>
+
     <div class="calc-grid">
       <div class="card">
         <div class="card-header">
           <div class="card-title">💰 Direct Cost Breakdown</div>
+          <span id="costing-tender-title-badge" class="badge badge-won" style="display:none;"></span>
         </div>
         <div class="card-body">
           <div class="form-group">
             <label class="form-label">Supplier / Product Cost (PKR)</label>
-            <input type="number" class="form-input cost-calc-input" id="calc-sup-cost" value="10000000">
+            <input type="text" class="form-input cost-calc-input" id="calc-sup-cost" value="10,000,000" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
             <label class="form-label">Logistics & 3PL Freight (PKR)</label>
-            <input type="number" class="form-input cost-calc-input" id="calc-log-cost" value="800000">
+            <input type="text" class="form-input cost-calc-input" id="calc-log-cost" value="800,000" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
             <label class="form-label">Labor & Site Commissioning (PKR)</label>
-            <input type="number" class="form-input cost-calc-input" id="calc-lab-cost" value="700000">
+            <input type="text" class="form-input cost-calc-input" id="calc-lab-cost" value="700,000" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
             <label class="form-label">Allocated Overhead (PKR)</label>
-            <input type="number" class="form-input cost-calc-input" id="calc-ovh-cost" value="500000">
+            <input type="text" class="form-input cost-calc-input" id="calc-ovh-cost" value="500,000" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
             <label class="form-label">Tender Expenses & Bid Security (PKR)</label>
-            <input type="number" class="form-input cost-calc-input" id="calc-exp-cost" value="290000">
+            <input type="text" class="form-input cost-calc-input" id="calc-exp-cost" value="290,000" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
             <label class="form-label">Desired Markup (%)</label>
@@ -3198,7 +3373,7 @@ function renderCostingCalculatorHTML() {
         <div>
           <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">Live Margin & Price Summary</h3>
           <div class="calc-row">
-            <span>Total Estimated Cost:</span>
+            <span>Total Direct Landed Cost:</span>
             <strong id="disp-total-cost">PKR 12,290,000</strong>
           </div>
           <div class="calc-row">
@@ -3219,6 +3394,12 @@ function renderCostingCalculatorHTML() {
           <span style="font-size:0.85rem; text-transform:uppercase; color:#94a3b8;">Recommended Bid Submission Price</span>
           <div class="calc-final-price" id="disp-final-bid-price">PKR 14,563,650</div>
         </div>
+
+        <div style="margin-top: 14px;">
+          <button type="button" class="primary-btn" style="width:100%; justify-content:center; padding:10px;" onclick="saveCostingSheetForSelectedTender()">
+            💾 Save & Submit for Governance Approval
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -3233,17 +3414,18 @@ function setupCostingCalculator() {
 }
 
 function recalculateCostSheet() {
-  const sup = parseFloat(document.getElementById('calc-sup-cost')?.value || 0);
-  const log = parseFloat(document.getElementById('calc-log-cost')?.value || 0);
-  const lab = parseFloat(document.getElementById('calc-lab-cost')?.value || 0);
-  const ovh = parseFloat(document.getElementById('calc-ovh-cost')?.value || 0);
-  const exp = parseFloat(document.getElementById('calc-exp-cost')?.value || 0);
+  const sup = parseCurrency(document.getElementById('calc-sup-cost')?.value);
+  const log = parseCurrency(document.getElementById('calc-log-cost')?.value);
+  const lab = parseCurrency(document.getElementById('calc-lab-cost')?.value);
+  const ovh = parseCurrency(document.getElementById('calc-ovh-cost')?.value);
+  const exp = parseCurrency(document.getElementById('calc-exp-cost')?.value);
   const markup = parseFloat(document.getElementById('calc-markup-pct')?.value || 0);
 
   const totalCost = sup + log + lab + ovh + exp;
   const profit = (totalCost * markup) / 100;
   const finalPrice = totalCost + profit;
-  const marginPct = finalPrice > 0 ? ((profit / finalPrice) * 100) : 0;
+  const marginPct = finalPrice > 0 ? ((profit / finalPrice) * 100) : (markup < 0 ? markup : 0);
+  const isLoss = profit < 0 || finalPrice < totalCost || markup < 0;
 
   const totalCostEl = document.getElementById('disp-total-cost');
   const markupRateEl = document.getElementById('disp-markup-rate');
@@ -3251,11 +3433,380 @@ function recalculateCostSheet() {
   const marginPctEl = document.getElementById('disp-margin-pct');
   const finalPriceEl = document.getElementById('disp-final-bid-price');
 
-  if (totalCostEl) totalCostEl.innerText = `PKR ${totalCost.toLocaleString()}`;
-  if (markupRateEl) markupRateEl.innerText = `${markup}%`;
-  if (profitAmtEl) profitAmtEl.innerText = `PKR ${profit.toLocaleString()}`;
-  if (marginPctEl) marginPctEl.innerText = `${marginPct.toFixed(1)}%`;
-  if (finalPriceEl) finalPriceEl.innerText = `PKR ${finalPrice.toLocaleString()}`;
+  if (totalCostEl) totalCostEl.innerText = formatCurrency(totalCost, 'PKR');
+  if (markupRateEl) {
+    markupRateEl.innerText = `${markup}%`;
+    markupRateEl.className = markup < 0 ? 'loss-text' : '';
+  }
+  if (profitAmtEl) {
+    if (isLoss) {
+      profitAmtEl.innerText = `-PKR ${Math.abs(profit).toLocaleString()} (Loss)`;
+      profitAmtEl.style.color = '#dc2626';
+      profitAmtEl.style.fontWeight = '800';
+    } else {
+      profitAmtEl.innerText = formatCurrency(profit, 'PKR');
+      profitAmtEl.style.color = '#10b981';
+      profitAmtEl.style.fontWeight = '700';
+    }
+  }
+  if (marginPctEl) {
+    if (isLoss) {
+      marginPctEl.innerText = `-${Math.abs(marginPct).toFixed(1)}% (Negative Margin)`;
+      marginPctEl.style.color = '#dc2626';
+      marginPctEl.style.fontWeight = '800';
+    } else {
+      marginPctEl.innerText = `${marginPct.toFixed(1)}%`;
+      marginPctEl.style.color = '#0f172a';
+      marginPctEl.style.fontWeight = '700';
+    }
+  }
+  if (finalPriceEl) {
+    finalPriceEl.innerText = formatCurrency(finalPrice, 'PKR');
+    if (isLoss) {
+      finalPriceEl.style.color = '#dc2626';
+      finalPriceEl.style.borderColor = '#f87171';
+    } else {
+      finalPriceEl.style.color = '';
+      finalPriceEl.style.borderColor = '';
+    }
+  }
+
+  const warnEl = document.getElementById('costing-loss-warning');
+  if (warnEl) {
+    if (isLoss) {
+      warnEl.className = 'loss-alert-box';
+      warnEl.innerHTML = `⚠️ <strong>Loss Alert:</strong> Recommended Bid Submission Price (${formatCurrency(finalPrice, 'PKR')}) is lower than Landed Direct Cost (${formatCurrency(totalCost, 'PKR')}). Projected Loss: <span class="loss-text">-PKR ${Math.abs(profit).toLocaleString()} (-${Math.abs(marginPct).toFixed(1)}% margin)</span>!`;
+      warnEl.style.display = 'flex';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+}
+
+function onCostingCustomerChanged(customerId) {
+  const tenderSelect = document.getElementById('costing-filter-tender');
+  if (!tenderSelect) return;
+  const options = tenderSelect.querySelectorAll('option');
+
+  options.forEach(opt => {
+    if (opt.value === 'all') {
+      opt.style.display = 'block';
+      return;
+    }
+    const custId = opt.dataset.customer;
+    if (customerId === 'all' || custId === customerId) {
+      opt.style.display = 'block';
+    } else {
+      opt.style.display = 'none';
+    }
+  });
+
+  tenderSelect.value = 'all';
+  onCostingTenderChanged('all');
+}
+
+async function onCostingTenderChanged(tenderId) {
+  const badge = document.getElementById('costing-tender-title-badge');
+  if (tenderId === 'all') {
+    _selectedCostingOpportunity = null;
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  const opps = await API.getOpportunities(State.currentBusinessProfileId);
+  const target = opps.find(o => o.id === tenderId);
+  if (!target) return;
+
+  _selectedCostingOpportunity = target;
+
+  if (badge) {
+    badge.innerText = `Selected: [${target.opportunity_number || 'TND'}] ${target.tender_name || target.title}`;
+    badge.style.display = 'inline-block';
+  }
+
+  // Auto-populate direct costs based on estimated value
+  const estVal = parseFloat(target.estimated_value || 0);
+  if (estVal > 0) {
+    const supEl = document.getElementById('calc-sup-cost');
+    const logEl = document.getElementById('calc-log-cost');
+    const labEl = document.getElementById('calc-lab-cost');
+    const ovhEl = document.getElementById('calc-ovh-cost');
+    const expEl = document.getElementById('calc-exp-cost');
+
+    if (supEl) supEl.value = Math.round(estVal * 0.70).toLocaleString();
+    if (logEl) logEl.value = Math.round(estVal * 0.06).toLocaleString();
+    if (labEl) labEl.value = Math.round(estVal * 0.05).toLocaleString();
+    if (ovhEl) ovhEl.value = Math.round(estVal * 0.03).toLocaleString();
+    if (expEl) expEl.value = Math.round(estVal * 0.02).toLocaleString();
+    recalculateCostSheet();
+  }
+}
+
+function filterCostingTendersByDate() {
+  const fromDate = document.getElementById('costing-filter-from')?.value;
+  const toDate = document.getElementById('costing-filter-to')?.value;
+  const tenderSelect = document.getElementById('costing-filter-tender');
+  if (!tenderSelect) return;
+
+  const options = tenderSelect.querySelectorAll('option');
+  options.forEach(opt => {
+    if (opt.value === 'all') return;
+    const closing = opt.dataset.closing;
+    if (!closing) return;
+    const d = new Date(closing);
+    let match = true;
+    if (fromDate && d < new Date(fromDate)) match = false;
+    if (toDate && d > new Date(toDate + 'T23:59:59')) match = false;
+    opt.style.display = match ? 'block' : 'none';
+  });
+}
+
+async function saveCostingSheetForSelectedTender() {
+  const sup = parseCurrency(document.getElementById('calc-sup-cost')?.value);
+  const log = parseCurrency(document.getElementById('calc-log-cost')?.value);
+  const lab = parseCurrency(document.getElementById('calc-lab-cost')?.value);
+  const ovh = parseCurrency(document.getElementById('calc-ovh-cost')?.value);
+  const exp = parseCurrency(document.getElementById('calc-exp-cost')?.value);
+  const markup = parseFloat(document.getElementById('calc-markup-pct')?.value || 0);
+
+  const oppId = _selectedCostingOpportunity?.id || (document.getElementById('costing-filter-tender')?.value !== 'all' ? document.getElementById('costing-filter-tender')?.value : null);
+  const oppTitle = _selectedCostingOpportunity?.tender_name || _selectedCostingOpportunity?.title || 'Tender Project';
+  const oppNumber = _selectedCostingOpportunity?.opportunity_number || 'TND-2026';
+
+  const payload = {
+    opportunity_id: oppId,
+    business_profile_id: State.currentBusinessProfileId !== 'all' ? State.currentBusinessProfileId : (_selectedCostingOpportunity?.business_profile_id || null),
+    bid_number: `BID-${Date.now().toString().slice(-6)}`,
+    tender_name: oppTitle,
+    opportunity_title: oppTitle,
+    opportunity_number: oppNumber,
+    supplier_cost_total: sup,
+    logistics_cost_total: log,
+    labor_cost_total: lab,
+    overhead_cost_total: ovh,
+    tender_expense_total: exp,
+    desired_markup_pct: markup,
+    approval_status: 'Pending Review'
+  };
+
+  await API.saveCosting(payload);
+  showToast('✓ Costing sheet saved & submitted for Bid Governance Review!', 'success');
+  switchView('approvals');
+}
+
+// --------------------------------------------------------------------------
+// 15. BID GOVERNANCE & APPROVALS VIEW
+// --------------------------------------------------------------------------
+async function renderApprovalsHTML() {
+  const bids = await API.getBids(State.currentBusinessProfileId);
+  const opps = await API.getOpportunities(State.currentBusinessProfileId);
+
+  // Merge any submitted opportunities into bids list if a bid entry isn't already created
+  for (const opp of opps) {
+    if (opp.status === 'Submitted' || opp.selection_status === 'Selected' || opp.status === 'Ready to submit') {
+      const existing = bids.find(b => b.opportunity_id === opp.id || b.id === opp.id);
+      if (!existing) {
+        bids.push({
+          id: opp.id,
+          opportunity_id: opp.id,
+          bid_number: 'BID-' + (opp.opportunity_number || opp.id.slice(0, 6)),
+          tender_name: opp.tender_name || opp.title,
+          opportunity_number: opp.opportunity_number,
+          supplier_cost_total: parseFloat(opp.estimated_value || 0),
+          final_bid_price: parseFloat(opp.estimated_value || 0),
+          desired_markup_pct: 20,
+          gross_margin_pct: 20,
+          approval_status: opp.status === 'Submitted' ? 'Submitted' : 'Pending Review'
+        });
+      }
+    }
+  }
+
+  const isSuper = State.isSuperAdmin();
+  const isAdmin = State.isClientAdmin();
+
+  const submitted = bids.filter(b => !b.approval_status || b.approval_status === 'Submitted' || b.approval_status === 'Pending Review' || b.approval_status === 'Under Management Review');
+  const wonBids = bids.filter(b => b.approval_status === 'Won' || b.approval_status === 'won' || b.approval_status === 'Approved');
+  const lostBids = bids.filter(b => b.approval_status === 'Loose' || b.approval_status === 'loose' || b.approval_status === 'Lost' || b.approval_status === 'Rejected');
+  const withdrawnBids = bids.filter(b => b.approval_status === 'Withdraw' || b.approval_status === 'withdraw' || b.approval_status === 'Withdrawn');
+
+  return `
+    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:20px;">
+      <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
+        <div class="kpi-title">Submitted / In Review</div>
+        <div class="kpi-value">${submitted.length}</div>
+        <div class="kpi-subtext">Awaiting tender outcome</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #10b981;">
+        <div class="kpi-title">🏆 Won / Awarded</div>
+        <div class="kpi-value">${wonBids.length}</div>
+        <div class="kpi-subtext">LOA issued / Ready for PO</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #ef4444;">
+        <div class="kpi-title">❌ Lost Bids (Loose)</div>
+        <div class="kpi-value">${lostBids.length}</div>
+        <div class="kpi-subtext">L1 competitor capture</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #64748b;">
+        <div class="kpi-title">⚠️ Withdrawn Bids</div>
+        <div class="kpi-value">${withdrawnBids.length}</div>
+        <div class="kpi-subtext">Withdrawn from bidding</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">⚖️ Commercial Bid Governance & Approval Hub (Won / Loose / Withdraw)</div>
+        <div style="font-size:0.8rem; color:var(--text-muted);">
+          Authority: <strong>${isSuper ? 'Super Admin' : (isAdmin ? 'Client Administrator (Sign-off Authority)' : 'Bid Manager')}</strong>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Bid & Tender Ref #</th>
+              <th>Total Direct Cost</th>
+              <th>Markup %</th>
+              <th>Final Submission Price</th>
+              <th>Gross Margin %</th>
+              <th>Outcome Status</th>
+              <th>Governance Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bids.length === 0 ? `
+              <tr>
+                <td colspan="7" style="text-align:center; padding:36px 20px; color:#64748b;">
+                  ⚖️ <strong>No bids currently submitted for governance approval.</strong><br>
+                  <span style="font-size:0.85rem;">Submit a tender in the <strong>Tenders & Quotations</strong> module or save a costing sheet to initiate a bid review workflow.</span>
+                </td>
+              </tr>
+            ` : bids.map(b => {
+              const rawStatus = b.approval_status || 'Submitted';
+              let normStatus = 'Submitted';
+              let badgeColor = '#d97706';
+              let borderColor = '#f59e0b';
+              let bgPill = '#fef3c7';
+
+              if (rawStatus === 'Won' || rawStatus === 'won' || rawStatus === 'Approved') {
+                normStatus = 'Won';
+                badgeColor = '#059669';
+                borderColor = '#10b981';
+                bgPill = '#ecfdf5';
+              } else if (rawStatus === 'Loose' || rawStatus === 'loose' || rawStatus === 'Lost' || rawStatus === 'Rejected') {
+                normStatus = 'Loose';
+                badgeColor = '#dc2626';
+                borderColor = '#ef4444';
+                bgPill = '#fef2f2';
+              } else if (rawStatus === 'Withdraw' || rawStatus === 'withdraw' || rawStatus === 'Withdrawn') {
+                normStatus = 'Withdraw';
+                badgeColor = '#475569';
+                borderColor = '#64748b';
+                bgPill = '#f1f5f9';
+              }
+
+              const oppId = b.opportunity_id || b.id;
+              const tenderTitle = (b.tender_name || b.opportunity_title || 'Tender Project');
+              const encodedTitle = encodeURIComponent(tenderTitle);
+
+              const directCost = (parseFloat(b.supplier_cost_total || 0) + parseFloat(b.logistics_cost_total || 0) + parseFloat(b.labor_cost_total || 0) + parseFloat(b.overhead_cost_total || 0) + parseFloat(b.tender_expense_total || 0));
+              const markup = parseFloat(b.desired_markup_pct || 20);
+              const finalPrice = parseFloat(b.final_bid_price || (directCost + (directCost * markup / 100)));
+              const grossMargin = parseFloat(b.gross_margin_pct || (finalPrice > 0 ? ((finalPrice - directCost) / finalPrice * 100) : (markup < 0 ? markup : 0)));
+              const isBidLoss = (finalPrice < directCost || grossMargin < 0 || markup < 0);
+              const lossVal = directCost - finalPrice;
+
+              return `
+                <tr class="${isBidLoss ? 'loss-row' : ''}">
+                  <td>
+                    <strong>${b.bid_number || 'BID-' + b.id}</strong><br>
+                    <span style="font-size:0.75rem; color:var(--text-muted);">${tenderTitle} (${b.opportunity_number || ''})</span>
+                  </td>
+                  <td>${formatCurrency(directCost, 'PKR')}</td>
+                  <td><strong class="${markup < 0 ? 'loss-text' : ''}">${markup}%</strong></td>
+                  <td>
+                    <strong class="${isBidLoss ? 'loss-text' : ''}" style="color:${isBidLoss ? '#dc2626' : '#0f172a'};">${formatCurrency(finalPrice, 'PKR')}</strong>
+                    ${isBidLoss ? `<br><span class="badge badge-loss" style="font-size:0.68rem; margin-top:2px;">⚠️ Loss: -${formatCurrency(lossVal, 'PKR')}</span>` : ''}
+                  </td>
+                  <td>
+                    <span class="badge ${isBidLoss ? 'badge-loss' : (grossMargin >= 15 ? 'badge-won' : 'badge-hold')}">
+                      ${isBidLoss ? '⚠️ ' : ''}${grossMargin.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td>
+                    <select class="form-select" style="font-size:0.78rem; padding:4px 8px; border-radius:4px; font-weight:700; width:auto; display:inline-block; border-color:${borderColor}; color:${badgeColor}; background:${bgPill};" onchange="handleUpdateBidApprovalStatus('${b.id}', '${oppId}', this.value, '${encodedTitle}', ${finalPrice})">
+                      <option value="Submitted" ${normStatus === 'Submitted' ? 'selected' : ''}>⏳ Submitted</option>
+                      <option value="Won" ${normStatus === 'Won' ? 'selected' : ''}>🏆 Won (+ LOA)</option>
+                      <option value="Loose" ${normStatus === 'Loose' ? 'selected' : ''}>❌ Loose</option>
+                      <option value="Withdraw" ${normStatus === 'Withdraw' ? 'selected' : ''}>⚠️ Withdraw</option>
+                    </select>
+                  </td>
+                  <td>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                      ${normStatus !== 'Won' ? `
+                        <button type="button" class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669; font-weight:700;" onclick="promptWonBid('${oppId}', '${encodedTitle}')" title="Record Letter of Award (LOA) with Partial/Full Item Scope">
+                          🏆 Won (+ LOA)
+                        </button>
+                      ` : `
+                        <span class="badge badge-won" style="font-size:0.75rem; padding:3px 6px;">✓ Awarded LOA</span>
+                      `}
+                      ${normStatus !== 'Loose' ? `
+                        <button type="button" class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="promptTenderLossModal('${oppId}', '${encodedTitle}', ${finalPrice})" title="Record Tender Loss & Benchmark">
+                          ❌ Loose
+                        </button>
+                      ` : ''}
+                      ${normStatus !== 'Withdraw' ? `
+                        <button type="button" class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; background:#f8fafc; color:#475569;" onclick="handleWithdrawBidAction('${oppId}', '${encodedTitle}')" title="Withdraw Bid">
+                          ⚠️ Withdraw
+                        </button>
+                      ` : ''}
+                      ${oppId ? `<button type="button" class="secondary-btn" style="padding:3px 7px; font-size:0.75rem;" onclick="openTender360Cockpit('${oppId}')" title="View 360 Cockpit">🌐 Cockpit</button>` : ''}
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function handleUpdateBidApprovalStatus(bidId, oppId, newStatus, encodedTitle, estVal) {
+  if (newStatus === 'Won' || newStatus === 'won') {
+    promptWonBid(oppId || bidId, encodedTitle);
+    return;
+  } else if (newStatus === 'Loose' || newStatus === 'loose') {
+    promptTenderLossModal(oppId || bidId, encodedTitle, estVal || 0);
+    return;
+  } else if (newStatus === 'Withdraw' || newStatus === 'withdraw') {
+    await handleWithdrawBidAction(oppId || bidId, encodedTitle);
+    return;
+  } else {
+    try {
+      await API.updateBidStatus(bidId, newStatus);
+      showToast(`Bid status set to ${newStatus}.`, 'info');
+      await renderActiveView();
+    } catch (err) {
+      alert(`Failed to update status: ${err.message}`);
+    }
+  }
+}
+
+async function handleWithdrawBidAction(oppId, encodedTitle) {
+  const tName = decodeURIComponent(encodedTitle || 'Tender');
+  const reason = prompt(`Enter reason for withdrawing bid on '${tName}':`, 'Commercial withdrawal / customer specification revised.');
+  if (reason !== null) {
+    try {
+      await API.evaluateBid(oppId, { evaluation_status: 'withdraw', loss_reason: reason, remarks: reason });
+      showToast(`✓ Bid on '${tName}' marked as Withdrawn.`, 'warning');
+      await renderActiveView();
+    } catch (err) {
+      alert(`Failed to withdraw bid: ${err.message}`);
+    }
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -3391,107 +3942,462 @@ function navigateToView(view) {
   if (item) item.click();
 }
 
+let _tenderLineItems = [];
+
 async function openNewTenderModal() {
   const customers = await API.getCustomers();
   const profiles = await API.getBusinessProfiles();
-  const products = await API.getProducts();
+  window._cachedProducts = await API.getProducts();
 
   const custSelect = document.getElementById('tender-customer');
   const profSelect = document.getElementById('tender-business-profile');
-  const itemSelect = document.getElementById('tender-item-select');
+  const currSelect = document.getElementById('tender-currency');
 
   if (custSelect) {
-    custSelect.innerHTML = customers.map(c => `<option value="${c.id}">${c.business_name} (${c.org_type})</option>`).join('');
+    custSelect.innerHTML = customers.length === 0 
+      ? '<option value="">-- No Customers Registered --</option>' 
+      : customers.map(c => `<option value="${c.id}">${c.business_name} (${c.org_type || 'Customer'})</option>`).join('');
   }
   if (profSelect) {
-    profSelect.innerHTML = profiles.map(p => `<option value="${p.id}">${p.business_name}</option>`).join('');
+    profSelect.innerHTML = profiles.length === 0 
+      ? '<option value="">-- No Business Profiles --</option>' 
+      : profiles.map(p => `<option value="${p.id}">${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
   }
-  if (itemSelect) {
-    itemSelect.innerHTML = `<option value="">-- Choose item to auto-fill --</option>` + products.map(p => `
-      <option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-price="${p.selling_price || 0}">
-        ${p.name} (Stock: ${p.current_stock || 0} ${p.unit})
-      </option>
-    `).join('');
+  if (currSelect) {
+    currSelect.value = 'PKR';
+    updateTenderCurrencyLabels('PKR');
   }
+
+  // Clear and add initial default item row
+  _tenderLineItems = [];
+  const tbody = document.getElementById('tender-items-tbody');
+  if (tbody) tbody.innerHTML = '';
+  addTenderItemRow();
+
+  // Initialize date inputs with DD/MM/YYYY auto-close on AM/PM
+  initCustomDateTimePickers();
 
   openModal('modal-add-tender');
 }
 
-function autoPopulateTenderItemDetails(productId) {
-  const itemSelect = document.getElementById('tender-item-select');
-  if (!itemSelect) return;
-  const selectedOpt = itemSelect.options[itemSelect.selectedIndex];
-  if (!selectedOpt || !selectedOpt.value) return;
+function updateTenderCurrencyLabels(curr) {
+  document.querySelectorAll('.currency-label').forEach(el => el.innerText = curr);
+  document.querySelectorAll('.sec-currency-label').forEach(el => el.innerText = curr);
+}
 
-  const name = selectedOpt.dataset.name;
-  const desc = selectedOpt.dataset.desc;
-  const unit = selectedOpt.dataset.unit;
-  const price = selectedOpt.dataset.price;
+function addTenderItemRow(initialData = null) {
+  const tbody = document.getElementById('tender-items-tbody');
+  if (!tbody) return;
+  const rowIndex = _tenderLineItems.length;
+  const products = window._cachedProducts || [];
 
-  const descEl = document.getElementById('tender-item-desc');
-  const unitEl = document.getElementById('tender-item-unit');
-  const priceEl = document.getElementById('tender-item-price');
+  const rowId = `tnd-row-${rowIndex}`;
+  const rowHtml = `
+    <tr id="${rowId}" data-index="${rowIndex}">
+      <td>
+        <select class="form-select tnd-item-product" style="font-size:0.78rem; padding:4px 6px;" onchange="onTenderProductSelect(${rowIndex}, this.value)">
+          <option value="">-- Custom Scope Item --</option>
+          ${products.map(p => `<option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${p.current_stock || 0})</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-input tnd-item-desc" required placeholder="Item Scope / Technical Description" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_description || ''}" oninput="recalculateTenderItemsSum()">
+      </td>
+      <td>
+        <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="font-size:0.78rem; padding:4px 6px;" oninput="recalculateTenderItemsSum()">
+      </td>
+      <td>
+        <input list="uom-datalist" type="text" class="form-input tnd-item-unit" value="${initialData?.unit || 'PCS'}" style="font-size:0.78rem; padding:4px 6px;" placeholder="e.g. PCS, ROLL">
+      </td>
+      <td>
+        <input type="text" class="form-input tnd-item-price" placeholder="0" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.estimated_unit_price ? Number(initialData.estimated_unit_price).toLocaleString() : '0'}" oninput="formatCurrencyInput(this); recalculateTenderItemsSum();">
+      </td>
+      <td>
+        <strong class="tnd-item-total" style="font-size:0.8rem; color:#0f172a; display:block; padding:4px 0;">0</strong>
+      </td>
+      <td style="text-align:center;">
+        <button type="button" class="danger-btn" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteTenderItemRow(${rowIndex})" title="Remove item">&times;</button>
+      </td>
+    </tr>
+  `;
+  tbody.insertAdjacentHTML('beforeend', rowHtml);
+  _tenderLineItems.push({ index: rowIndex });
+  recalculateTenderItemsSum();
+}
+
+function deleteTenderItemRow(index) {
+  const row = document.getElementById(`tnd-row-${index}`);
+  if (row) row.remove();
+  recalculateTenderItemsSum();
+}
+
+function handleTenderGSTToggles(trigger) {
+  const isExempt = document.getElementById('tender-gst-exempt')?.checked;
+  const incEl = document.getElementById('tender-gst-inclusive');
+  const rateWrap = document.getElementById('tender-gst-rate-wrapper');
+
+  if (trigger === 'exempt') {
+    if (isExempt) {
+      if (incEl) {
+        incEl.checked = false;
+        incEl.disabled = true;
+      }
+      if (rateWrap) rateWrap.style.opacity = '0.35';
+    } else {
+      if (incEl) incEl.disabled = false;
+      if (rateWrap) rateWrap.style.opacity = '1';
+    }
+  } else if (trigger === 'inclusive') {
+    const isInc = incEl?.checked;
+    if (isInc) {
+      const exEl = document.getElementById('tender-gst-exempt');
+      if (exEl) exEl.checked = false;
+    }
+  }
+
+  recalculateTenderItemsSum();
+}
+
+function onTenderProductSelect(index, productId) {
+  const row = document.getElementById(`tnd-row-${index}`);
+  if (!row) return;
+  const select = row.querySelector('.tnd-item-product');
+  const opt = select.options[select.selectedIndex];
+  if (!opt || !opt.value) return;
+
+  const name = opt.dataset.name;
+  const desc = opt.dataset.desc;
+  const unit = opt.dataset.unit;
+  const selling = parseFloat(opt.dataset.selling || 0);
+  const cost = parseFloat(opt.dataset.cost || 0);
+
+  const descEl = row.querySelector('.tnd-item-desc');
+  const unitEl = row.querySelector('.tnd-item-unit');
+  const priceEl = row.querySelector('.tnd-item-price');
 
   if (descEl) descEl.value = desc || name;
-  if (unitEl) unitEl.value = unit;
-  if (priceEl) priceEl.value = price;
+  if (unitEl) unitEl.value = unit || 'PCS';
+  if (priceEl) {
+    priceEl.value = selling.toLocaleString();
+    priceEl.dataset.costPrice = cost;
+  }
+  recalculateTenderItemsSum();
+}
+
+function recalculateTenderItemsSum() {
+  let subtotalSum = 0;
+  let totalCostSum = 0;
+  let totalLossSum = 0;
+  let hasNegativeMargin = false;
+  const rows = document.querySelectorAll('#tender-items-tbody tr');
+
+  rows.forEach(row => {
+    const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
+    const priceInput = row.querySelector('.tnd-item-price');
+    const priceStr = priceInput?.value || '0';
+    const price = parseCurrency(priceStr);
+    const costPrice = parseFloat(priceInput?.dataset.costPrice || 0);
+    const lineTotal = qty * price;
+    const lineCost = qty * costPrice;
+    subtotalSum += lineTotal;
+    if (costPrice > 0) totalCostSum += lineCost;
+
+    const isRowLoss = (costPrice > 0 && price > 0 && price < costPrice);
+    const totalEl = row.querySelector('.tnd-item-total');
+
+    if (isRowLoss) {
+      hasNegativeMargin = true;
+      const rowLoss = (costPrice - price) * qty;
+      totalLossSum += rowLoss;
+
+      row.classList.add('loss-row');
+      if (priceInput) {
+        priceInput.classList.add('loss-text');
+        priceInput.style.borderColor = '#ef4444';
+        priceInput.style.backgroundColor = '#fef2f2';
+      }
+      if (totalEl) {
+        totalEl.innerHTML = `<span class="loss-text">${lineTotal.toLocaleString()}</span><br><span class="badge badge-loss" style="font-size:0.68rem; margin-top:2px;">⚠️ Loss: -PKR ${rowLoss.toLocaleString()}</span>`;
+      }
+    } else {
+      row.classList.remove('loss-row');
+      if (priceInput) {
+        priceInput.classList.remove('loss-text');
+        priceInput.style.borderColor = '';
+        priceInput.style.backgroundColor = '';
+      }
+      if (totalEl) totalEl.innerText = lineTotal.toLocaleString();
+    }
+  });
+
+  // GST Calculation Engine
+  const isExempt = document.getElementById('tender-gst-exempt')?.checked;
+  const isInclusive = document.getElementById('tender-gst-inclusive')?.checked;
+  const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
+
+  let gstAmount = 0;
+  let grandTotal = subtotalSum;
+
+  if (isExempt) {
+    gstAmount = 0;
+    grandTotal = subtotalSum;
+  } else if (isInclusive) {
+    // Price includes GST
+    gstAmount = subtotalSum > 0 ? Math.round(subtotalSum - (subtotalSum / (1 + (gstRate / 100)))) : 0;
+    grandTotal = subtotalSum;
+  } else {
+    // Standard GST added on top
+    gstAmount = Math.round((subtotalSum * gstRate) / 100);
+    grandTotal = subtotalSum + gstAmount;
+  }
+
+  const subtotalEl = document.getElementById('tender-items-subtotal-disp');
+  const gstRateEl = document.getElementById('tender-gst-rate-disp');
+  const gstAmtEl = document.getElementById('tender-gst-amount-disp');
+  const grandTotalEl = document.getElementById('tender-grand-total-disp');
+  const estValEl = document.getElementById('tender-est-value');
+
+  if (subtotalEl) subtotalEl.innerText = 'PKR ' + subtotalSum.toLocaleString();
+  if (gstRateEl) gstRateEl.innerText = isExempt ? '0% (Exempt)' : (isInclusive ? `${gstRate}% (Inc)` : `${gstRate}%`);
+  if (gstAmtEl) gstAmtEl.innerText = 'PKR ' + gstAmount.toLocaleString();
+  if (grandTotalEl) grandTotalEl.innerText = 'PKR ' + grandTotal.toLocaleString();
+  if (estValEl && rows.length > 0 && grandTotal > 0) {
+    estValEl.value = grandTotal.toLocaleString();
+  }
+
+  const warnEl = document.getElementById('tender-price-warning');
+  const warnMsgEl = document.getElementById('tender-price-warning-msg');
+  if (warnEl) {
+    if (hasNegativeMargin) {
+      warnEl.className = 'loss-alert-box';
+      if (warnMsgEl) {
+        warnMsgEl.innerHTML = `<strong>Loss / Negative Margin Alert:</strong> One or more line items have a Selling Price lower than Landed Cost! Total Loss on Scope: <span class="loss-text">-PKR ${totalLossSum.toLocaleString()}</span>.`;
+      }
+      warnEl.style.display = 'flex';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+}
+
+function initCustomDateTimePickers() {
+  const closingEl = document.getElementById('tender-closing-date');
+  const openingEl = document.getElementById('tender-opening-date');
+  const secExpiryEl = document.getElementById('sec-expiry-date');
+
+  const now = new Date();
+  const defClosing = new Date(now.getTime() + 20 * 86400000);
+  if (closingEl && !closingEl.value) {
+    closingEl.value = formatDateTimeDDMMYYYY(defClosing);
+  }
+  if (openingEl && !openingEl.value) {
+    openingEl.value = formatDateTimeDDMMYYYY(new Date(now.getTime() + 21 * 86400000));
+  }
+  if (secExpiryEl && !secExpiryEl.value) {
+    secExpiryEl.value = formatDateDDMMYYYY(new Date(now.getTime() + 90 * 86400000));
+  }
 }
 
 async function submitNewTenderForm() {
   const tenderName = document.getElementById('tender-name')?.value;
   const source = document.getElementById('tender-source')?.value;
+  const oppNo = document.getElementById('tender-opp-no')?.value;
+  const extNo = document.getElementById('tender-ext-no')?.value;
+  const currency = document.getElementById('tender-currency')?.value || 'PKR';
   const custId = document.getElementById('tender-customer')?.value;
   const bizId = document.getElementById('tender-business-profile')?.value;
-  const estVal = document.getElementById('tender-est-value')?.value;
+  const estVal = parseCurrency(document.getElementById('tender-est-value')?.value);
   const closing = document.getElementById('tender-closing-date')?.value;
+  const opening = document.getElementById('tender-opening-date')?.value;
   const desc = document.getElementById('tender-description')?.value;
-
-  const itemSelect = document.getElementById('tender-item-select');
-  const itemDesc = document.getElementById('tender-item-desc')?.value;
-  const itemQty = document.getElementById('tender-item-qty')?.value;
-  const itemUnit = document.getElementById('tender-item-unit')?.value;
-  const itemPrice = document.getElementById('tender-item-price')?.value;
 
   if (!tenderName) {
     alert('Tender Name is mandatory');
     return;
   }
 
+  const rows = document.querySelectorAll('#tender-items-tbody tr');
   const items = [];
-  if (itemDesc) {
-    items.push({
-      product_service_id: itemSelect?.value || null,
-      item_name: tenderName,
-      item_description: itemDesc,
-      quantity: parseFloat(itemQty || 1),
-      unit: itemUnit || 'PCS',
-      estimated_unit_price: parseFloat(itemPrice || 0)
-    });
-  }
+  rows.forEach(row => {
+    const prodId = row.querySelector('.tnd-item-product')?.value || null;
+    const itemDesc = row.querySelector('.tnd-item-desc')?.value;
+    const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
+    const unit = row.querySelector('.tnd-item-unit')?.value || 'PCS';
+    const unitPrice = parseCurrency(row.querySelector('.tnd-item-price')?.value);
+
+    if (itemDesc) {
+      items.push({
+        product_service_id: prodId,
+        item_name: itemDesc,
+        item_description: itemDesc,
+        quantity: qty,
+        unit: unit,
+        estimated_unit_price: unitPrice,
+        estimated_total_price: qty * unitPrice
+      });
+    }
+  });
+
+  const isExempt = document.getElementById('tender-gst-exempt')?.checked || false;
+  const isInclusive = document.getElementById('tender-gst-inclusive')?.checked || false;
+  const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
+  const itemsSubtotal = items.reduce((acc, itm) => acc + (itm.estimated_total_price || 0), 0);
 
   const res = await API.createOpportunity({
     tender_name: tenderName,
     title: tenderName,
+    opportunity_number: oppNo || undefined,
+    external_tender_number: extNo || undefined,
     tender_source: source,
+    currency: currency,
     customer_id: custId,
     business_profile_id: bizId,
     estimated_value: estVal,
     closing_date: closing,
+    opening_date: opening,
     description: desc,
-    items: items
+    items: items,
+    is_gst_exempt: isExempt,
+    is_gst_inclusive: isInclusive,
+    gst_rate_pct: isExempt ? 0 : gstRate,
+    subtotal: itemsSubtotal
   });
 
   closeModal('modal-add-tender');
+  showToast('✓ Tender Record saved successfully!', 'success');
 
+  const createdId = res.data?.id || ('tnd-' + Date.now());
+  const createdNo = res.data?.opportunity_number || oppNo || 'TND-2026';
+  
   // Immediately prompt mandatory Bid Security modal
-  promptAttachBidSecurity(res.data?.id || 'new-opp', tenderName);
+  promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
+  await renderActiveView();
 }
 
-function promptAttachBidSecurity(oppId, tenderNameDecoded) {
-  const name = decodeURIComponent(tenderNameDecoded);
-  document.getElementById('sec-opportunity-id').value = oppId;
-  document.getElementById('sec-opp-title').value = name;
+async function handleTenderSecuritySearch(query) {
+  const suggestionsBox = document.getElementById('sec-opp-suggestions');
+  if (!suggestionsBox) return;
+
+  const allOpps = await API.getOpportunities(State.currentBusinessProfileId);
+  // Filter tenders missing active bid security
+  const missingSecurityOpps = allOpps.filter(o => !o.active_bid_securities_count || o.active_bid_securities_count === 0);
+
+  const cleanQuery = (query || '').toLowerCase().trim();
+  const matched = cleanQuery 
+    ? missingSecurityOpps.filter(o => 
+        (o.tender_name && o.tender_name.toLowerCase().includes(cleanQuery)) ||
+        (o.title && o.title.toLowerCase().includes(cleanQuery)) ||
+        (o.opportunity_number && o.opportunity_number.toLowerCase().includes(cleanQuery)) ||
+        (o.customer_name && o.customer_name.toLowerCase().includes(cleanQuery))
+      )
+    : missingSecurityOpps;
+
+  if (matched.length === 0) {
+    suggestionsBox.innerHTML = `
+      <div style="padding:10px; color:#64748b; font-size:0.8rem; text-align:center;">
+        No tenders missing bid security found matching "${query || ''}"
+      </div>
+    `;
+    suggestionsBox.style.display = 'block';
+    return;
+  }
+
+  suggestionsBox.innerHTML = matched.map(o => `
+    <div class="autocomplete-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; transition:background 0.2s;" 
+         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"
+         onclick="selectTenderForSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')">
+      <div style="font-weight:700; font-size:0.85rem; color:#0f172a;">
+        [${o.opportunity_number || 'TND'}] ${o.tender_name || o.title}
+      </div>
+      <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between; margin-top:2px;">
+        <span>Customer: <strong>${o.customer_name || 'Open Market'}</strong></span>
+        <span style="color:#2563eb; font-weight:600;">Est: ${formatCurrency(o.estimated_value, o.currency || 'PKR')}</span>
+      </div>
+    </div>
+  `).join('');
+  suggestionsBox.style.display = 'block';
+}
+
+function selectTenderForSecurity(oppId, tenderNameEnc, oppNo, estVal, customerNameEnc) {
+  const tenderName = decodeURIComponent(tenderNameEnc || '');
+  const customerName = decodeURIComponent(customerNameEnc || '');
+  
+  const idEl = document.getElementById('sec-opportunity-id');
+  const titleEl = document.getElementById('sec-opp-title');
+  if (idEl) idEl.value = oppId;
+  if (titleEl) titleEl.value = oppNo ? `[${oppNo}] ${tenderName}` : tenderName;
+  
+  // Suggested 2% earnest money
+  if (estVal > 0) {
+    const suggestedAmt = Math.round(estVal * 0.02);
+    const amtEl = document.getElementById('sec-amount');
+    if (amtEl) amtEl.value = suggestedAmt.toLocaleString();
+  }
+
+  // Pre-fill beneficiary with Customer
+  if (customerName) {
+    const benEl = document.getElementById('sec-beneficiary');
+    if (benEl && !benEl.value) benEl.value = customerName;
+  }
+
+  // Pre-fill default account title with current company
+  const currentProfile = State.getCurrentBusinessProfile();
+  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
+    const accEl = document.getElementById('sec-account-title');
+    if (accEl && !accEl.value) accEl.value = currentProfile.business_name;
+  }
+
+  const suggestionsBox = document.getElementById('sec-opp-suggestions');
+  if (suggestionsBox) suggestionsBox.style.display = 'none';
+}
+
+function promptAttachBidSecurity(oppId, tenderNameDecoded, oppNo = '', estVal = 0, custNameDecoded = '') {
+  selectTenderForSecurity(oppId, tenderNameDecoded, oppNo, estVal, custNameDecoded);
+  initCustomDateTimePickers();
   openModal('modal-add-bid-security');
+}
+
+async function openAttachedBidSecurityModal(oppId) {
+  const securities = await API.getBidSecurities(State.currentBusinessProfileId);
+  const matched = securities.filter(s => s.opportunity_id === oppId || String(s.opportunity_id) === String(oppId));
+  
+  const content = document.getElementById('view-bid-security-content');
+  if (!content) return;
+
+  if (matched.length === 0) {
+    content.innerHTML = `
+      <div style="text-align:center; padding:20px; color:#64748b;">
+        🛡️ No active bid security instrument linked to this tender.
+      </div>
+    `;
+  } else {
+    content.innerHTML = matched.map(s => `
+      <div style="background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <strong style="font-size:1rem; color:#0f172a;">${s.instrument_type} #${s.instrument_number}</strong>
+          <span class="badge badge-${(s.status || 'active').toLowerCase()}">${s.status || 'Active'}</span>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.83rem;">
+          <div><span style="color:#64748b;">Account Title:</span> <strong>${s.account_title}</strong></div>
+          <div><span style="color:#64748b;">Beneficiary:</span> <strong>${s.beneficiary}</strong></div>
+          <div><span style="color:#64748b;">Amount:</span> <strong style="color:#10b981;">PKR ${parseFloat(s.amount).toLocaleString()}</strong></div>
+          <div><span style="color:#64748b;">Expiry Date:</span> <strong>${s.expiry_date}</strong></div>
+          <div style="grid-column: span 2;"><span style="color:#64748b;">Bank & Branch:</span> <strong>${s.bank_name || 'N/A'}</strong></div>
+          ${s.comments ? `<div style="grid-column: span 2;"><span style="color:#64748b;">Remarks:</span> <em>${s.comments}</em></div>` : ''}
+        </div>
+        <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
+          <button class="edit-btn" onclick="closeModal('modal-view-bid-security'); openEditEntityModal('bid-security', '${s.id}');">✏️ Edit Instrument</button>
+          ${s.status === 'Active' ? `<button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="closeModal('modal-view-bid-security'); handleReleaseBidSecurity('${s.id}');">🔓 Release Instrument</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  openModal('modal-view-bid-security');
+}
+
+function openTenderDetailsModal(oppId) {
+  openTender360Cockpit(oppId);
 }
 
 async function submitBidSecurityForm() {
@@ -3500,7 +4406,7 @@ async function submitBidSecurityForm() {
   const beneficiary = document.getElementById('sec-beneficiary')?.value;
   const instrumentType = document.getElementById('sec-instrument-type')?.value;
   const instrumentNo = document.getElementById('sec-instrument-no')?.value;
-  const amount = document.getElementById('sec-amount')?.value;
+  const amount = parseCurrency(document.getElementById('sec-amount')?.value);
   const expiryDate = document.getElementById('sec-expiry-date')?.value;
   const bankName = document.getElementById('sec-bank-name')?.value;
   const comments = document.getElementById('sec-comments')?.value;
@@ -3523,7 +4429,7 @@ async function submitBidSecurityForm() {
   });
 
   closeModal('modal-add-bid-security');
-  alert('Bid Security successfully attached! Tender is now Ready to Submit.');
+  showToast('Bid Security successfully attached! Tender is now Ready to Submit.', 'success');
   await renderActiveView();
 }
 
@@ -3566,37 +4472,59 @@ let _cachedAwardTenderItems = [];
 async function promptAwardLetterModal(oppId, tenderNameDecoded) {
   const name = decodeURIComponent(tenderNameDecoded);
   document.getElementById('award-opp-id').value = oppId;
+
+  // Fetch live line items & tender details for this opportunity
+  let oppNumber = '';
+  let items = [];
+  try {
+    const oppDetails = await API.getOpportunityById(oppId);
+    if (oppDetails && oppDetails.data) {
+      oppNumber = oppDetails.data.opportunity_number || '';
+      if (oppDetails.data.items && oppDetails.data.items.length > 0) {
+        items = oppDetails.data.items;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch opp details from API:', e.message);
+  }
+
+  const opps = State.getTenantEntityList('opportunities');
+  const targetOpp = opps.find(o => o.id === oppId);
+  if (!oppNumber && targetOpp) oppNumber = targetOpp.opportunity_number || '';
+
   const oppTitleEl = document.getElementById('award-opp-title');
-  if (oppTitleEl) oppTitleEl.innerText = name;
-  document.getElementById('award-no').value = 'LOA-' + (name.slice(0, 5).toUpperCase().replace(/[^A-Z]/g, 'WAPDA')) + '-' + new Date().getFullYear() + '-' + Math.floor(100 + Math.random() * 900);
+  if (oppTitleEl) {
+    oppTitleEl.innerHTML = `${oppNumber ? `<span style="color:var(--primary); font-family:monospace;">[${oppNumber}]</span> ` : ''}${targetOpp?.tender_name || targetOpp?.title || name}`;
+  }
+
+  const shortCode = (oppNumber || name.slice(0, 5)).toUpperCase().replace(/[^A-Z0-9]/g, 'GOVT');
+  document.getElementById('award-no').value = 'LOA-' + shortCode + '-' + new Date().getFullYear() + '-' + Math.floor(100 + Math.random() * 900);
   document.getElementById('award-date').value = new Date().toISOString().slice(0, 10);
   
   const d = new Date();
   d.setDate(d.getDate() + 10);
   document.getElementById('award-deadline').value = d.toISOString().slice(0, 10);
 
-  // Fetch line items for this opportunity
-  const opps = State.getTenantEntityList('opportunities');
-  const targetOpp = opps.find(o => o.id === oppId);
-  const bids = State.getTenantEntityList('bids');
-  const targetBid = bids.find(b => b.opportunity_id === oppId);
+  if (items.length === 0) {
+    const bids = State.getTenantEntityList('bids');
+    const targetBid = bids.find(b => b.opportunity_id === oppId || b.id === oppId);
 
-  let items = [];
-  if (targetOpp && targetOpp.items && targetOpp.items.length > 0) {
-    items = targetOpp.items;
-  } else if (targetBid && targetBid.items && targetBid.items.length > 0) {
-    items = targetBid.items;
-  } else {
-    items = [
-      {
-        id: 'it-1',
-        item_name: name,
-        item_description: name + ' (Primary Scope / Lot 1)',
-        quantity: 1,
-        unit: 'LOT',
-        estimated_unit_price: parseFloat(targetOpp?.estimated_value || 14500000)
-      }
-    ];
+    if (targetOpp && targetOpp.items && targetOpp.items.length > 0) {
+      items = targetOpp.items;
+    } else if (targetBid && targetBid.items && targetBid.items.length > 0) {
+      items = targetBid.items;
+    } else {
+      items = [
+        {
+          id: 'it-1',
+          item_name: name,
+          item_description: name + ' (Primary Scope / Lot 1)',
+          quantity: 1,
+          unit: 'LOT',
+          estimated_unit_price: parseFloat(targetOpp?.estimated_value || 0)
+        }
+      ];
+    }
   }
   _cachedAwardTenderItems = items;
 
@@ -3618,7 +4546,7 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
           <input type="hidden" id="award-item-unit-${idx}" value="${it.unit || 'PCS'}">
         </td>
         <td>
-          <input type="number" class="form-input" id="award-item-qty-${idx}" value="${it.quantity || 1}" min="0" max="${it.quantity || 999999}" step="any" style="width: 100px; padding: 4px 6px;" oninput="updateAwardItemsTotal()">
+          <input type="number" class="form-input" id="award-item-qty-${idx}" value="${it.quantity || 1}" min="0" max="${it.quantity || 999999}" step="any" style="width: 100px; padding: 4px 6px; font-weight:700;" oninput="updateAwardItemsTotal()">
         </td>
         <td>${it.unit || 'PCS'}</td>
         <td>
@@ -3660,6 +4588,16 @@ function updateAwardItemsTotal() {
 
   const amtInput = document.getElementById('award-amount');
   if (amtInput) amtInput.value = grandTotal;
+
+  updateAwardStampDutyCalc();
+}
+
+function updateAwardStampDutyCalc() {
+  const amt = parseFloat(document.getElementById('award-amount')?.value || 0);
+  const pct = parseFloat(document.getElementById('award-stamp-duty-pct')?.value || 0.25);
+  const sdAmt = Math.round((amt * pct) / 100);
+  const sdInput = document.getElementById('award-stamp-duty-amount');
+  if (sdInput) sdInput.value = sdAmt.toLocaleString();
 }
 
 function calculatePBGRequirement(pct) {
@@ -3673,6 +4611,8 @@ async function submitAwardLetterForm() {
   const awardAmount = document.getElementById('award-amount')?.value;
   const deadline = document.getElementById('award-deadline')?.value;
   const pbgPct = document.getElementById('award-pbg-pct')?.value;
+  const stampDutyPct = parseFloat(document.getElementById('award-stamp-duty-pct')?.value || 0.25);
+  const stampDutyAmt = parseCurrency(document.getElementById('award-stamp-duty-amount')?.value);
   const remarks = document.getElementById('award-remarks')?.value;
 
   if (!awardNo || !awardAmount || parseFloat(awardAmount) <= 0) {
@@ -3713,6 +4653,7 @@ async function submitAwardLetterForm() {
 
   const res = await API.createAward({
     opportunity_id: oppId,
+    opportunity_number: targetOpp?.opportunity_number,
     tender_name: targetOpp?.title || targetOpp?.tender_name || 'Won Tender',
     customer_id: targetCust?.id,
     customer_name: targetCust?.business_name || 'Government Department',
@@ -3722,6 +4663,9 @@ async function submitAwardLetterForm() {
     acceptance_deadline: deadline,
     status: 'Accepted',
     pbg_required_pct: parseFloat(pbgPct || 10),
+    stamp_duty_pct: stampDutyPct,
+    stamp_duty_amount: stampDutyAmt,
+    stamp_duty_status: 'Unpaid',
     items: awardItems,
     remarks: remarks
   });
@@ -3738,7 +4682,7 @@ async function submitAwardLetterForm() {
   });
 
   closeModal('modal-add-award');
-  alert(`✓ Letter of Award ${awardNo} recorded & accepted. Contract initialized!`);
+  showToast(`✓ Letter of Award ${awardNo} recorded & accepted. Contract initialized!`, 'success');
 
   // Prompt PBG Modal if PBG % > 0
   if (parseFloat(pbgPct) > 0) {
@@ -3747,6 +4691,65 @@ async function submitAwardLetterForm() {
   } else {
     navigateToView('awards');
   }
+}
+
+function openStampDutyModal(awardId, awardNo, amount) {
+  const awardEl = document.getElementById('sd-award-id');
+  const awardNoEl = document.getElementById('sd-award-no');
+  const amtEl = document.getElementById('sd-amount');
+  const dateEl = document.getElementById('sd-paid-date');
+  const chnEl = document.getElementById('sd-challan-no');
+
+  if (awardEl) awardEl.value = awardId;
+  if (awardNoEl) awardNoEl.value = awardNo;
+  if (amtEl) amtEl.value = (parseFloat(amount) || 0).toLocaleString();
+  if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
+  if (chnEl) chnEl.value = 'CHN-32A-' + Math.floor(100000 + Math.random() * 900000);
+
+  openModal('modal-record-stamp-duty');
+}
+
+async function submitStampDutyPayment() {
+  const awardId = document.getElementById('sd-award-id')?.value;
+  const challanNo = document.getElementById('sd-challan-no')?.value;
+  const paidDate = document.getElementById('sd-paid-date')?.value;
+  const amount = parseCurrency(document.getElementById('sd-amount')?.value);
+  const bank = document.getElementById('sd-bank')?.value;
+
+  if (!challanNo || !paidDate || amount <= 0) {
+    alert('Challan Number, Payment Date, and Amount Paid are mandatory.');
+    return;
+  }
+
+  const awards = State.getTenantEntityList('awards');
+  const award = awards.find(a => a.id === awardId);
+  if (award) {
+    award.stamp_duty_status = 'Paid';
+    award.stamp_duty_challan_no = challanNo;
+    award.stamp_duty_paid_date = paidDate;
+    award.stamp_duty_amount = amount;
+    award.stamp_duty_bank = bank;
+    State.saveTenantEntity('awards', award);
+  }
+
+  try {
+    await fetch(`${API_BASE}/awards/${awardId}/decision`, {
+      method: 'POST',
+      headers: API.getHeaders(),
+      body: JSON.stringify({
+        decision: 'Accepted',
+        stamp_duty_status: 'Paid',
+        stamp_duty_challan_no: challanNo,
+        stamp_duty_paid_date: paidDate,
+        stamp_duty_amount: amount,
+        stamp_duty_bank: bank
+      })
+    });
+  } catch (e) {}
+
+  closeModal('modal-record-stamp-duty');
+  showToast(`✓ Stamp Duty E-Challan #${challanNo} recorded as Paid!`, 'success');
+  await renderActiveView();
 }
 
 function promptAttachPBGForAward(awardId, awardNo, pbgAmount) {
@@ -3788,26 +4791,26 @@ async function submitPerformanceGuaranteeForm() {
   });
 
   closeModal('modal-add-guarantee');
-  alert(`✓ Performance Guarantee ${number} issued successfully.`);
+  showToast(`✓ Performance Guarantee ${number} issued successfully.`, 'success');
   navigateToView('awards');
 }
 
 async function handleAwardDecision(awardId, decision) {
   await API.decideAward(awardId, decision);
-  alert(`Award Letter marked as ${decision}.`);
+  showToast(`Award Letter marked as ${decision}.`, 'info');
   await renderActiveView();
 }
 
 async function handleReleaseGuarantee(id) {
   if (confirm('Are you sure you want to release this Performance Guarantee upon contract completion?')) {
     await API.releaseGuarantee(id);
-    alert('Performance Guarantee successfully released!');
+    showToast('Performance Guarantee successfully released!', 'success');
     await renderActiveView();
   }
 }
 
 // --------------------------------------------------------------------------
-// MULTI-PURCHASE ORDER (1 AWARD -> N POs) ENGINE
+// MULTI-PURCHASE ORDER (1 AWARD -> N POs) ENGINE (WITH UNIVERSAL GST)
 // --------------------------------------------------------------------------
 
 let _cachedPOAward = null;
@@ -3849,6 +4852,9 @@ async function openNewPOModal(preselectedAwardId) {
   document.getElementById('po-deadline').value = d.toISOString().slice(0, 10);
   document.getElementById('po-delivery-location').value = 'Central Warehouse / Client Site (Sheikhupura Road)';
   document.getElementById('po-department').value = selectedAward.customer_name ? `${selectedAward.customer_name} Engineering Wing` : 'Procurement Directorate';
+
+  const gstRateInput = document.getElementById('po-gst-rate');
+  if (gstRateInput) gstRateInput.value = '18';
 
   // Build items list with prior allocation tracking
   let awardItems = selectedAward.items || [];
@@ -3919,7 +4925,7 @@ async function openNewPOModal(preselectedAwardId) {
 }
 
 function updatePOAllocationTotal(changedIdx) {
-  let poGrandTotal = 0;
+  let subtotalSum = 0;
 
   _cachedPOAwardItems.forEach((it, idx) => {
     const qtyInput = document.getElementById(`po-item-qty-${idx}`);
@@ -3941,13 +4947,22 @@ function updatePOAllocationTotal(changedIdx) {
       }
 
       const lineTotal = qty * rate;
-      poGrandTotal += lineTotal;
+      subtotalSum += lineTotal;
       if (totalEl) totalEl.innerText = `PKR ${lineTotal.toLocaleString()}`;
     }
   });
 
-  const totInput = document.getElementById('po-total-amount');
-  if (totInput) totInput.value = poGrandTotal;
+  const gstRate = parseFloat(document.getElementById('po-gst-rate')?.value || 18);
+  const gstAmount = Math.round((subtotalSum * gstRate) / 100);
+  const grandTotal = subtotalSum + gstAmount;
+
+  const subtotalEl = document.getElementById('po-subtotal-amount');
+  const gstAmtEl = document.getElementById('po-gst-amount');
+  const totalEl = document.getElementById('po-total-amount');
+
+  if (subtotalEl) subtotalEl.value = 'PKR ' + subtotalSum.toLocaleString();
+  if (gstAmtEl) gstAmtEl.value = 'PKR ' + gstAmount.toLocaleString();
+  if (totalEl) totalEl.value = 'PKR ' + grandTotal.toLocaleString();
 }
 
 async function submitCreatePOForm() {
@@ -3960,10 +4975,14 @@ async function submitCreatePOForm() {
   const location = document.getElementById('po-delivery-location')?.value;
   const department = document.getElementById('po-department')?.value;
   const terms = document.getElementById('po-payment-terms')?.value;
-  const totalAmount = document.getElementById('po-total-amount')?.value;
   const remarks = document.getElementById('po-remarks')?.value;
 
-  if (!poNumber || !deadline || !location || parseFloat(totalAmount || 0) <= 0) {
+  const subtotal = parseCurrency(document.getElementById('po-subtotal-amount')?.value);
+  const gstRate = parseFloat(document.getElementById('po-gst-rate')?.value || 18);
+  const gstAmount = parseCurrency(document.getElementById('po-gst-amount')?.value);
+  const grandTotal = parseCurrency(document.getElementById('po-total-amount')?.value);
+
+  if (!poNumber || !deadline || !location || grandTotal <= 0) {
     alert('PO Number, Delivery Deadline, Delivery Site Location, and at least 1 item allocation with positive value are mandatory.');
     return;
   }
@@ -4020,16 +5039,129 @@ async function submitCreatePOForm() {
     delivery_location: location,
     department_name: department,
     payment_terms: terms,
-    total_amount: parseFloat(totalAmount),
-    net_amount: parseFloat(totalAmount),
+    subtotal: subtotal,
+    gst_rate_pct: gstRate,
+    gst_amount: gstAmount,
+    total_amount: grandTotal,
+    net_amount: grandTotal,
     items: poItems,
     status: 'Issued',
     remarks: remarks
   });
 
   closeModal('modal-add-po');
-  alert(`✓ Purchase Order ${poNumber} issued successfully against ${_cachedPOAward?.award_number}! Total Value: PKR ${parseFloat(totalAmount).toLocaleString()}`);
+  showToast(`✓ Purchase Order ${poNumber} issued successfully! Total Value: PKR ${grandTotal.toLocaleString()}`, 'success');
   navigateToView('purchase-orders');
+}
+
+// --------------------------------------------------------------------------
+// PRINTABLE DELIVERY CHALLAN (A4 LETTERHEAD FORMAT)
+// --------------------------------------------------------------------------
+
+async function printDeliveryChallan(dcId) {
+  const dcs = await API.getDeliveryChallans(State.currentBusinessProfileId);
+  const dc = dcs.find(d => d.id === dcId);
+  if (!dc) {
+    alert('Delivery Challan not found.');
+    return;
+  }
+
+  const currentProfile = State.getCurrentBusinessProfile() || {};
+  const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+  const po = pos.find(p => p.id === dc.purchase_order_id || p.po_number === dc.po_number);
+
+  const container = document.getElementById('dc-printable-area');
+  if (!container) return;
+
+  const items = dc.items && dc.items.length > 0 ? dc.items : [
+    { item_name: dc.item_description || 'Scope Delivery Scope Item', quantity: dc.dispatched_quantity || 1, unit: dc.unit || 'PCS' }
+  ];
+
+  container.innerHTML = `
+    <div class="lh-header-block">
+      <div>
+        <div class="lh-company-title">${currentProfile.business_name || 'MASHRUE ENTERPRISE'}</div>
+        <div class="lh-company-meta">
+          <strong>NTN:</strong> ${currentProfile.ntn || '901920-3'} | <strong>STRN:</strong> ${currentProfile.strn || '03-09-9920-001'}<br>
+          ${currentProfile.address || 'Corporate Headquarters, Commercial Zone, Lahore, Pakistan'}<br>
+          <strong>Tel:</strong> ${currentProfile.phone || '+92 42 35870011'} | <strong>Email:</strong> ${currentProfile.email || 'info@company.pk'}
+        </div>
+      </div>
+      <div class="lh-doc-badge">
+        <div class="lh-doc-title">DELIVERY CHALLAN</div>
+        <div style="font-size: 14px; font-weight: 800; color: #0284c7; margin-top:2px;"># ${dc.dc_number}</div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Dispatch Date: <strong>${dc.delivery_date || dc.dispatch_date || new Date().toISOString().slice(0, 10)}</strong></div>
+      </div>
+    </div>
+
+    <div class="lh-meta-grid">
+      <div>
+        <strong style="color:#0f172a; text-transform:uppercase;">Customer / Consignee:</strong><br>
+        <span style="font-size:13px; font-weight:700; color:#0f172a;">${dc.customer_name || 'Government Department'}</span><br>
+        <strong>Destination Site:</strong> ${dc.destination_site || 'Central Grid Station / Client Store'}<br>
+        <strong>Department:</strong> ${po?.department_name || dc.department || 'Procurement & Stores Directorate'}
+      </div>
+      <div>
+        <strong style="color:#0f172a; text-transform:uppercase;">Reference & Logistics:</strong><br>
+        <strong>Purchase Order #:</strong> ${dc.po_number || po?.po_number || 'PO-001'}<br>
+        <strong>Contract / LOA #:</strong> ${po?.award_number || 'LOA-WAPDA-2026'}<br>
+        <strong>Carrier / Transporter:</strong> ${dc.logistics_provider || dc.carrier_name || 'TCS Freight / Dedicated Hired Trailer'}<br>
+        <strong>Vehicle # / Bilty #:</strong> ${dc.vehicle_number || 'TKL-8819'} / ${dc.tracking_number || dc.bilty_number || 'BL-99120'}
+      </div>
+    </div>
+
+    <table class="lh-table">
+      <thead>
+        <tr>
+          <th style="width: 36px; text-align: center;">#</th>
+          <th>Item Description / Technical Scope</th>
+          <th style="width: 90px; text-align: center;">Ordered Qty</th>
+          <th style="width: 100px; text-align: center;">Dispatched Qty</th>
+          <th style="width: 70px; text-align: center;">Unit</th>
+          <th style="width: 120px; text-align: center;">Remarks / QC Pass</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((it, idx) => `
+          <tr>
+            <td style="text-align:center; font-weight:600;">${idx + 1}</td>
+            <td>
+              <strong>${it.item_name || it.item_description || 'Scope Item'}</strong>
+            </td>
+            <td style="text-align:center; font-weight:600; color:#64748b;">${it.ordered_quantity || it.quantity || '-'}</td>
+            <td style="text-align:center; font-weight:800; color:#059669; font-size:13px;">${it.quantity || it.dispatched_quantity || 1}</td>
+            <td style="text-align:center;">${it.unit || 'PCS'}</td>
+            <td style="text-align:center; font-size:11px; color:#059669;">✓ Verified & Inspected</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px; margin-bottom:20px; font-size:11.5px; color:#475569;">
+      <strong>Terms of Delivery:</strong> Goods received in sound condition and as per customer specifications. Any discrepancy must be reported within 48 hours of receipt.
+    </div>
+
+    <div class="lh-sign-grid">
+      <div class="lh-sign-box">
+        Prepared & Dispatched By<br>
+        <span style="font-size:10px; color:#64748b;">(Warehouse / Logistics Officer)</span>
+      </div>
+      <div class="lh-sign-box">
+        Transport Carrier / Driver<br>
+        <span style="font-size:10px; color:#64748b;">(Signature & CNIC)</span>
+      </div>
+      <div class="lh-sign-box" style="border-top: 1.5px solid #0f172a;">
+        Received in Good Order By<br>
+        <span style="font-size:10px; color:#64748b;">(Consignee Official Stamp & Signature)</span>
+      </div>
+    </div>
+  `;
+
+  openModal('modal-print-dc');
+}
+
+function executeDCPrint() {
+  window.print();
 }
 
 async function handleEvaluateBidDirect(oppId, status) {
@@ -4463,6 +5595,11 @@ async function openNewCustomerModal() {
   document.getElementById('cust-bank-name').value = '';
   document.getElementById('cust-bank-iban').value = '';
   document.getElementById('cust-notes').value = '';
+  
+  const termsSelect = document.getElementById('cust-terms');
+  if (termsSelect) termsSelect.value = 'Net 30 Days';
+  toggleCustomerOtherTerms('Net 30 Days');
+
   openModal('modal-add-customer');
 }
 
@@ -4485,7 +5622,21 @@ async function openEditCustomerModal(id) {
   document.getElementById('cust-contact').value = c.contact_person || '';
   document.getElementById('cust-phone').value = c.phone || '';
   document.getElementById('cust-email').value = c.email || '';
-  document.getElementById('cust-terms').value = c.payment_terms || 'Net 30';
+  
+  const terms = c.payment_terms || 'Net 30 Days';
+  const termsSelect = document.getElementById('cust-terms');
+  const otherTermsInput = document.getElementById('cust-other-terms');
+  const standardTerms = ['100% Advance Payment', 'Net 30 Days', 'Net 60 Days', 'Letter of Credit (LC)', 'Cash on Delivery (COD)', 'Milestone / Progressive Billing'];
+
+  if (standardTerms.includes(terms)) {
+    if (termsSelect) termsSelect.value = terms;
+    toggleCustomerOtherTerms(terms);
+  } else {
+    if (termsSelect) termsSelect.value = 'Other';
+    toggleCustomerOtherTerms('Other');
+    if (otherTermsInput) otherTermsInput.value = terms;
+  }
+
   document.getElementById('cust-credit-limit').value = c.credit_limit || '';
   document.getElementById('cust-status').value = c.status || 'Active';
   document.getElementById('cust-bank-name').value = c.bank_name || '';
@@ -4498,27 +5649,31 @@ async function openEditCustomerModal(id) {
 async function submitNewCustomerForm() {
   const editId = document.getElementById('cust-edit-id')?.value;
   const code = document.getElementById('cust-code')?.value;
-  const name = document.getElementById('cust-name')?.value;
+  const name = document.getElementById('cust-name')?.value?.trim();
   const orgType = document.getElementById('cust-org-type')?.value;
-  const dept = document.getElementById('cust-department')?.value;
-  const ntn = document.getElementById('cust-ntn')?.value;
-  const strn = document.getElementById('cust-strn')?.value;
-  const city = document.getElementById('cust-city')?.value;
-  const province = document.getElementById('cust-province')?.value;
-  const address = document.getElementById('cust-address')?.value;
-  const delAddress = document.getElementById('cust-delivery-address')?.value;
-  const contact = document.getElementById('cust-contact')?.value;
-  const phone = document.getElementById('cust-phone')?.value;
-  const email = document.getElementById('cust-email')?.value;
-  const terms = document.getElementById('cust-terms')?.value;
-  const limit = document.getElementById('cust-credit-limit')?.value;
+  const dept = document.getElementById('cust-department')?.value?.trim();
+  const ntn = document.getElementById('cust-ntn')?.value?.trim();
+  const strn = document.getElementById('cust-strn')?.value?.trim();
+  const city = document.getElementById('cust-city')?.value?.trim();
+  const province = document.getElementById('cust-province')?.value?.trim();
+  const address = document.getElementById('cust-address')?.value?.trim();
+  const delAddress = document.getElementById('cust-delivery-address')?.value?.trim();
+  const contact = document.getElementById('cust-contact')?.value?.trim();
+  const phone = document.getElementById('cust-phone')?.value?.trim();
+  const email = document.getElementById('cust-email')?.value?.trim();
+  
+  const rawTerms = document.getElementById('cust-terms')?.value;
+  const otherTerms = document.getElementById('cust-other-terms')?.value?.trim();
+  const terms = (rawTerms === 'Other' && otherTerms) ? otherTerms : (rawTerms || 'Net 30 Days');
+
+  const limit = parseCurrency(document.getElementById('cust-credit-limit')?.value);
   const status = document.getElementById('cust-status')?.value || 'Active';
-  const bankName = document.getElementById('cust-bank-name')?.value;
-  const bankIban = document.getElementById('cust-bank-iban')?.value;
-  const notes = document.getElementById('cust-notes')?.value;
+  const bankName = document.getElementById('cust-bank-name')?.value?.trim();
+  const bankIban = document.getElementById('cust-bank-iban')?.value?.trim();
+  const notes = document.getElementById('cust-notes')?.value?.trim();
 
   if (!name) {
-    alert('Customer Name is mandatory.');
+    alert('Customer Organization / Company Name is mandatory.');
     return;
   }
 
@@ -4538,7 +5693,7 @@ async function submitNewCustomerForm() {
     phone: phone,
     email: email,
     payment_terms: terms,
-    credit_limit: parseFloat(limit || 0),
+    credit_limit: limit,
     status: status,
     bank_name: bankName,
     bank_iban: bankIban,
@@ -4549,11 +5704,11 @@ async function submitNewCustomerForm() {
   if (editId) {
     await API.updateEntity('customer', editId, payload);
     created = { id: editId, ...payload };
-    alert('✓ Customer record updated successfully.');
+    showToast('✓ Customer record updated successfully.', 'success');
   } else {
     const res = await API.createCustomer(payload);
     created = (res && res.data) ? res.data : { id: 'cust-' + Date.now(), ...payload };
-    alert('✓ Customer registered successfully.');
+    showToast('✓ Customer registered successfully.', 'success');
   }
 
   closeModal('modal-add-customer');
@@ -4712,6 +5867,38 @@ async function toggleSupplierStatus(id, currentStatus) {
 }
 
 // 3. PRODUCT & MASTER SKU CONTROLLERS
+function checkProductSellingPriceMargin() {
+  const cost = parseCurrency(document.getElementById('prod-cost-pkr')?.value);
+  const selling = parseCurrency(document.getElementById('prod-selling-price')?.value);
+  const warnEl = document.getElementById('prod-price-warning');
+  const msgEl = document.getElementById('prod-price-warning-msg');
+  const sellingInput = document.getElementById('prod-selling-price');
+
+  if (cost > 0 && selling > 0 && selling < cost) {
+    const loss = cost - selling;
+    const lossPct = ((loss / cost) * 100).toFixed(1);
+    if (warnEl) {
+      warnEl.style.display = 'flex';
+      warnEl.className = 'loss-alert-box';
+    }
+    if (msgEl) {
+      msgEl.innerHTML = `<strong>Loss Alert:</strong> Selling Price (<span class="loss-text">PKR ${selling.toLocaleString()}</span>) is lower than Landed Cost Price (PKR ${cost.toLocaleString()}). Loss: <span class="loss-text">-PKR ${loss.toLocaleString()} (-${lossPct}% negative margin)</span>!`;
+    }
+    if (sellingInput) {
+      sellingInput.classList.add('loss-text');
+      sellingInput.style.borderColor = '#ef4444';
+      sellingInput.style.backgroundColor = '#fef2f2';
+    }
+  } else {
+    if (warnEl) warnEl.style.display = 'none';
+    if (sellingInput) {
+      sellingInput.classList.remove('loss-text');
+      sellingInput.style.borderColor = '';
+      sellingInput.style.backgroundColor = '';
+    }
+  }
+}
+
 async function openNewProductModal() {
   const suppliers = await API.getSuppliers();
   const supSelect = document.getElementById('prod-supplier-select');
@@ -4734,6 +5921,7 @@ async function openNewProductModal() {
   document.getElementById('prod-selling-price').value = '';
   document.getElementById('prod-description').value = '';
 
+  checkProductSellingPriceMargin();
   openModal('modal-add-product');
 }
 
@@ -4761,27 +5949,28 @@ async function openEditProductModal(id) {
   document.getElementById('prod-country').value = p.country_of_origin || 'Pakistan';
   document.getElementById('prod-reorder-level').value = p.reorder_level || 10;
   document.getElementById('prod-currency').value = p.currency || 'PKR';
-  document.getElementById('prod-cost-pkr').value = p.cost_price || '';
-  document.getElementById('prod-selling-price').value = p.selling_price || '';
+  document.getElementById('prod-cost-pkr').value = p.cost_price ? Number(p.cost_price).toLocaleString() : '';
+  document.getElementById('prod-selling-price').value = p.selling_price ? Number(p.selling_price).toLocaleString() : '';
   document.getElementById('prod-description').value = p.description || '';
 
+  checkProductSellingPriceMargin();
   openModal('modal-add-product');
 }
 
 async function submitNewProductForm() {
   const editId = document.getElementById('prod-edit-id')?.value;
-  const sku = document.getElementById('prod-sku')?.value;
-  const name = document.getElementById('prod-name')?.value;
+  const sku = document.getElementById('prod-sku')?.value?.trim();
+  const name = document.getElementById('prod-name')?.value?.trim();
   const type = document.getElementById('prod-type')?.value;
   const unit = document.getElementById('prod-unit')?.value;
-  const hsCode = document.getElementById('prod-hs-code')?.value;
+  const hsCode = document.getElementById('prod-hs-code')?.value?.trim();
   const country = document.getElementById('prod-country')?.value;
   const supplierId = document.getElementById('prod-supplier-select')?.value;
   const reorder = document.getElementById('prod-reorder-level')?.value;
   const currency = document.getElementById('prod-currency')?.value;
-  const cost = document.getElementById('prod-cost-pkr')?.value;
-  const price = document.getElementById('prod-selling-price')?.value;
-  const desc = document.getElementById('prod-description')?.value;
+  const cost = parseCurrency(document.getElementById('prod-cost-pkr')?.value);
+  const price = parseCurrency(document.getElementById('prod-selling-price')?.value);
+  const desc = document.getElementById('prod-description')?.value?.trim();
 
   if (!sku || !name || !cost) {
     alert('SKU, Item Name, and Landed Cost Price are mandatory.');
@@ -4798,8 +5987,8 @@ async function submitNewProductForm() {
     default_supplier_id: supplierId || null,
     reorder_level: parseFloat(reorder || 10),
     currency: currency,
-    cost_price: parseFloat(cost || 0),
-    selling_price: parseFloat(price || cost),
+    cost_price: cost,
+    selling_price: price || cost,
     description: desc
   };
 
@@ -4807,11 +5996,11 @@ async function submitNewProductForm() {
   if (editId) {
     await API.updateEntity('product', editId, payload);
     created = { id: editId, ...payload };
-    alert('✓ Master Product SKU updated.');
+    showToast('✓ Master Product SKU updated.', 'success');
   } else {
     const res = await API.createProduct(payload);
     created = (res && res.data) ? res.data : { id: 'prod-' + Date.now(), ...payload };
-    alert('✓ Master Product SKU registered into Catalog.');
+    showToast('✓ Master Product SKU registered into Catalog.', 'success');
   }
 
   closeModal('modal-add-product');
@@ -4883,19 +6072,61 @@ async function submitNewWarehouseForm() {
 // EXPENDITURE MODAL DYNAMIC HANDLERS (GENERAL, TENDER, QUOTATION)
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// EXPENDITURE MODAL DYNAMIC HANDLERS (3-TIER ENGINE)
+// --------------------------------------------------------------------------
+
+const EXPENSE_CATEGORIES_BY_TIER = {
+  'Tier 1 - Tender Direct': [
+    'Tender / Bidding Document Fee',
+    'Lab Sample Testing & Certification',
+    'Sample Procurement & Fabrication',
+    'Site Pre-Bid Survey / Inspection & Fuel',
+    'Bid Security Guarantee Bank Processing Fee',
+    'Courier & Dispatch Charges for Bids',
+    'Technical Consultant / Specialist Fee',
+    'Client Pre-Bid Meeting Refreshments & Travel',
+    'Other Pre-Bid Direct Expense'
+  ],
+  'Tier 2 - PO Execution': [
+    'Hired Freight / Trailer Transport',
+    '3PL Logistics & Courier (TCS / Leopard / M&P)',
+    'Loading & Unloading Labor',
+    'Port Customs Clearance & Handling Charges',
+    'Transit Insurance & Security',
+    'Warehouse Storage & Material Handling',
+    'Packaging & Palletization Supplies',
+    'Site Installation & Field Assembly Labor',
+    'QC Third-Party Inspection at Delivery',
+    'Other Execution & Logistics Expense'
+  ],
+  'Tier 3 - General Overheads': [
+    'Head Office Rent',
+    'Office Utilities (Electricity, Gas, Water)',
+    'Staff Salaries & Wages',
+    'Office Internet & Telephone',
+    'Stationery & Printing Supplies',
+    'Company Vehicle Fuel & Routine Maintenance',
+    'Bank Charges & Account Maintenance',
+    'Legal & Tax Advisory Fees',
+    'Software & ERP Subscriptions',
+    'Office Refreshments & Hospitality',
+    'Miscellaneous General Expense'
+  ]
+};
+
 let _cachedExpenseOpportunities = [];
 let _cachedExpenseSuggestions = [];
 
-async function openExpenseModal() {
+async function openExpenseModal(presetTier = 'Tier 1 - Tender Direct', presetOppId = '', presetPoId = '') {
   const el = document.getElementById('modal-add-expense');
   if (!el) return;
 
-  // Reset basic inputs
-  const typeEl = document.getElementById('exp-type');
+  const tierEl = document.getElementById('exp-tier');
   const nameEl = document.getElementById('exp-name');
   const oppIdEl = document.getElementById('exp-opportunity-id');
+  const poIdEl = document.getElementById('exp-po-id');
   const searchEl = document.getElementById('exp-linked-search');
-  const catEl = document.getElementById('exp-category');
   const amountEl = document.getElementById('exp-amount');
   const dateEl = document.getElementById('exp-date');
   const paidToEl = document.getElementById('exp-paid-to');
@@ -4904,15 +6135,15 @@ async function openExpenseModal() {
   const badgeEl = document.getElementById('exp-linked-selected-badge');
   const menuEl = document.getElementById('exp-linked-dropdown');
 
-  if (typeEl) typeEl.value = 'General Expense';
+  if (tierEl) tierEl.value = presetTier;
   if (nameEl) nameEl.value = '';
-  if (oppIdEl) oppIdEl.value = '';
+  if (oppIdEl) oppIdEl.value = presetOppId;
+  if (poIdEl) poIdEl.value = presetPoId;
   if (searchEl) searchEl.value = '';
-  if (catEl) catEl.value = 'Courier & Logistics';
   if (amountEl) amountEl.value = '';
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
   if (paidToEl) paidToEl.value = '';
-  if (modeEl) modeEl.value = 'Cash';
+  if (modeEl) modeEl.value = 'Online Bank Transfer';
   if (remarksEl) remarksEl.value = '';
   if (badgeEl) { badgeEl.style.display = 'none'; badgeEl.innerHTML = ''; }
   if (menuEl) menuEl.style.display = 'none';
@@ -4920,7 +6151,6 @@ async function openExpenseModal() {
   // Open modal visual
   el.classList.add('open');
 
-  // Load opportunities & previous expense names asynchronously
   try {
     _cachedExpenseOpportunities = await API.getOpportunities(State.currentBusinessProfileId);
     _cachedExpenseSuggestions = await API.getExpenseSuggestions();
@@ -4929,98 +6159,65 @@ async function openExpenseModal() {
     _cachedExpenseSuggestions = [];
   }
 
-  // Populate Autocomplete datalist for General Expense
-  populateExpenseNameSuggestions();
+  // Populate PO list for Tier 2
+  try {
+    const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+    const poSelect = document.getElementById('exp-po-select');
+    if (poSelect) {
+      poSelect.innerHTML = `<option value="">-- Select Purchase Order (PO) --</option>` +
+        pos.map(p => `<option value="${p.id}" ${p.id === presetPoId ? 'selected' : ''}>${p.po_number} - ${p.customer_name || 'Customer'} (PKR ${parseFloat(p.net_amount || p.total_amount || 0).toLocaleString()})</option>`).join('');
+    }
+  } catch (e) {}
 
-  // Apply initial type visibility
-  handleExpenseTypeChange();
+  handleExpenseTierChange(presetTier);
+
+  if (presetOppId) {
+    const matched = _cachedExpenseOpportunities.find(o => o.id === presetOppId);
+    if (matched) {
+      selectLinkedOpportunity(matched.id, `${matched.opportunity_number || 'TND'} - ${matched.tender_name || matched.title || 'Project'}`, matched.opportunity_number);
+    }
+  }
 }
 
-function populateExpenseNameSuggestions() {
-  const datalist = document.getElementById('exp-name-datalist');
-  if (!datalist) return;
-
-  // Curated common business expense names + user previously entered expense names
-  const defaultSuggestions = [
-    'Office Stationery & Printing',
-    'Lab Testing - Dielectric Breakdown Sample',
-    'Transformer Oil Lab Testing & Certification',
-    'Technical Proposal Dispatch via Courier',
-    'Bid Security Guarantee Bank Processing Fee',
-    'Site Inspection Visits & Generator Fuel',
-    'Head Office Electricity & Utility Bill',
-    'Staff Monthly Salaries & Overtime',
-    'Corporate Client Meeting Refreshments',
-    'Warehouse Storage Rent',
-    'Company Vehicle Routine Maintenance',
-    'Legal & Tax Advisory Retainership'
-  ];
-
-  const combined = Array.from(new Set([...(_cachedExpenseSuggestions || []), ...defaultSuggestions]));
-  datalist.innerHTML = combined.map(name => `<option value="${name.replace(/"/g, '&quot;')}"></option>`).join('');
-}
-
-function handleExpenseTypeChange() {
-  const type = document.getElementById('exp-type')?.value || 'General Expense';
-  const groupName = document.getElementById('group-exp-name');
+function handleExpenseTierChange(tier) {
+  const selectedTier = tier || document.getElementById('exp-tier')?.value || 'Tier 1 - Tender Direct';
   const groupLinked = document.getElementById('group-exp-linked');
+  const groupPOSelect = document.getElementById('group-exp-po-select');
+  const catSelect = document.getElementById('exp-category');
   const linkedLabel = document.getElementById('exp-linked-label');
   const linkedSearch = document.getElementById('exp-linked-search');
-  const oppIdEl = document.getElementById('exp-opportunity-id');
-  const badgeEl = document.getElementById('exp-linked-selected-badge');
-  const menuEl = document.getElementById('exp-linked-dropdown');
 
-  if (oppIdEl) oppIdEl.value = '';
-  if (linkedSearch) linkedSearch.value = '';
-  if (badgeEl) { badgeEl.style.display = 'none'; badgeEl.innerHTML = ''; }
-  if (menuEl) menuEl.style.display = 'none';
+  // Populate categories for tier
+  const categories = EXPENSE_CATEGORIES_BY_TIER[selectedTier] || EXPENSE_CATEGORIES_BY_TIER['Tier 1 - Tender Direct'];
+  if (catSelect) {
+    catSelect.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+  }
 
-  if (type === 'General Expense') {
-    if (groupName) groupName.style.display = 'block';
-    if (groupLinked) groupLinked.style.display = 'none';
-  } else if (type === 'Tender Expense') {
-    if (groupName) groupName.style.display = 'none';
+  if (selectedTier === 'Tier 1 - Tender Direct') {
     if (groupLinked) groupLinked.style.display = 'block';
-    if (linkedLabel) linkedLabel.innerText = 'Select Tender *';
+    if (groupPOSelect) groupPOSelect.style.display = 'none';
+    if (linkedLabel) linkedLabel.innerText = 'Link to Specific Tender / Quotation *';
     if (linkedSearch) linkedSearch.placeholder = 'Type to search tender by title or tender #...';
-  } else if (type === 'Quotation Expense') {
-    if (groupName) groupName.style.display = 'none';
-    if (groupLinked) groupLinked.style.display = 'block';
-    if (linkedLabel) linkedLabel.innerText = 'Select Quotation *';
-    if (linkedSearch) linkedSearch.placeholder = 'Type to search quotation by title or quotation #...';
+  } else if (selectedTier === 'Tier 2 - PO Execution') {
+    if (groupLinked) groupLinked.style.display = 'none';
+    if (groupPOSelect) groupPOSelect.style.display = 'block';
+  } else {
+    // Tier 3 - General Overheads
+    if (groupLinked) groupLinked.style.display = 'none';
+    if (groupPOSelect) groupPOSelect.style.display = 'none';
   }
 }
 
-function getFilteredOpportunitiesForActiveType(query = '') {
-  const type = document.getElementById('exp-type')?.value || 'General Expense';
-  const q = (query || '').toLowerCase().trim();
-
-  let list = _cachedExpenseOpportunities || [];
-
-  if (type === 'Tender Expense') {
-    // Filter tenders (all tenders or those not strictly direct sales quotation)
-    const tenders = list.filter(o => 
-      (o.tender_source !== 'DIRECT SALES' && o.tender_type !== 'Direct Sales / Quotation' && !(o.opportunity_number || '').startsWith('QTN'))
-    );
-    list = tenders.length > 0 ? tenders : list;
-  } else if (type === 'Quotation Expense') {
-    // Filter direct sales / quotations
-    const quotations = list.filter(o => 
-      (o.tender_source === 'DIRECT SALES' || o.tender_type === 'Direct Sales / Quotation' || (o.opportunity_number || '').startsWith('QTN'))
-    );
-    list = quotations.length > 0 ? quotations : list;
+function handleExpenseCategorySelected(cat) {
+  const nameEl = document.getElementById('exp-name');
+  if (nameEl && !nameEl.value) {
+    nameEl.value = cat;
   }
+}
 
-  if (q) {
-    list = list.filter(o => 
-      (o.opportunity_number && o.opportunity_number.toLowerCase().includes(q)) ||
-      (o.tender_name && o.tender_name.toLowerCase().includes(q)) ||
-      (o.title && o.title.toLowerCase().includes(q)) ||
-      (o.customer_name && o.customer_name.toLowerCase().includes(q))
-    );
-  }
-
-  return list;
+function handleExpensePOSelected(poId) {
+  const poIdEl = document.getElementById('exp-po-id');
+  if (poIdEl) poIdEl.value = poId;
 }
 
 function openLinkedDropdown() {
@@ -5032,18 +6229,26 @@ function filterLinkedOpportunities(query = '') {
   const menuEl = document.getElementById('exp-linked-dropdown');
   if (!menuEl) return;
 
-  const type = document.getElementById('exp-type')?.value || 'General Expense';
-  const isQuotation = type === 'Quotation Expense';
-  const items = getFilteredOpportunitiesForActiveType(query);
+  const q = (query || '').toLowerCase().trim();
+  let list = _cachedExpenseOpportunities || [];
 
-  if (items.length === 0) {
-    menuEl.innerHTML = `<div class="searchable-empty-state">No matching ${isQuotation ? 'quotations' : 'tenders'} found.</div>`;
+  if (q) {
+    list = list.filter(o => 
+      (o.opportunity_number && o.opportunity_number.toLowerCase().includes(q)) ||
+      (o.tender_name && o.tender_name.toLowerCase().includes(q)) ||
+      (o.title && o.title.toLowerCase().includes(q)) ||
+      (o.customer_name && o.customer_name.toLowerCase().includes(q))
+    );
+  }
+
+  if (list.length === 0) {
+    menuEl.innerHTML = `<div class="searchable-empty-state">No matching projects/tenders found.</div>`;
     menuEl.style.display = 'block';
     return;
   }
 
-  menuEl.innerHTML = items.map(o => {
-    const oppNum = o.opportunity_number || (isQuotation ? 'QTN-2026' : 'TND-2026');
+  menuEl.innerHTML = list.map(o => {
+    const oppNum = o.opportunity_number || 'TND-2026';
     const title = o.tender_name || o.title || 'Untitled Project';
     const client = o.customer_name || 'Client';
     const val = parseFloat(o.estimated_value || 0).toLocaleString();
@@ -5053,7 +6258,7 @@ function filterLinkedOpportunities(query = '') {
       <div class="searchable-dropdown-item" onclick="selectLinkedOpportunity('${o.id}', '${safeDisplay}', '${oppNum}')">
         <div class="searchable-item-title">
           <span><strong>${oppNum}</strong> - ${title}</span>
-          <span class="badge ${isQuotation ? 'badge-won' : 'badge-active'}" style="font-size:0.7rem;">${isQuotation ? 'Quotation' : 'Tender'}</span>
+          <span class="badge badge-active" style="font-size:0.7rem;">Project</span>
         </div>
         <div class="searchable-item-sub">
           🏢 ${client} &nbsp;|&nbsp; 💰 Est. PKR ${val} &nbsp;|&nbsp; Status: ${o.status || 'Active'}
@@ -5091,17 +6296,18 @@ document.addEventListener('click', function(e) {
 });
 
 async function submitGeneralExpenseForm() {
-  const type = document.getElementById('exp-type')?.value || 'General Expense';
+  const tier = document.getElementById('exp-tier')?.value || 'Tier 1 - Tender Direct';
   const name = document.getElementById('exp-name')?.value?.trim();
   const oppId = document.getElementById('exp-opportunity-id')?.value;
+  const poId = document.getElementById('exp-po-id')?.value || document.getElementById('exp-po-select')?.value;
   const cat = document.getElementById('exp-category')?.value;
-  const amount = document.getElementById('exp-amount')?.value;
+  const amount = parseCurrency(document.getElementById('exp-amount')?.value);
   const date = document.getElementById('exp-date')?.value;
   const paidTo = document.getElementById('exp-paid-to')?.value;
   const mode = document.getElementById('exp-mode')?.value;
   const remarks = document.getElementById('exp-remarks')?.value;
 
-  if (!amount || parseFloat(amount) <= 0) {
+  if (!amount || amount <= 0) {
     alert('Please enter a valid expenditure amount.');
     document.getElementById('exp-amount')?.focus();
     return;
@@ -5112,101 +6318,189 @@ async function submitGeneralExpenseForm() {
     return;
   }
 
-  if (type === 'General Expense' && !name) {
-    alert('Expense Name is mandatory for General Expense.');
-    document.getElementById('exp-name')?.focus();
-    return;
-  }
-
-  if (type === 'Tender Expense' && !oppId) {
-    alert('Please select a Tender from the searchable dropdown.');
+  if (tier === 'Tier 1 - Tender Direct' && !oppId) {
+    alert('Please select a Tender/Quotation to link this pre-bid expenditure.');
     document.getElementById('exp-linked-search')?.focus();
     return;
   }
 
-  if (type === 'Quotation Expense' && !oppId) {
-    alert('Please select a Quotation from the searchable dropdown.');
-    document.getElementById('exp-linked-search')?.focus();
+  if (tier === 'Tier 2 - PO Execution' && !poId) {
+    alert('Please select a Purchase Order (PO) for this delivery/execution expenditure.');
+    document.getElementById('exp-po-select')?.focus();
     return;
   }
 
-  // Derive display expense name for tender/quotation if not provided
-  let finalExpenseName = name;
   let linkedOpp = null;
   if (oppId) {
     linkedOpp = (_cachedExpenseOpportunities || []).find(o => o.id === oppId);
-    if (!finalExpenseName && linkedOpp) {
-      finalExpenseName = `${cat} - ${linkedOpp.opportunity_number}`;
-    }
   }
+
+  let linkedPO = null;
+  try {
+    const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+    linkedPO = pos.find(p => p.id === poId);
+  } catch (e) {}
 
   const payload = {
     business_profile_id: State.currentBusinessProfileId === 'all' ? null : State.currentBusinessProfileId,
-    expense_type: type,
-    expense_name: finalExpenseName || cat,
+    expense_tier: tier,
+    expense_type: tier,
+    expense_name: name || cat,
     category: cat,
-    amount: parseFloat(amount),
+    amount: amount,
     expense_date: date,
-    paid_to: paidTo || 'Company Petty Cash',
-    payment_mode: mode || 'Cash',
-    opportunity_id: oppId || null,
-    opportunity_number: linkedOpp?.opportunity_number || null,
+    paid_to: paidTo || 'Vendor / Contractor',
+    payment_mode: mode || 'Online Bank Transfer',
+    opportunity_id: oppId || linkedPO?.opportunity_id || null,
+    opportunity_number: linkedOpp?.opportunity_number || linkedPO?.award_number || null,
+    purchase_order_id: poId || null,
+    po_number: linkedPO?.po_number || null,
     tender_name: linkedOpp?.tender_name || linkedOpp?.title || null,
     remarks: remarks
   };
 
-  const res = await API.createExpense(payload);
+  await API.createExpense(payload);
 
   closeModal('modal-add-expense');
-  alert(`✓ ${type} of PKR ${parseFloat(amount).toLocaleString()} recorded successfully!`);
+  showToast(`✓ Expenditure of PKR ${amount.toLocaleString()} recorded successfully!`, 'success');
 
-  // Refresh active view or navigate to expenses
-  if (State.activeView === 'expenses') {
-    await renderActiveView();
-  } else {
-    navigateToView('expenses');
-  }
+  await renderActiveView();
 }
 
 async function submitNewCompanyForm() {
-  const name = document.getElementById('comp-name')?.value;
-  const legal = document.getElementById('comp-legal')?.value;
-  const ntn = document.getElementById('comp-ntn')?.value;
-  const city = document.getElementById('comp-city')?.value;
-  const invPrefix = document.getElementById('comp-inv-prefix')?.value;
+  const name = document.getElementById('comp-name')?.value?.trim();
+  const legal = document.getElementById('comp-legal')?.value?.trim();
+  const abbrev = document.getElementById('comp-abbrev')?.value?.trim();
+  const ntnRaw = document.getElementById('comp-ntn')?.value?.trim();
+  const strnRaw = document.getElementById('comp-strn')?.value?.trim();
+  const email = document.getElementById('comp-email')?.value?.trim();
+  const city = document.getElementById('comp-city')?.value?.trim();
+  const invPrefix = document.getElementById('comp-inv-prefix')?.value?.trim();
   const fbr = document.getElementById('comp-fbr')?.value;
 
   if (!name || !legal) {
-    alert('Business Name and Legal Name are mandatory');
+    alert('Business Display Name and Full Legal Name are mandatory.');
+    return;
+  }
+
+  const ntn = (ntnRaw || '').replace(/\D/g, '');
+  const strn = (strnRaw || '').replace(/\D/g, '');
+
+  if (!ntn) {
+    alert('National Tax # (NTN) is mandatory and must contain numeric digits only.');
+    return;
+  }
+  if (!strn) {
+    alert('Sales Tax # (STRN) is mandatory and must contain numeric digits only.');
+    return;
+  }
+  if (!email || !document.getElementById('comp-email')?.checkValidity()) {
+    alert('Please provide a valid official email address.');
     return;
   }
 
   const payload = {
     business_name: name,
     legal_name: legal,
+    abbreviation: abbrev,
     ntn: ntn,
-    city: city,
-    invoice_prefix: invPrefix,
+    strn: strn,
+    email: email,
+    city: city || 'Lahore',
+    invoice_prefix: invPrefix || 'INV',
     fbr_enabled: fbr === 'true'
   };
 
-  const res = await API.createBusinessProfile(payload);
-  const created = (res && res.data) ? res.data : { id: 'bp-' + Date.now(), ...payload };
+  try {
+    const res = await API.createBusinessProfile(payload);
+    
+    if (res && res.requires_payment_confirmation) {
+      pendingPaidCompanyPayload = payload;
+      openModal('modal-paid-company-warning');
+      return;
+    }
 
-  closeModal('modal-add-company');
-  if (res.billingNotice) {
-    alert(`${res.billingNotice.notice}\nPlan charge: ${res.billingNotice.chargePerMonth}`);
-  } else {
-    alert('Company profile created successfully.');
+    const created = (res && res.data) ? res.data : { id: 'bp-' + Date.now(), ...payload };
+
+    closeModal('modal-add-company');
+    if (res.billingNotice) {
+      showToast(`${res.billingNotice.notice} (Plan: ${res.billingNotice.chargePerMonth})`, 'info');
+    } else {
+      showToast('✓ Business profile registered successfully!', 'success');
+    }
+
+    State.businessProfiles = await API.getBusinessProfiles();
+    populateBusinessSwitcher();
+
+    if (_quickAddContext && (_quickAddContext.entityType === 'company' || _quickAddContext.entityType === 'businessProfile')) {
+      await handleQuickAddCompletion('company', created);
+    } else {
+      navigateToView('business-profiles');
+    }
+  } catch (err) {
+    showToast(`Error creating company profile: ${err.message}`, 'error');
+  }
+}
+
+async function submitOnboardCompanyForm() {
+  const name = document.getElementById('onboard-comp-name')?.value?.trim();
+  const legal = document.getElementById('onboard-comp-legal')?.value?.trim();
+  const abbrev = document.getElementById('onboard-comp-abbrev')?.value?.trim();
+  const ntnRaw = document.getElementById('onboard-comp-ntn')?.value?.trim();
+  const strnRaw = document.getElementById('onboard-comp-strn')?.value?.trim();
+  const email = document.getElementById('onboard-comp-email')?.value?.trim();
+  const city = document.getElementById('onboard-comp-city')?.value?.trim();
+  const invPrefix = document.getElementById('onboard-comp-prefix')?.value?.trim();
+  const fbrCheckbox = document.getElementById('onboard-comp-fbr');
+
+  if (!name || !legal) {
+    alert('Business Display Name and Full Legal Name are mandatory.');
+    return;
   }
 
-  State.businessProfiles = await API.getBusinessProfiles();
-  populateBusinessSwitcher();
+  const ntn = (ntnRaw || '').replace(/\D/g, '');
+  const strn = (strnRaw || '').replace(/\D/g, '');
 
-  if (_quickAddContext && (_quickAddContext.entityType === 'company' || _quickAddContext.entityType === 'businessProfile')) {
-    await handleQuickAddCompletion('company', created);
-  } else {
-    navigateToView('business-profiles');
+  if (!ntn) {
+    alert('National Tax # (NTN) is mandatory and must contain numeric digits only.');
+    return;
+  }
+  if (!strn) {
+    alert('Sales Tax # (STRN) is mandatory and must contain numeric digits only.');
+    return;
+  }
+  if (!email || !document.getElementById('onboard-comp-email')?.checkValidity()) {
+    alert('Please enter a valid official email address.');
+    return;
+  }
+
+  const payload = {
+    business_name: name,
+    legal_name: legal,
+    abbreviation: abbrev,
+    ntn: ntn,
+    strn: strn,
+    email: email,
+    city: city || 'Lahore',
+    invoice_prefix: invPrefix || 'INV',
+    fbr_enabled: fbrCheckbox ? fbrCheckbox.checked : true
+  };
+
+  try {
+    const res = await API.createBusinessProfile(payload);
+    closeModal('modal-onboard-company');
+    showToast('✓ First Business Profile registered successfully!', 'success');
+
+    State.businessProfiles = await API.getBusinessProfiles();
+    populateBusinessSwitcher();
+
+    if (payload.fbr_enabled) {
+      openModal('modal-onboard-fbr');
+    } else {
+      await renderActiveView();
+    }
+  } catch (err) {
+    showToast(`Error registering company: ${err.message}`, 'error');
   }
 }
 
@@ -5415,9 +6709,11 @@ const ENTITY_SCHEMAS = {
     fetchFn: () => API.getBusinessProfiles(),
     fields: [
       { name: 'business_name', label: 'Business Display Name *', type: 'text', required: true },
+      { name: 'abbreviation', label: 'Abbreviation / Short Code', type: 'text' },
       { name: 'legal_name', label: 'Legal Name *', type: 'text', required: true },
-      { name: 'ntn', label: 'National Tax Number (NTN)', type: 'text' },
-      { name: 'strn', label: 'Sales Tax Registration (STRN)', type: 'text' },
+      { name: 'email', label: 'Official Email', type: 'text' },
+      { name: 'ntn', label: 'National Tax Number (NTN) *', type: 'text', required: true },
+      { name: 'strn', label: 'Sales Tax Registration (STRN) *', type: 'text', required: true },
       { name: 'city', label: 'City', type: 'text' },
       { name: 'invoice_prefix', label: 'Invoice Prefix', type: 'text' },
       { name: 'fbr_enabled', label: 'Enable FBR PRAL Gateway', type: 'select', options: [
@@ -5631,56 +6927,6 @@ async function submitOnboardCompanyForm() {
     }
   } catch (err) {
     alert(`Error: ${err.message}`);
-  }
-}
-
-async function submitNewCompanyForm() {
-  const name = document.getElementById('comp-name')?.value;
-  const legal = document.getElementById('comp-legal')?.value;
-  const ntn = document.getElementById('comp-ntn')?.value;
-  const city = document.getElementById('comp-city')?.value;
-  const prefix = document.getElementById('comp-inv-prefix')?.value;
-  const fbrSelect = document.getElementById('comp-fbr')?.value;
-
-  if (!name || !legal) {
-    alert('Business Name and Legal Name are mandatory');
-    return;
-  }
-
-  const payload = {
-    business_name: name,
-    legal_name: legal,
-    ntn,
-    city: city || 'Lahore',
-    invoice_prefix: prefix || 'INV',
-    fbr_enabled: fbrSelect === 'true'
-  };
-
-  try {
-    const res = await fetch(`${API_BASE}/business-profiles`, {
-      method: 'POST',
-      headers: API.getHeaders(),
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-
-    if (res.status === 402 || data.requires_payment_confirmation) {
-      pendingPaidCompanyPayload = payload;
-      openModal('modal-paid-company-warning');
-      return;
-    }
-
-    if (data.success) {
-      closeModal('modal-add-company');
-      alert('✓ Company Profile added successfully!');
-      State.businessProfiles = await API.getBusinessProfiles();
-      populateBusinessSwitcher();
-      await renderActiveView();
-    } else {
-      alert(`Error: ${data.message}`);
-    }
-  } catch (err) {
-    alert(`Failed to save company: ${err.message}`);
   }
 }
 

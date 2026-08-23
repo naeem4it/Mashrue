@@ -70,6 +70,7 @@ router.post('/', authenticate, async (req, res) => {
   const {
     business_name,
     legal_name,
+    abbreviation,
     ntn,
     strn,
     cnic,
@@ -84,9 +85,12 @@ router.post('/', authenticate, async (req, res) => {
     confirm_paid
   } = req.body;
 
-  if (!business_name || !legal_name) {
-    return res.status(400).json({ success: false, message: 'Business Name and Legal Name are mandatory' });
+  if (!business_name || !legal_name || !ntn || !strn) {
+    return res.status(400).json({ success: false, message: 'Business Name, Legal Name, NTN, and STRN are mandatory' });
   }
+
+  const cleanNtn = String(ntn).replace(/[^0-9]/g, '');
+  const cleanStrn = String(strn).replace(/[^0-9]/g, '');
 
   try {
     let tenantId = req.user.tenantId;
@@ -109,7 +113,7 @@ router.post('/', authenticate, async (req, res) => {
     const countRes = await db.query(`SELECT COUNT(*) FROM business_profiles WHERE tenant_id = $1`, [tenantId]);
     const existingCount = parseInt(countRes.rows[0].count, 10);
 
-    // If exceeding 2 companies and not confirmed, prompt for paid confirmation
+    // If exceeding freeLimit companies and not confirmed, prompt for paid confirmation
     if (existingCount >= freeLimit && !confirm_paid && req.user.role !== 'SuperAdmin') {
       return res.status(402).json({
         success: false,
@@ -132,15 +136,16 @@ router.post('/', authenticate, async (req, res) => {
 
     const result = await db.query(
       `INSERT INTO business_profiles 
-       (tenant_id, business_name, legal_name, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       (tenant_id, business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         tenantId,
         business_name,
         legal_name,
-        ntn || null,
-        strn || null,
+        abbreviation || null,
+        cleanNtn || null,
+        cleanStrn || null,
         cnic || null,
         address || null,
         city || 'Lahore',
@@ -178,28 +183,32 @@ router.post('/', authenticate, async (req, res) => {
 // PUT update business profile
 router.put('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { business_name, legal_name, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix } = req.body;
+  const { business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix } = req.body;
+
+  const cleanNtn = ntn ? String(ntn).replace(/[^0-9]/g, '') : null;
+  const cleanStrn = strn ? String(strn).replace(/[^0-9]/g, '') : null;
 
   try {
     let queryText = `
       UPDATE business_profiles
       SET business_name = COALESCE($1, business_name),
           legal_name = COALESCE($2, legal_name),
-          ntn = COALESCE($3, ntn),
-          strn = COALESCE($4, strn),
-          cnic = COALESCE($5, cnic),
-          address = COALESCE($6, address),
-          city = COALESCE($7, city),
-          email = COALESCE($8, email),
-          phone = COALESCE($9, phone),
-          fbr_enabled = COALESCE($10, fbr_enabled),
-          invoice_prefix = COALESCE($11, invoice_prefix),
-          po_prefix = COALESCE($12, po_prefix),
-          dc_prefix = COALESCE($13, dc_prefix),
+          abbreviation = COALESCE($3, abbreviation),
+          ntn = COALESCE($4, ntn),
+          strn = COALESCE($5, strn),
+          cnic = COALESCE($6, cnic),
+          address = COALESCE($7, address),
+          city = COALESCE($8, city),
+          email = COALESCE($9, email),
+          phone = COALESCE($10, phone),
+          fbr_enabled = COALESCE($11, fbr_enabled),
+          invoice_prefix = COALESCE($12, invoice_prefix),
+          po_prefix = COALESCE($13, po_prefix),
+          dc_prefix = COALESCE($14, dc_prefix),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $14
+      WHERE id = $15
     `;
-    const params = [business_name, legal_name, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix, id];
+    const params = [business_name, legal_name, abbreviation, cleanNtn, cleanStrn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix, id];
 
     if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
       const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';

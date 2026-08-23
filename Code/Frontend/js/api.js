@@ -422,8 +422,9 @@ const API = {
       tenant_id: tid,
       business_name: payload.business_name,
       legal_name: payload.legal_name || payload.business_name,
-      ntn: payload.ntn || 'N/A',
-      strn: payload.strn || 'N/A',
+      abbreviation: payload.abbreviation || '',
+      ntn: payload.ntn ? String(payload.ntn).replace(/[^0-9]/g, '') : 'N/A',
+      strn: payload.strn ? String(payload.strn).replace(/[^0-9]/g, '') : 'N/A',
       city: payload.city || 'Lahore',
       invoice_prefix: payload.invoice_prefix || 'INV',
       email: payload.email || '',
@@ -593,6 +594,19 @@ const API = {
     }
 
     return this.filterTenantData(merged, businessProfileId); // Returns [] for new tenants!
+  },
+
+  async getOpportunityById(id) {
+    try {
+      const res = await fetch(`${API_BASE}/opportunities/${id}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && json.success) return json;
+    } catch (e) {
+      console.warn('getOpportunityById fallback:', e.message);
+    }
+    const localList = State.getTenantEntityList('opportunities');
+    const found = localList.find(o => o.id === id);
+    return { success: true, data: found || null };
   },
 
   async createOpportunity(payload) {
@@ -816,6 +830,85 @@ const API = {
     }
   },
 
+  async reviewBid(id, comments = '') {
+    const bids = State.getTenantEntityList('bids');
+    const b = bids.find(item => item.id === id);
+    if (b) {
+      b.approval_status = 'Under Management Review';
+      b.review_comments = comments;
+      State.saveTenantEntity('bids', b);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/bids/${id}/review`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ review_comments: comments })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: true, message: 'Bid submitted for management review.' };
+    }
+  },
+
+  async approveBid(id, comments = '') {
+    const bids = State.getTenantEntityList('bids');
+    const b = bids.find(item => item.id === id);
+    if (b) {
+      b.approval_status = 'Approved';
+      b.approval_comments = comments;
+      State.saveTenantEntity('bids', b);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/bids/${id}/approve`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ approval_comments: comments })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: true, message: 'Bid approved successfully.' };
+    }
+  },
+
+  async rejectBid(id, reason = '') {
+    const bids = State.getTenantEntityList('bids');
+    const b = bids.find(item => item.id === id);
+    if (b) {
+      b.approval_status = 'Rejected';
+      b.rejection_reason = reason;
+      State.saveTenantEntity('bids', b);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/bids/${id}/reject`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ rejection_reason: reason })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: true, message: 'Bid marked as rejected.' };
+    }
+  },
+
+  async updateBidStatus(id, status) {
+    const bids = State.getTenantEntityList('bids');
+    const b = bids.find(item => item.id === id || item.opportunity_id === id);
+    if (b) {
+      b.approval_status = status;
+      State.saveTenantEntity('bids', b);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/bids/${id}/status`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ approval_status: status })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: true, message: `Status updated to ${status}` };
+    }
+  },
+
   // 8. Awards & Guarantees & Contracts (STRICT ZERO-TRUST TENANT ISOLATION)
   async getAwards() {
     let apiData = [];
@@ -834,14 +927,31 @@ const API = {
   },
 
   async createAward(payload) {
-    const newAward = { id: 'al-' + Date.now(), ...payload, created_at: new Date().toISOString() };
+    const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
+    const newAward = { id: 'al-' + Date.now(), tenant_id: tid, ...payload, created_at: new Date().toISOString() };
     State.saveTenantEntity('awards', newAward);
+
+    if (payload.opportunity_id) {
+      const opps = State.getTenantEntityList('opportunities');
+      const opp = opps.find(o => o.id === payload.opportunity_id);
+      if (opp) {
+        opp.status = 'won';
+        State.saveTenantEntity('opportunities', opp);
+      }
+      const bids = State.getTenantEntityList('bids');
+      const bid = bids.find(b => b.opportunity_id === payload.opportunity_id || b.id === payload.opportunity_id);
+      if (bid) {
+        bid.approval_status = 'Won';
+        bid.submission_status = 'Submitted';
+        State.saveTenantEntity('bids', bid);
+      }
+    }
 
     try {
       const res = await fetch(`${API_BASE}/awards`, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, tenant_id: tid })
       });
       const json = await res.json();
       if (json && json.success) return json;
@@ -970,7 +1080,36 @@ const API = {
     for (const po of localList) {
       if (!merged.some(m => m.id === po.id)) merged.push(po);
     }
-    return this.filterTenantData(merged, businessProfileId);
+
+    // Auto-normalize and ensure GST (18%) is computed on all POs (e.g. PO-001, PO-002)
+    const normalized = merged.map(po => {
+      let itemsSubtotal = 0;
+      if (po.items && Array.isArray(po.items) && po.items.length > 0) {
+        itemsSubtotal = po.items.reduce((sum, itm) => sum + (parseFloat(itm.total_price || (parseFloat(itm.quantity || 1) * parseFloat(itm.unit_price || 0))) || 0), 0);
+      }
+      const rawSub = itemsSubtotal > 0 ? itemsSubtotal : parseFloat(po.subtotal || po.total_amount || po.net_amount || 0);
+      const gstRate = po.gst_rate_pct !== undefined ? parseFloat(po.gst_rate_pct) : 18;
+      
+      let gstAmt = parseFloat(po.gst_amount || po.tax_amount || 0);
+      let grandTotal = parseFloat(po.net_amount || 0);
+
+      if (gstAmt === 0 || grandTotal <= rawSub) {
+        gstAmt = Math.round((rawSub * gstRate) / 100);
+        grandTotal = rawSub + gstAmt;
+      }
+
+      po.subtotal = rawSub;
+      po.gst_rate_pct = gstRate;
+      po.gst_amount = gstAmt;
+      po.tax_amount = gstAmt;
+      po.total_amount = grandTotal;
+      po.net_amount = grandTotal;
+
+      State.saveTenantEntity('purchaseOrders', po);
+      return po;
+    });
+
+    return this.filterTenantData(normalized, businessProfileId);
   },
 
   async createPurchaseOrder(payload) {

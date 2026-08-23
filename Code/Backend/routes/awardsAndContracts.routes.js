@@ -77,6 +77,18 @@ router.post('/awards', optionalAuth, async (req, res) => {
       ]
     );
 
+    // Update linked opportunity and bid to won
+    if (opportunity_id) {
+      await db.query(
+        `UPDATE opportunities SET status = 'won', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [opportunity_id]
+      );
+      await db.query(
+        `UPDATE bids SET approval_status = 'Won', submission_status = 'Submitted', updated_at = CURRENT_TIMESTAMP WHERE opportunity_id = $1`,
+        [opportunity_id]
+      );
+    }
+
     res.status(201).json({
       success: true,
       data: result.rows[0],

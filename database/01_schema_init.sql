@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     contact_person VARCHAR(100),
     phone VARCHAR(50),
     email VARCHAR(150),
+    abbreviation VARCHAR(50),            -- Company Abbreviation / Short Code (e.g. CGL, ABC)
     invoice_prefix VARCHAR(10) DEFAULT 'INV',
     quotation_prefix VARCHAR(10) DEFAULT 'QTN',
     dc_prefix VARCHAR(10) DEFAULT 'DC',
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS business_profiles (
 );
 
 -- Migration for existing business_profiles table
+ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS abbreviation VARCHAR(50);
 ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS dc_prefix VARCHAR(10) DEFAULT 'DC';
 ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS po_prefix VARCHAR(10) DEFAULT 'PO';
 
