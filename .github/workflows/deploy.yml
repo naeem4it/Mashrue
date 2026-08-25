@@ -1,0 +1,76 @@
+name: Mashrue CI/CD - Automated Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: # Allows manual trigger from GitHub UI if needed
+
+jobs:
+  deploy:
+    name: Deploy to Hetzner Cloud (95.217.152.187)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🚀 Deploy Files via SSH (rsync)
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-avzr --delete --exclude='node_modules' --exclude='.env' --exclude='.git' --exclude='.github'"
+          SOURCE: "Code/Frontend/"
+          REMOTE_HOST: ${{ secrets.SERVER_HOST || '95.217.152.187' }}
+          REMOTE_USER: ${{ secrets.SERVER_USER || 'mashrueadmin' }}
+          REMOTE_PORT: "22"
+          TARGET: "/var/www/mashrue/frontend/"
+
+      - name: ⚙️ Deploy Backend API via SSH
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-avzr --exclude='node_modules' --exclude='.env' --exclude='.git' --exclude='.github'"
+          SOURCE: "Code/Backend/"
+          REMOTE_HOST: ${{ secrets.SERVER_HOST || '95.217.152.187' }}
+          REMOTE_USER: ${{ secrets.SERVER_USER || 'mashrueadmin' }}
+          REMOTE_PORT: "22"
+          TARGET: "/var/www/mashrue/backend/"
+
+      - name: 🗄️ Deploy Database Scripts via SSH
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-avzr"
+          SOURCE: "database/"
+          REMOTE_HOST: ${{ secrets.SERVER_HOST || '95.217.152.187' }}
+          REMOTE_USER: ${{ secrets.SERVER_USER || 'mashrueadmin' }}
+          REMOTE_PORT: "22"
+          TARGET: "/var/www/mashrue/database/"
+
+      - name: 🔄 Post-Deploy: Install Dependencies, Reload PM2 & Nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST || '95.217.152.187' }}
+          username: ${{ secrets.SERVER_USER || 'mashrueadmin' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "📦 Updating Backend NPM packages..."
+            cd /var/www/mashrue/backend
+            npm install --production
+
+            echo "⚡ Reloading PM2 Cluster (Zero-Downtime)..."
+            pm2 reload mashrue-api || pm2 start ecosystem.config.js --env production
+            pm2 save
+
+            echo "🌐 Reloading Nginx..."
+            sudo nginx -t && sudo systemctl reload nginx
+
+            echo "🩺 Verifying Health Endpoint..."
+            sleep 2
+            curl -f http://127.0.0.1:3033/health || (echo "⚠️ Health check failed!" && exit 1)
+
+            echo "✅ DEPLOYMENT FINISHED SUCCESSFULLY!"
