@@ -680,11 +680,34 @@ const API = {
     }
   },
 
+  async updateOpportunity(id, payload) {
+    const list = State.getTenantEntityList('opportunities');
+    const opp = list.find(o => o.id === id);
+    if (opp) {
+      Object.assign(opp, payload);
+      State.saveTenantEntity('opportunities', opp);
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/opportunities/${id}`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json && json.success) return json;
+    } catch (e) {}
+
+    return { success: true, data: opp, message: 'Tender record updated successfully.' };
+  },
+
   // 6. Bid Securities (STRICT ZERO-TRUST TENANT ISOLATION)
-  async getBidSecurities(businessProfileId = 'all') {
+  async getBidSecurities(businessProfileId = 'all', opportunityId = null) {
     let apiData = [];
     try {
-      const res = await fetch(`${API_BASE}/bid-securities?business_profile_id=${businessProfileId}`, { headers: this.getHeaders() });
+      let url = `${API_BASE}/bid-securities?business_profile_id=${businessProfileId}`;
+      if (opportunityId) url += `&opportunity_id=${opportunityId}`;
+      const res = await fetch(url, { headers: this.getHeaders() });
       const json = await res.json();
       if (json && Array.isArray(json.data)) apiData = json.data;
     } catch (e) {
@@ -696,7 +719,12 @@ const API = {
     for (const b of localList) {
       if (!merged.some(m => m.id === b.id)) merged.push(b);
     }
-    return this.filterTenantData(merged, businessProfileId);
+
+    let filtered = this.filterTenantData(merged, businessProfileId);
+    if (opportunityId) {
+      filtered = filtered.filter(s => s.opportunity_id === opportunityId || String(s.opportunity_id) === String(opportunityId));
+    }
+    return filtered;
   },
 
   async createBidSecurity(payload) {

@@ -118,6 +118,49 @@ function sendEmailVerificationLink(inputId) {
   showToast(`Verification link sent to ${email}`, 'success');
 }
 
+function handleTenderSourceChange(val) {
+  const container = document.getElementById('tender-source-other-container');
+  const otherInput = document.getElementById('tender-source-other');
+  if (container) {
+    const isOther = (val === 'OTHER' || val === 'Others' || (typeof val === 'string' && val.startsWith('OTHER')));
+    container.style.display = isOther ? 'block' : 'none';
+    if (isOther && otherInput) {
+      otherInput.focus();
+    }
+  }
+}
+
+async function handleUpdateTenderStatus(oppId, newStatus, encodedTitle = '', estVal = 0) {
+  if (!newStatus) return;
+  const title = encodedTitle ? decodeURIComponent(encodedTitle) : 'Tender';
+
+  if (newStatus.toLowerCase() === 'won') {
+    const confirmWon = confirm(`Are you sure you want to mark "${title}" as WON?`);
+    if (!confirmWon) return;
+
+    await API.updateOpportunity(oppId, { status: 'Won', selection_status: 'Selected' });
+    showToast(`🏆 Tender "${title}" successfully marked as WON!`, 'success');
+    
+    const awardChoice = confirm('Would you like to register the formal Letter of Award (LOA) now?');
+    if (awardChoice) {
+      promptAwardLetterModal(oppId, encodeURIComponent(title));
+    }
+  } else if (newStatus.toLowerCase() === 'lost' || newStatus.toLowerCase() === 'loose') {
+    promptTenderLossModal(oppId, encodeURIComponent(title), estVal);
+    return;
+  } else {
+    await API.updateOpportunity(oppId, { status: newStatus });
+    showToast(`✓ Tender status updated to "${newStatus}"`, 'success');
+  }
+
+  // Update in local cached opportunity if cockpit modal is open
+  const openCockpit = document.getElementById('modal-tender-360-cockpit');
+  if (openCockpit && openCockpit.classList.contains('open')) {
+    openTender360Cockpit(oppId);
+  }
+  await renderActiveView();
+}
+
 function toggleCustomerOtherTerms(val) {
   const container = document.getElementById('cust-other-terms-container');
   if (container) {
@@ -1152,7 +1195,22 @@ async function renderOpportunitiesHTML() {
                     ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
                     : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
                 </td>
-                <td><span class="badge badge-${(o.status || 'new').toLowerCase().replace(/\s+/g, '')}">${o.status}</span></td>
+                <td>
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <span class="badge badge-${(o.status || 'new').toLowerCase().replace(/\s+/g, '')}">${o.status}</span>
+                    <select class="form-select" style="font-size:0.7rem; padding:2px 4px; border-radius:4px; height:24px; min-width:90px;" onchange="handleUpdateTenderStatus('${o.id}', this.value, '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})" title="Update Tender Lifecycle Status">
+                      <option value="" disabled selected>Change Status...</option>
+                      <option value="New">New</option>
+                      <option value="Under Evaluation">Under Evaluation</option>
+                      <option value="Ready to submit">Ready to submit</option>
+                      <option value="Submitted">Submitted</option>
+                      <option value="Won">🏆 Won</option>
+                      <option value="Lost">❌ Lost</option>
+                      <option value="Technical Disqualified">Disqualified</option>
+                      <option value="Withdrawn">Withdrawn</option>
+                    </select>
+                  </div>
+                </td>
                 <td>
                   <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
                     <!-- 360 Cockpit Action / Manage -->
@@ -1160,7 +1218,7 @@ async function renderOpportunitiesHTML() {
                       🌐 360° Cockpit
                     </button>
 
-                    <button class="edit-btn" onclick="openEditEntityModal('opportunity', '${o.id}')">✏️</button>
+                    <button class="edit-btn" onclick="openEditEntityModal('opportunity', '${o.id}')" title="Edit Tender Details">✏️</button>
 
                     ${o.selection_status !== 'Selected' && o.status === 'New' ? `
                       <button class="secondary-btn" style="padding:3px 6px; font-size:0.75rem; background:#ecfdf5; color:#059669;" onclick="handleTenderSelection('${o.id}', 'Selected')">✓ Select</button>
@@ -1171,12 +1229,12 @@ async function renderOpportunitiesHTML() {
                       <button class="primary-btn" style="padding:3px 7px; font-size:0.75rem;" onclick="handleBidSubmission('${o.id}')">🚀 Submit</button>
                     ` : ''}
 
-                    ${o.status === 'Submitted' ? `
-                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#ecfdf5; color:#059669; font-weight:700;" onclick="promptWonBid('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}')">🏆 Won</button>
-                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="promptTenderLossModal('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})">❌ Lose</button>
+                    ${o.status !== 'Won' && o.status !== 'won' && o.status !== 'Lost' && o.status !== 'loose' ? `
+                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#ecfdf5; color:#059669; font-weight:700;" onclick="handleUpdateTenderStatus('${o.id}', 'Won', '${encodeURIComponent(o.tender_name || o.title)}')">🏆 Won</button>
+                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="handleUpdateTenderStatus('${o.id}', 'Lost', '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})">❌ Lose</button>
                     ` : ''}
 
-                    ${o.status === 'won' ? `
+                    ${o.status === 'Won' || o.status === 'won' ? `
                       <button class="primary-btn" style="padding:3px 7px; font-size:0.75rem; background:#059669;" onclick="promptAwardLetterModal('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}')">+ Award LOA</button>
                     ` : ''}
                   </div>
@@ -4289,7 +4347,11 @@ function initCustomDateTimePickers() {
 
 async function submitNewTenderForm() {
   const tenderName = document.getElementById('tender-name')?.value;
-  const source = document.getElementById('tender-source')?.value;
+  let source = document.getElementById('tender-source')?.value || 'PPRA (Federal)';
+  const customSource = document.getElementById('tender-source-other')?.value?.trim();
+  if ((source === 'OTHER' || source.startsWith('OTHER')) && customSource) {
+    source = `OTHER: ${customSource}`;
+  }
   const oppNo = document.getElementById('tender-opp-no')?.value;
   const extNo = document.getElementById('tender-ext-no')?.value;
   const currency = document.getElementById('tender-currency')?.value || 'PKR';
@@ -4447,31 +4509,42 @@ function promptAttachBidSecurity(oppId, tenderNameDecoded, oppNo = '', estVal = 
 }
 
 async function openAttachedBidSecurityModal(oppId) {
-  const securities = await API.getBidSecurities(State.currentBusinessProfileId);
-  const matched = securities.filter(s => s.opportunity_id === oppId || String(s.opportunity_id) === String(oppId));
+  let matched = [];
+  try {
+    const securities = await API.getBidSecurities('all', oppId);
+    matched = (securities || []).filter(s => s.opportunity_id === oppId || String(s.opportunity_id) === String(oppId));
+  } catch (e) {
+    matched = [];
+  }
+
+  if (matched.length === 0) {
+    const localSecurities = State.getTenantEntityList('bidSecurities');
+    matched = localSecurities.filter(s => s.opportunity_id === oppId || String(s.opportunity_id) === String(oppId));
+  }
   
   const content = document.getElementById('view-bid-security-content');
   if (!content) return;
 
   if (matched.length === 0) {
     content.innerHTML = `
-      <div style="text-align:center; padding:20px; color:#64748b;">
-        🛡️ No active bid security instrument linked to this tender.
+      <div style="text-align:center; padding:24px 16px; color:#64748b;">
+        🛡️ <strong>No active bid security instrument linked to this tender.</strong><br>
+        <span style="font-size:0.82rem; margin-top:6px; display:inline-block;">Click <em>+ Add Bid Security</em> to attach an earnest money instrument.</span>
       </div>
     `;
   } else {
     content.innerHTML = matched.map(s => `
       <div style="background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <strong style="font-size:1rem; color:#0f172a;">${s.instrument_type} #${s.instrument_number}</strong>
+          <strong style="font-size:1rem; color:#0f172a;">${s.instrument_type || 'CDR / Bank Guarantee'} #${s.instrument_number || s.security_number || 'N/A'}</strong>
           <span class="badge badge-${(s.status || 'active').toLowerCase()}">${s.status || 'Active'}</span>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.83rem;">
-          <div><span style="color:#64748b;">Account Title:</span> <strong>${s.account_title}</strong></div>
-          <div><span style="color:#64748b;">Beneficiary:</span> <strong>${s.beneficiary}</strong></div>
-          <div><span style="color:#64748b;">Amount:</span> <strong style="color:#10b981;">PKR ${parseFloat(s.amount).toLocaleString()}</strong></div>
-          <div><span style="color:#64748b;">Expiry Date:</span> <strong>${s.expiry_date}</strong></div>
-          <div style="grid-column: span 2;"><span style="color:#64748b;">Bank & Branch:</span> <strong>${s.bank_name || 'N/A'}</strong></div>
+          <div><span style="color:#64748b;">Account Title:</span> <strong>${s.account_title || 'N/A'}</strong></div>
+          <div><span style="color:#64748b;">Beneficiary:</span> <strong>${s.beneficiary || 'N/A'}</strong></div>
+          <div><span style="color:#64748b;">Amount:</span> <strong style="color:#10b981;">PKR ${parseFloat(s.amount || 0).toLocaleString()}</strong></div>
+          <div><span style="color:#64748b;">Expiry Date:</span> <strong>${formatDateDDMMYYYY(s.expiry_date) || s.expiry_date || 'N/A'}</strong></div>
+          <div style="grid-column: span 2;"><span style="color:#64748b;">Bank & Branch:</span> <strong>${s.bank_name || 'N/A'} ${s.bank_branch ? `(${s.bank_branch})` : ''}</strong></div>
           ${s.comments ? `<div style="grid-column: span 2;"><span style="color:#64748b;">Remarks:</span> <em>${s.comments}</em></div>` : ''}
         </div>
         <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
@@ -6207,7 +6280,7 @@ const EXPENSE_CATEGORIES_BY_TIER = {
 let _cachedExpenseOpportunities = [];
 let _cachedExpenseSuggestions = [];
 
-async function openExpenseModal(presetTier = 'Tier 1 - Tender Direct', presetOppId = '', presetPoId = '') {
+async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', presetOppId = '', presetPoId = '') {
   const el = document.getElementById('modal-add-expense');
   if (!el) return;
 
@@ -6269,7 +6342,7 @@ async function openExpenseModal(presetTier = 'Tier 1 - Tender Direct', presetOpp
 }
 
 function handleExpenseTierChange(tier) {
-  const selectedTier = tier || document.getElementById('exp-tier')?.value || 'Tier 1 - Tender Direct';
+  const selectedTier = tier || document.getElementById('exp-tier')?.value || 'Tier 3 - General Overheads';
   const groupLinked = document.getElementById('group-exp-linked');
   const groupPOSelect = document.getElementById('group-exp-po-select');
   const catSelect = document.getElementById('exp-category');
@@ -6277,7 +6350,7 @@ function handleExpenseTierChange(tier) {
   const linkedSearch = document.getElementById('exp-linked-search');
 
   // Populate categories for tier
-  const categories = EXPENSE_CATEGORIES_BY_TIER[selectedTier] || EXPENSE_CATEGORIES_BY_TIER['Tier 1 - Tender Direct'];
+  const categories = EXPENSE_CATEGORIES_BY_TIER[selectedTier] || EXPENSE_CATEGORIES_BY_TIER['Tier 3 - General Overheads'];
   if (catSelect) {
     catSelect.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
   }
@@ -6285,7 +6358,7 @@ function handleExpenseTierChange(tier) {
   if (selectedTier === 'Tier 1 - Tender Direct') {
     if (groupLinked) groupLinked.style.display = 'block';
     if (groupPOSelect) groupPOSelect.style.display = 'none';
-    if (linkedLabel) linkedLabel.innerText = 'Link to Specific Tender / Quotation *';
+    if (linkedLabel) linkedLabel.innerText = 'Link to Specific Tender / Quotation (Optional)';
     if (linkedSearch) linkedSearch.placeholder = 'Type to search tender by title or tender #...';
   } else if (selectedTier === 'Tier 2 - PO Execution') {
     if (groupLinked) groupLinked.style.display = 'none';
@@ -6385,7 +6458,7 @@ document.addEventListener('click', function(e) {
 });
 
 async function submitGeneralExpenseForm() {
-  const tier = document.getElementById('exp-tier')?.value || 'Tier 1 - Tender Direct';
+  const tier = document.getElementById('exp-tier')?.value || 'Tier 3 - General Overheads';
   const name = document.getElementById('exp-name')?.value?.trim();
   const oppId = document.getElementById('exp-opportunity-id')?.value;
   const poId = document.getElementById('exp-po-id')?.value || document.getElementById('exp-po-select')?.value;
@@ -6403,19 +6476,7 @@ async function submitGeneralExpenseForm() {
   }
 
   if (!date) {
-    alert('Date is mandatory.');
-    return;
-  }
-
-  if (tier === 'Tier 1 - Tender Direct' && !oppId) {
-    alert('Please select a Tender/Quotation to link this pre-bid expenditure.');
-    document.getElementById('exp-linked-search')?.focus();
-    return;
-  }
-
-  if (tier === 'Tier 2 - PO Execution' && !poId) {
-    alert('Please select a Purchase Order (PO) for this delivery/execution expenditure.');
-    document.getElementById('exp-po-select')?.focus();
+    alert('Expense Date is mandatory.');
     return;
   }
 
@@ -6425,27 +6486,30 @@ async function submitGeneralExpenseForm() {
   }
 
   let linkedPO = null;
-  try {
-    const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
-    linkedPO = pos.find(p => p.id === poId);
-  } catch (e) {}
+  if (poId) {
+    try {
+      const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+      linkedPO = pos.find(p => p.id === poId);
+    } catch (e) {}
+  }
 
   const payload = {
     business_profile_id: State.currentBusinessProfileId === 'all' ? null : State.currentBusinessProfileId,
     expense_tier: tier,
-    expense_type: tier,
-    expense_name: name || cat,
-    category: cat,
+    expense_type: tier === 'Tier 1 - Tender Direct' ? 'Tender Expense' : (tier === 'Tier 2 - PO Execution' ? 'PO Logistics' : 'General Expense'),
+    expense_name: name || cat || 'General Business Expense',
+    category: cat || 'Administrative Expenses',
     amount: amount,
     expense_date: date,
-    paid_to: paidTo || 'Vendor / Contractor',
+    paid_to: paidTo || 'Vendor / Petty Cash',
     payment_mode: mode || 'Online Bank Transfer',
     opportunity_id: oppId || linkedPO?.opportunity_id || null,
     opportunity_number: linkedOpp?.opportunity_number || linkedPO?.award_number || null,
     purchase_order_id: poId || null,
     po_number: linkedPO?.po_number || null,
     tender_name: linkedOpp?.tender_name || linkedOpp?.title || null,
-    remarks: remarks
+    remarks: remarks,
+    notes: remarks
   };
 
   await API.createExpense(payload);
@@ -6515,7 +6579,7 @@ async function submitNewCompanyForm() {
     if (res.billingNotice) {
       showToast(`${res.billingNotice.notice} (Plan: ${res.billingNotice.chargePerMonth})`, 'info');
     } else {
-      showToast('✓ Business profile registered successfully!', 'success');
+      showToast(`✓ Business profile registered! Verification link automatically dispatched to ${email}`, 'success');
     }
 
     State.businessProfiles = await API.getBusinessProfiles();
@@ -6572,22 +6636,21 @@ async function submitOnboardCompanyForm() {
     email: email,
     city: city || 'Lahore',
     invoice_prefix: invPrefix || 'INV',
-    fbr_enabled: fbrCheckbox ? fbrCheckbox.checked : true
+    fbr_enabled: fbrCheckbox ? fbrCheckbox.checked : false
   };
 
   try {
     const res = await API.createBusinessProfile(payload);
     closeModal('modal-onboard-company');
-    showToast('✓ First Business Profile registered successfully!', 'success');
+    showToast(`✓ First Business Profile registered! Email verification link dispatched to ${email}`, 'success');
 
     State.businessProfiles = await API.getBusinessProfiles();
     populateBusinessSwitcher();
 
     if (payload.fbr_enabled) {
-      openModal('modal-onboard-fbr');
-    } else {
-      await renderActiveView();
+      showToast('🇵🇰 FBR PRAL Gateway enabled. You can configure API keys anytime from Settings / Invoices.', 'info');
     }
+    await renderActiveView();
   } catch (err) {
     showToast(`Error registering company: ${err.message}`, 'error');
   }
@@ -6608,7 +6671,7 @@ const ENTITY_SCHEMAS = {
       { name: 'external_tender_number', label: 'External Ref #', type: 'text' },
       { name: 'estimated_value', label: 'Estimated Value (PKR) *', type: 'number', required: true },
       { name: 'closing_date', label: 'Closing Date / Deadline *', type: 'date', required: true },
-      { name: 'status', label: 'Workflow Status', type: 'select', options: ['New', 'Selected', 'Under Review', 'Ready to submit', 'Submitted', 'won', 'loose', 'withdraw'] },
+      { name: 'status', label: 'Workflow Status', type: 'select', options: ['New', 'Selected', 'Under Evaluation', 'Under Review', 'Ready to submit', 'Submitted', 'Won', 'Lost', 'Technical Disqualified', 'Withdrawn'] },
       { name: 'description', label: 'Description & Scope', type: 'textarea', colSpan: 2 }
     ]
   },
@@ -7807,212 +7870,9 @@ function requestPlanUpgradeFromModal() {
   alert('🎉 Upgrade request submitted to Super Admin naeem4it! You will be contacted shortly for plan adjustment.');
 }
 
-// --------------------------------------------------------------------------
-// 3-TIER EXPENSE ENGINE CONTROLLERS & FORM HANDLERS (PHASE 4)
-// --------------------------------------------------------------------------
 
-const EXPENSE_TIER_CATEGORIES = {
-  'Tier 1 - Tender Direct': [
-    'Sample Product Fabrication & Material Cost',
-    'Sample Laboratory Testing & Certification Fees',
-    'Tender Bidding Travel, Fuel & Site Visits',
-    'Gifting & Client Hospitality',
-    'Tender Document / Tender Purchasing Fee',
-    'Proposal Printing, Drawing & Documentation',
-    'Bank Guarantee / CDR / EMD Bank Charges',
-    'Consultancy & Expert Technical Fees'
-  ],
-  'Tier 2 - PO Execution': [
-    '3PL Courier & Heavy Freight Transport',
-    'Customs Duty, Clearing & Port Handling',
-    'Port Demurrage & Container Detention',
-    'Crane, Forklift & Unloading Labor',
-    'Site Installation & Commissioning Testing'
-  ],
-  'Tier 3 - General Overheads': [
-    'Salaries & Wages',
-    'Head Office Rent',
-    'Utility Bills (Electricity/Gas/Internet)',
-    'Fuel & Vehicle Maintenance',
-    'Office Refreshments & Kitchen',
-    'Audit, Legal & Tax Filing Fees',
-    'General Administration'
-  ]
-};
 
-async function openExpenseModal(defaultTier, linkedOpportunityId, linkedPOId) {
-  const tier = defaultTier || 'Tier 1 - Tender Direct';
-  const tierSelect = document.getElementById('exp-tier');
-  if (tierSelect) tierSelect.value = tier;
 
-  document.getElementById('exp-date').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('exp-amount').value = '';
-  document.getElementById('exp-name').value = '';
-  document.getElementById('exp-paid-to').value = '';
-  document.getElementById('exp-remarks').value = '';
-  document.getElementById('exp-opportunity-id').value = linkedOpportunityId || '';
-  document.getElementById('exp-po-id').value = linkedPOId || '';
-
-  handleExpenseTierChange(tier);
-
-  // Prepopulate POs if Tier 2
-  const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
-  const poSelect = document.getElementById('exp-po-select');
-  if (poSelect) {
-    poSelect.innerHTML = `<option value="">-- Select Linked PO --</option>` + pos.map(p => `
-      <option value="${p.id}" ${p.id === linkedPOId ? 'selected' : ''}>
-        ${p.po_number} - ${p.customer_name || 'Customer'} (PKR ${parseFloat(p.net_amount || p.total_amount || 0).toLocaleString()})
-      </option>
-    `).join('');
-  }
-
-  // Prepopulate Tender badge if linkedOpportunityId
-  if (linkedOpportunityId) {
-    const opps = await API.getOpportunities(State.currentBusinessProfileId);
-    const targetOpp = opps.find(o => o.id === linkedOpportunityId);
-    if (targetOpp) {
-      selectLinkedOpportunity(targetOpp.id, targetOpp.tender_name || targetOpp.opportunity_title, targetOpp.opportunity_number);
-    }
-  }
-
-  openModal('modal-add-expense');
-}
-
-function handleExpenseTierChange(tier) {
-  const categorySelect = document.getElementById('exp-category');
-  const linkedGroup = document.getElementById('group-exp-linked');
-  const poGroup = document.getElementById('group-exp-po-select');
-
-  // Populate dynamic categories for this tier
-  const cats = EXPENSE_TIER_CATEGORIES[tier] || EXPENSE_TIER_CATEGORIES['Tier 1 - Tender Direct'];
-  if (categorySelect) {
-    categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
-  }
-
-  if (tier === 'Tier 1 - Tender Direct') {
-    if (linkedGroup) linkedGroup.style.display = 'block';
-    if (poGroup) poGroup.style.display = 'none';
-  } else if (tier === 'Tier 2 - PO Execution') {
-    if (linkedGroup) linkedGroup.style.display = 'none';
-    if (poGroup) poGroup.style.display = 'block';
-  } else {
-    if (linkedGroup) linkedGroup.style.display = 'none';
-    if (poGroup) poGroup.style.display = 'none';
-  }
-}
-
-function handleExpenseCategorySelected(cat) {
-  const nameInput = document.getElementById('exp-name');
-  if (nameInput && !nameInput.value) {
-    nameInput.value = cat;
-  }
-}
-
-async function openLinkedDropdown() {
-  const opps = await API.getOpportunities(State.currentBusinessProfileId);
-  const dropdown = document.getElementById('exp-linked-dropdown');
-  if (!dropdown) return;
-
-  dropdown.innerHTML = opps.map(o => `
-    <div class="searchable-dropdown-item" onclick="selectLinkedOpportunity('${o.id}', '${(o.tender_name || o.opportunity_title || '').replace(/'/g, "\\'")}', '${o.opportunity_number || ''}')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border);">
-      <strong>${o.opportunity_number || 'Tender'}</strong> - ${o.tender_name || o.opportunity_title || 'Project'}<br>
-      <span style="font-size:0.75rem; color:var(--text-muted);">${o.customer_name || 'Client'}</span>
-    </div>
-  `).join('');
-  dropdown.style.display = 'block';
-}
-
-function filterLinkedOpportunities(query) {
-  const q = (query || '').toLowerCase();
-  const dropdown = document.getElementById('exp-linked-dropdown');
-  if (!dropdown) return;
-
-  const items = dropdown.getElementsByClassName('searchable-dropdown-item');
-  for (let it of items) {
-    it.style.display = it.innerText.toLowerCase().includes(q) ? 'block' : 'none';
-  }
-  dropdown.style.display = 'block';
-}
-
-function selectLinkedOpportunity(id, title, number) {
-  document.getElementById('exp-opportunity-id').value = id;
-  const searchInput = document.getElementById('exp-linked-search');
-  if (searchInput) searchInput.value = `${number} - ${title}`;
-
-  const badge = document.getElementById('exp-linked-selected-badge');
-  if (badge) {
-    badge.innerText = `✓ Linked to Tender: ${number} (${title})`;
-    badge.style.display = 'block';
-  }
-
-  const dropdown = document.getElementById('exp-linked-dropdown');
-  if (dropdown) dropdown.style.display = 'none';
-}
-
-function handleExpensePOSelected(poId) {
-  document.getElementById('exp-po-id').value = poId;
-}
-
-async function submitGeneralExpenseForm() {
-  const tier = document.getElementById('exp-tier')?.value || 'Tier 1 - Tender Direct';
-  const date = document.getElementById('exp-date')?.value;
-  const oppId = document.getElementById('exp-opportunity-id')?.value;
-  const poId = document.getElementById('exp-po-id')?.value;
-  const category = document.getElementById('exp-category')?.value;
-  const name = document.getElementById('exp-name')?.value;
-  const amount = parseFloat(document.getElementById('exp-amount')?.value || 0);
-  const paidTo = document.getElementById('exp-paid-to')?.value;
-  const mode = document.getElementById('exp-mode')?.value;
-  const remarks = document.getElementById('exp-remarks')?.value;
-
-  if (!name || amount <= 0 || !date) {
-    alert('Expense Title, Date, and Amount are mandatory.');
-    return;
-  }
-
-  let oppNumber = null;
-  let tenderName = null;
-  let poNumber = null;
-
-  if (oppId) {
-    const opps = await API.getOpportunities(State.currentBusinessProfileId);
-    const o = opps.find(item => item.id === oppId);
-    if (o) {
-      oppNumber = o.opportunity_number;
-      tenderName = o.tender_name || o.opportunity_title;
-    }
-  }
-
-  if (poId) {
-    const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
-    const p = pos.find(item => item.id === poId);
-    if (p) {
-      poNumber = p.po_number;
-    }
-  }
-
-  await API.createExpense({
-    expense_tier: tier,
-    expense_type: tier === 'Tier 1 - Tender Direct' ? 'Tender Expense' : (tier === 'Tier 2 - PO Execution' ? 'Project Direct' : 'General Expense'),
-    expense_name: name,
-    category: category,
-    amount: amount,
-    expense_date: date,
-    paid_to: paidTo || 'Vendor / Petty Cash',
-    payment_mode: mode,
-    opportunity_id: oppId || null,
-    opportunity_number: oppNumber,
-    tender_name: tenderName,
-    purchase_order_id: poId || null,
-    po_number: poNumber,
-    notes: remarks,
-    remarks: remarks
-  });
-
-  closeModal('modal-add-expense');
-  alert(`✓ ${tier} expenditure of PKR ${amount.toLocaleString()} recorded successfully!`);
-  await renderActiveView();
-}
 
 async function updatePayInvoiceOutstanding(invoiceId) {
   const invoices = await API.getInvoices(State.currentBusinessProfileId);
@@ -8217,6 +8077,29 @@ async function openTender360Cockpit(oppId) {
         <div class="kpi-title">Net Realized Profit</div>
         <div class="kpi-value" style="color:${netProjectProfit >= 0 ? '#059669' : '#dc2626'};">PKR ${netProjectProfit.toLocaleString()}</div>
         <div class="kpi-subtext">Margin: ${marginPct}%</div>
+      </div>
+    </div>
+
+    <!-- Quick Tender Outcome / Status Action Bar -->
+    <div style="background:#ffffff; border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:0.85rem; font-weight:700; color:#334155;">Tender Outcome & Lifecycle Status:</span>
+        <span class="badge badge-${(opp.status || 'new').toLowerCase().replace(/\s+/g, '')}" style="font-size:0.85rem; padding:4px 10px;">${opp.status || 'New'}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <select class="form-select" style="font-size:0.82rem; padding:4px 8px; width:auto; border-radius:4px;" onchange="handleUpdateTenderStatus('${opp.id}', this.value, '${encodeURIComponent(opp.tender_name || opp.title)}', ${parseFloat(opp.estimated_value || 0)})">
+          <option value="" disabled selected>Change Status...</option>
+          <option value="New" ${opp.status === 'New' ? 'selected' : ''}>New</option>
+          <option value="Under Evaluation" ${opp.status === 'Under Evaluation' ? 'selected' : ''}>Under Evaluation</option>
+          <option value="Ready to submit" ${opp.status === 'Ready to submit' ? 'selected' : ''}>Ready to submit</option>
+          <option value="Submitted" ${opp.status === 'Submitted' ? 'selected' : ''}>Submitted</option>
+          <option value="Won" ${opp.status === 'Won' || opp.status === 'won' ? 'selected' : ''}>🏆 Won</option>
+          <option value="Lost" ${opp.status === 'Lost' || opp.status === 'loose' ? 'selected' : ''}>❌ Lost</option>
+          <option value="Technical Disqualified" ${opp.status === 'Technical Disqualified' ? 'selected' : ''}>Disqualified</option>
+          <option value="Withdrawn" ${opp.status === 'Withdrawn' ? 'selected' : ''}>Withdrawn</option>
+        </select>
+        <button type="button" class="primary-btn" style="padding:4px 10px; font-size:0.8rem; background:#059669;" onclick="handleUpdateTenderStatus('${opp.id}', 'Won', '${encodeURIComponent(opp.tender_name || opp.title)}')">🏆 Mark Won</button>
+        <button type="button" class="danger-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="handleUpdateTenderStatus('${opp.id}', 'Lost', '${encodeURIComponent(opp.tender_name || opp.title)}', ${parseFloat(opp.estimated_value || 0)})">❌ Mark Lost</button>
       </div>
     </div>
 

@@ -14,8 +14,8 @@ router.get('/', optionalAuth, async (req, res) => {
              bp.business_name,
              c.business_name as customer_name
       FROM bid_securities bs
-      JOIN opportunities o ON bs.opportunity_id = o.id
-      JOIN business_profiles bp ON bs.business_profile_id = bp.id
+      LEFT JOIN opportunities o ON bs.opportunity_id = o.id
+      LEFT JOIN business_profiles bp ON bs.business_profile_id = bp.id
       LEFT JOIN customers c ON o.customer_id = c.id
       WHERE 1=1
     `;
