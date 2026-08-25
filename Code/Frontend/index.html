@@ -8,14 +8,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=2.3">
+  <link rel="stylesheet" href="css/main.css?v=3.5">
 </head>
 <body>
 
   <!-- =========================================================================
        LOGIN SCREEN OVERLAY (Light theme, prominent left brand, vertically centered)
        ========================================================================= -->
-  <div class="login-overlay-wrapper" id="login-view" style="display: flex;">
+  <div class="login-overlay-wrapper" id="login-view" style="display: flex; position: relative;">
+    <!-- Top Left Public Navigation Links -->
+    <div class="login-top-nav" style="position: absolute; top: 24px; left: 32px; display: flex; align-items: center; gap: 16px; z-index: 10;">
+      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Pricing Plans & Enterprise Subscriptions')" style="color: #334155; font-weight: 700; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); border: 1px solid #cbd5e1; box-shadow: 0 2px 6px rgba(0,0,0,0.04); transition: all 0.2s;" onmouseover="this.style.color='#0284c7'; this.style.borderColor='#38bdf8'; this.style.transform='translateY(-1px)';" onmouseout="this.style.color='#334155'; this.style.borderColor='#cbd5e1'; this.style.transform='none';">
+        <span>💎</span> Pricing
+      </a>
+      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Contact Us & Dedicated Enterprise Support')" style="color: #334155; font-weight: 700; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); border: 1px solid #cbd5e1; box-shadow: 0 2px 6px rgba(0,0,0,0.04); transition: all 0.2s;" onmouseover="this.style.color='#0284c7'; this.style.borderColor='#38bdf8'; this.style.transform='translateY(-1px)';" onmouseout="this.style.color='#334155'; this.style.borderColor='#cbd5e1'; this.style.transform='none';">
+        <span>📞</span> Contact Us
+      </a>
+    </div>
+
     <div class="login-split-container">
       <!-- Left Branding Column -->
       <div class="login-brand-col">
@@ -109,8 +119,8 @@
 
           <form class="login-form" id="login-form" onsubmit="event.preventDefault(); handleUserLogin();">
             <div class="form-group">
-              <label class="form-label" for="login-username">Username or Email</label>
-              <input type="text" class="login-input" id="login-username" placeholder="e.g. naeem4it or naeem@mashrue.com" required autofocus autocomplete="username">
+              <label class="form-label" for="login-username">Username or Email Address</label>
+              <input type="text" class="login-input" id="login-username" placeholder="e.g. name@company.com" required autofocus autocomplete="username">
             </div>
 
             <div class="form-group">
@@ -310,20 +320,14 @@
 
           <div class="form-row">
             <div class="form-group">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="form-label" style="margin-bottom:0;">Customer / Department *</label>
-                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.75rem; height:auto;" onclick="openQuickAddModal('customer', 'tender-customer')">+ New Customer</button>
-              </div>
+              <label class="form-label">Customer / Department *</label>
               <div class="input-with-action">
                 <select class="form-select" id="tender-customer" required></select>
                 <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('customer', 'tender-customer')" title="Quick Add New Customer">+</button>
               </div>
             </div>
             <div class="form-group">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="form-label" style="margin-bottom:0;">Submitting Business Entity *</label>
-                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.75rem; height:auto;" onclick="openQuickAddModal('company', 'tender-business-profile')">+ New Company</button>
-              </div>
+              <label class="form-label">Submitting Business Entity *</label>
               <div class="input-with-action">
                 <select class="form-select" id="tender-business-profile" required></select>
                 <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('company', 'tender-business-profile')" title="Quick Add Business Profile">+</button>
@@ -338,7 +342,10 @@
                 <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--primary); margin:0;">📦 Tender Line Items (Multiple Items Supported)</h4>
                 <span class="admin-price-tag" title="Quantity and Price visible only to Company Admin">🔒 Admin Price Protected</span>
               </div>
-              <button type="button" class="secondary-btn" style="padding:3px 9px; font-size:0.78rem; background:white;" onclick="addTenderItemRow()">+ Add Item Row</button>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button type="button" class="btn-quick-add" style="padding:3px 10px; font-size:0.78rem; height:auto; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-weight:700;" onclick="openQuickAddModal('product', null)">+ Add New Item</button>
+                <button type="button" class="secondary-btn" style="padding:3px 9px; font-size:0.78rem; background:white;" onclick="addTenderItemRow()">+ Add Item Row</button>
+              </div>
             </div>
 
             <!-- Price warning alert placeholder -->
@@ -424,6 +431,42 @@
               <div class="custom-dt-picker-wrapper" style="position:relative;">
                 <input type="text" class="form-input" id="tender-opening-date" placeholder="DD/MM/YYYY hh:mm A" autocomplete="off">
               </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Workflow Compliance & Gating Checklist (User Configurable) -->
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h4 style="font-size: 0.88rem; font-weight: 700; color: #166534; margin:0;">
+                ⚙️ Workflow Gating & Compliance Checklist (Configurable)
+              </h4>
+              <span style="font-size: 0.75rem; color: #15803d; font-weight:600;">Uncheck to bypass non-mandatory stages</span>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; font-size: 0.82rem;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="gate-bid-security" checked>
+                <span>🛡️ Bid Security (CDR) Required</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="gate-performance-guarantee" checked>
+                <span>🏦 Performance Guarantee (PBG)</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="gate-stamp-duty" checked>
+                <span>📜 e-Stamp Duty Challan Required</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="gate-dtl-inspection">
+                <span>🔬 DTL / Lab Testing Required</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="gate-fbr-e-invoice" checked>
+                <span>🇵🇰 FBR PRAL Digital Invoicing</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="gate-diary-tracking" checked>
+                <span>📖 Dept Diary # Tracking</span>
+              </label>
             </div>
           </div>
 
@@ -665,6 +708,42 @@
             <div class="form-group">
               <label class="form-label">Bank Account Title & IBAN</label>
               <input type="text" class="form-input" id="cust-bank-iban" placeholder="e.g. PK36NBPA0000001920192801">
+            </div>
+          </div>
+
+          <!-- Customer Default Workflow Compliance Template -->
+          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h4 style="font-size: 0.88rem; font-weight: 700; color: #1e293b; margin:0;">
+                ⚙️ Default Workflow Gates for this Customer / Client
+              </h4>
+              <span style="font-size: 0.75rem; color: #64748b; font-weight:600;">Auto-applies when this customer is selected in tenders</span>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; font-size: 0.82rem;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="cust-gate-bid-security" checked>
+                <span>🛡️ Requires Bid Security (CDR)</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="cust-gate-performance-guarantee" checked>
+                <span>🏦 Requires Performance Guarantee (PBG)</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="cust-gate-stamp-duty" checked>
+                <span>📜 Requires e-Stamp Duty</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="cust-gate-dtl-inspection">
+                <span>🔬 Requires DTL / Lab Inspection</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="cust-gate-fbr-e-invoice" checked>
+                <span>🇵🇰 Requires FBR PRAL E-Invoicing</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#1e293b;">
+                <input type="checkbox" id="cust-gate-diary-tracking" checked>
+                <span>📖 Requires Dept Diary # Tracking</span>
+              </label>
             </div>
           </div>
 
@@ -1344,20 +1423,14 @@
               </select>
             </div>
             <div class="form-group" id="dc-wh-container">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="form-label" style="margin-bottom:0;">Dispatch Warehouse *</label>
-                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto;" onclick="openQuickAddModal('warehouse', 'dc-warehouse-select')">+ New Warehouse</button>
-              </div>
+              <label class="form-label">Dispatch Warehouse *</label>
               <div class="input-with-action">
                 <select class="form-select" id="dc-warehouse-select"></select>
                 <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('warehouse', 'dc-warehouse-select')" title="Quick Add New Warehouse">+</button>
               </div>
             </div>
             <div class="form-group" id="dc-sup-container" style="display: none;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label class="form-label" style="margin-bottom:0;">Origin Supplier / OEM *</label>
-                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto;" onclick="openQuickAddModal('supplier', 'dc-supplier-select')">+ New Supplier</button>
-              </div>
+              <label class="form-label">Origin Supplier / OEM *</label>
               <div class="input-with-action">
                 <select class="form-select" id="dc-supplier-select"></select>
                 <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('supplier', 'dc-supplier-select')" title="Quick Add New Supplier">+</button>
@@ -1461,11 +1534,11 @@
     </div>
   </div>
 
-  <!-- 8. Payment Received Modal -->
+  <!-- 8. Payment Received Modal (With Section 153 WHT & Sales Tax Deductions Calculator) -->
   <div class="modal-backdrop" id="modal-add-payment">
-    <div class="modal-card">
+    <div class="modal-card modal-lg" style="max-width: 720px;">
       <div class="modal-header">
-        <h2 style="font-size: 1.15rem; font-weight: 700;">💵 Record Payment Received</h2>
+        <h2 style="font-size: 1.15rem; font-weight: 700;">💵 Record Payment Realization & Tax Deductions</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-payment')">&times;</button>
       </div>
       <div class="modal-body">
@@ -1475,8 +1548,42 @@
             <select class="form-select" id="pay-invoice-select" required onchange="updatePayInvoiceOutstanding(this.value)"></select>
           </div>
 
-          <div id="pay-invoice-meta" style="background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px; margin-bottom:14px; font-size:0.85rem; display:none;">
+          <div id="pay-invoice-meta" style="background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:14px; font-size:0.85rem; display:none;">
             <!-- Injected outstanding info -->
+          </div>
+
+          <!-- Pakistan Public Procurement Tax Deductions Calculator Box -->
+          <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:var(--radius-md); padding:12px 14px; margin-bottom:14px;">
+            <h4 style="font-size:0.88rem; font-weight:700; color:#166534; margin:0 0 10px;">
+              ⚖️ Gross Settlement & Government Deductions (WHT u/s 153 / Sales Tax)
+            </h4>
+            <div class="form-row-3">
+              <div class="form-group">
+                <label class="form-label">Gross Settled Amount (PKR) *</label>
+                <input type="number" class="form-input" id="pay-gross-amount" required placeholder="e.g. 1000000" oninput="calculatePaymentNetBreakdown()" style="font-weight:700;">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Income Tax WHT u/s 153 (%)</label>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <input type="number" class="form-input" id="pay-wht-pct" value="4.5" step="0.5" min="0" max="20" oninput="calculatePaymentNetBreakdown()" style="width:70px;">
+                  <input type="number" class="form-input" id="pay-wht-amount" placeholder="WHT PKR" oninput="calculatePaymentNetBreakdown(true)">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Sales Tax Withholding (PKR)</label>
+                <input type="number" class="form-input" id="pay-st-wht" value="0" min="0" placeholder="e.g. 20000" oninput="calculatePaymentNetBreakdown()">
+              </div>
+            </div>
+            <div class="form-row-3">
+              <div class="form-group">
+                <label class="form-label">Late Delivery (LD) / Penalties (PKR)</label>
+                <input type="number" class="form-input" id="pay-ld-penalties" value="0" min="0" placeholder="e.g. 5000" oninput="calculatePaymentNetBreakdown()">
+              </div>
+              <div class="form-group" style="grid-column: span 2;">
+                <label class="form-label">Net Deposited in Bank (PKR) *</label>
+                <input type="number" class="form-input" id="pay-amount" required placeholder="Auto calculated" style="font-weight:800; font-size:1.05rem; color:#059669; background:#ffffff;">
+              </div>
+            </div>
           </div>
 
           <div class="form-row">
@@ -1485,19 +1592,24 @@
               <input type="date" class="form-input" id="pay-date" required>
             </div>
             <div class="form-group">
-              <label class="form-label">Payment Amount (PKR) *</label>
-              <input type="number" class="form-input" id="pay-amount" required placeholder="e.g. 10000000">
+              <label class="form-label">Payment Method *</label>
+              <select class="form-select" id="pay-method">
+                <option value="Cheque" selected>Crossed Cheque</option>
+                <option value="Direct Bank Transfer">Direct Bank Transfer (RTGS / IBFT)</option>
+                <option value="Treasury Pay Order">Treasury Pay Order (AGPR)</option>
+                <option value="Cash">Cash</option>
+              </select>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Check / Cheque Number</label>
+              <label class="form-label">Cheque / Instrument Number</label>
               <input type="text" class="form-input" id="pay-check-no" placeholder="e.g. CHQ-NBP-0049281">
             </div>
             <div class="form-group">
-              <label class="form-label">Check From / Issuer</label>
-              <input type="text" class="form-input" id="pay-check-from" placeholder="e.g. WAPDA Hydro Wing">
+              <label class="form-label">Issuer / Account Title</label>
+              <input type="text" class="form-input" id="pay-check-from" placeholder="e.g. AGPR / WAPDA Hydro Wing">
             </div>
           </div>
 
@@ -1507,15 +1619,15 @@
               <input type="text" class="form-input" id="pay-bank-acc" placeholder="e.g. HBL Corporate A/C 0192-881920-01">
             </div>
             <div class="form-group">
-              <label class="form-label">Bank Voucher / Ref #</label>
-              <input type="text" class="form-input" id="pay-ref" placeholder="e.g. VCHR-8820">
+              <label class="form-label">WHT Tax Deduction Certificate #</label>
+              <input type="text" class="form-input" id="pay-cert-no" placeholder="e.g. CPR-IT-2026-99210">
             </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
         <button class="secondary-btn" onclick="closeModal('modal-add-payment')">Cancel</button>
-        <button class="primary-btn" onclick="submitPaymentForm()">💾 Save Payment Receipt</button>
+        <button class="primary-btn" onclick="submitPaymentForm()">💾 Save Payment Realization</button>
       </div>
     </div>
   </div>
@@ -1895,13 +2007,26 @@
         <form id="form-force-password" onsubmit="event.preventDefault(); handleFirstPasswordChange();">
           <div class="form-group">
             <label class="form-label">New Password *</label>
-            <input type="password" class="form-input" id="force-new-password" required minlength="6" placeholder="Enter new strong password">
+            <input type="password" class="form-input" id="force-new-password" required minlength="8" maxlength="20" placeholder="Enter new strong password">
           </div>
           <div class="form-group">
             <label class="form-label">Confirm New Password *</label>
-            <input type="password" class="form-input" id="force-confirm-password" required minlength="6" placeholder="Re-enter new password">
+            <input type="password" class="form-input" id="force-confirm-password" required minlength="8" maxlength="20" placeholder="Re-enter new password">
           </div>
-          <div class="modal-footer" style="padding: 12px 0 0; margin-top: 16px; border-top: 1px solid var(--border);">
+          
+          <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; margin-top:10px; margin-bottom:14px; font-size:0.78rem; color:#475569; line-height:1.5;">
+            <div style="font-weight:700; color:#1e293b; margin-bottom:4px; display:flex; align-items:center; gap:5px;">
+              <span>🔒</span> Password Requirements:
+            </div>
+            <ul style="margin:0; padding-left:18px; color:#64748b;">
+              <li>Length must be between <strong>8 and 20 characters</strong></li>
+              <li>At least <strong>one uppercase letter</strong> (A-Z) &amp; <strong>one lowercase letter</strong> (a-z)</li>
+              <li>At least <strong>one numeric digit</strong> (0-9)</li>
+              <li>At least <strong>one special character</strong> (e.g. <code>! @ # $ % ^ &amp; * _ + ~</code>)</li>
+            </ul>
+          </div>
+
+          <div class="modal-footer" style="padding: 12px 0 0; margin-top: 12px; border-top: 1px solid var(--border);">
             <button type="submit" class="primary-btn" style="width: 100%; justify-content: center;">
               🔒 Set New Password & Proceed
             </button>
@@ -2080,7 +2205,7 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Initial Password *</label>
-              <input type="password" class="form-input" id="newuser-password" required minlength="6" value="Password123!">
+              <input type="password" class="form-input" id="newuser-password" required minlength="8" maxlength="20" value="Password123!">
             </div>
             <div class="form-group">
               <label class="form-label">User Role *</label>
@@ -2090,6 +2215,11 @@
                 <option value="SuperAdmin">Super Admin (System Owner)</option>
               </select>
             </div>
+          </div>
+
+          <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-bottom:14px; font-size:0.76rem; color:#475569; line-height:1.4;">
+            <div style="font-weight:700; color:#1e293b; margin-bottom:2px;">🔒 Password Requirements:</div>
+            <div>8–20 chars, with uppercase (A-Z), lowercase (a-z), number (0-9), and special char (e.g. <code>!@#$%^&amp;*</code>).</div>
           </div>
 
           <!-- Price & Bidding Security Setting -->
@@ -2237,7 +2367,10 @@
             </div>
             <div class="form-group">
               <label class="form-label">Initial Password *</label>
-              <input type="password" class="form-input" id="tenant-admin-password" required value="Password123!">
+              <input type="password" class="form-input" id="tenant-admin-password" required minlength="8" maxlength="20" value="Password123!">
+            </div>
+            <div class="password-guidelines-box" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px; margin-top:6px; font-size:0.75rem; color:#64748b; line-height:1.4;">
+              🔒 <strong>Requirements:</strong> 8–20 chars with uppercase (A-Z), lowercase (a-z), number (0-9), and special char (e.g. <code>!@#$%^&amp;*</code>).
             </div>
           </div>
           <div class="modal-footer" style="padding: 14px 0 0; margin-top: 16px;">
@@ -2264,8 +2397,13 @@
           <input type="hidden" id="reset-user-id">
           <div class="form-group">
             <label class="form-label">New Password *</label>
-            <input type="password" class="form-input" id="reset-new-password" required minlength="6" value="TempPass123!">
+            <input type="password" class="form-input" id="reset-new-password" required minlength="8" maxlength="20" value="TempPass123!">
           </div>
+
+          <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-top:6px; font-size:0.75rem; color:#64748b; line-height:1.4;">
+            🔒 <strong>Requirements:</strong> 8–20 chars with uppercase (A-Z), lowercase (a-z), number (0-9), and special char (e.g. <code>!@#$%^&amp;*</code>).
+          </div>
+
           <div style="margin-top: 10px;">
             <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
               <input type="checkbox" id="reset-force-change" class="permissions-checkbox" checked>
@@ -2570,20 +2708,30 @@
         <button class="modal-close-btn" onclick="closeModal('modal-change-password')">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.86rem; color: #64748b; margin-bottom: 16px;">
-          Update your login password. Must be at least 6 characters.
-        </p>
         <div class="login-error-box" id="user-change-password-error-msg"></div>
         <form id="form-user-change-password" onsubmit="event.preventDefault(); submitUserChangePasswordForm();">
           <div class="form-group">
             <label class="form-label">New Password *</label>
-            <input type="password" class="form-input" id="user-new-password" required minlength="6" placeholder="Enter new strong password">
+            <input type="password" class="form-input" id="user-new-password" required minlength="8" maxlength="20" placeholder="Enter new strong password">
           </div>
           <div class="form-group">
             <label class="form-label">Confirm New Password *</label>
-            <input type="password" class="form-input" id="user-confirm-password" required minlength="6" placeholder="Re-enter new password">
+            <input type="password" class="form-input" id="user-confirm-password" required minlength="8" maxlength="20" placeholder="Re-enter new password">
           </div>
-          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 18px;">
+
+          <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; margin-top:8px; margin-bottom:14px; font-size:0.78rem; color:#475569; line-height:1.5;">
+            <div style="font-weight:700; color:#1e293b; margin-bottom:4px; display:flex; align-items:center; gap:5px;">
+              <span>🔒</span> Password Requirements:
+            </div>
+            <ul style="margin:0; padding-left:18px; color:#64748b;">
+              <li>Length must be between <strong>8 and 20 characters</strong></li>
+              <li>At least <strong>one uppercase letter</strong> (A-Z) &amp; <strong>one lowercase letter</strong> (a-z)</li>
+              <li>At least <strong>one numeric digit</strong> (0-9)</li>
+              <li>At least <strong>one special character</strong> (e.g. <code>! @ # $ % ^ &amp; * _ + ~</code>)</li>
+            </ul>
+          </div>
+
+          <div class="modal-footer" style="padding: 12px 0 0; margin-top: 14px;">
             <button type="button" class="secondary-btn" onclick="closeModal('modal-change-password')">Cancel</button>
             <button type="submit" class="primary-btn">💾 Update Password</button>
           </div>
@@ -2592,12 +2740,197 @@
     </div>
   </div>
 
+  <!-- 25. Goods Receipt Note (GRN) & DTL / Quality Inspection Modal -->
+  <div class="modal-backdrop" id="modal-grn-inspection">
+    <div class="modal-card modal-lg" style="max-width: 780px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">🔬 Goods Receipt Note (GRN) & DTL Quality Inspection</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-grn-inspection')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-grn-inspection" onsubmit="event.preventDefault(); submitGrnInspectionForm();">
+          <input type="hidden" id="grn-dc-id">
+          <input type="hidden" id="grn-po-id">
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">GRN Reference #</label>
+              <input type="text" class="form-input" id="grn-number" placeholder="Auto (e.g. GRN-2026-0041)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Inspection Date *</label>
+              <input type="date" class="form-input" id="grn-date" required>
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label class="form-label">Total Received Qty *</label>
+              <input type="number" class="form-input" id="grn-total-qty" required min="1" step="any" oninput="calculateGrnAcceptedQty()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Accepted Qty *</label>
+              <input type="number" class="form-input" id="grn-accepted-qty" required min="0" step="any" style="color:#059669; font-weight:700;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rejected Qty</label>
+              <input type="number" class="form-input" id="grn-rejected-qty" value="0" min="0" step="any" oninput="calculateGrnAcceptedQty()" style="color:#dc2626; font-weight:700;">
+            </div>
+          </div>
+
+          <!-- DTL (Departmental / Drug Testing Lab) Section -->
+          <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); padding:12px 14px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h4 style="font-size:0.88rem; font-weight:700; color:#1e40af; margin:0;">
+                🧪 DTL / Laboratory Quality Testing Verification
+              </h4>
+              <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; font-weight:600; color:#1e40af; cursor:pointer;">
+                <input type="checkbox" id="grn-dtl-required" onchange="toggleGrnDtlFields(this.checked)">
+                DTL Sample Testing Required
+              </label>
+            </div>
+            <div class="form-row" id="grn-dtl-fields" style="display:none;">
+              <div class="form-group">
+                <label class="form-label">DTL Sample Batch Code</label>
+                <input type="text" class="form-input" id="grn-dtl-sample" placeholder="e.g. SPL-DTL-BATCH-091">
+              </div>
+              <div class="form-group">
+                <label class="form-label">DTL Clearance Report #</label>
+                <input type="text" class="form-input" id="grn-dtl-report" placeholder="e.g. DTL-PUNJAB-2026-4412">
+              </div>
+              <div class="form-group">
+                <label class="form-label">DTL Clearance Status</label>
+                <select class="form-select" id="grn-dtl-status">
+                  <option value="Pending" selected>Pending Lab Analysis</option>
+                  <option value="Cleared">Cleared (Sample Passed)</option>
+                  <option value="Failed">Failed (Sample Rejected)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Inspector Name & Remarks</label>
+            <textarea class="form-textarea" id="grn-remarks" rows="2" placeholder="e.g. Visual and physical inspection completed at site. Goods match technical specification specifications."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-grn-inspection')">Cancel</button>
+            <button type="submit" class="primary-btn" style="background:#059669;">✓ Confirm GRN & Inspection</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 26. Formal CDR Recovery / Return Request Letter Modal -->
+  <div class="modal-backdrop" id="modal-cdr-recovery-letter">
+    <div class="modal-card modal-lg" style="max-width: 860px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="background: #1e293b; color: white;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: white;">📄 Official CDR / Earnest Money Return Request Letter</h2>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="primary-btn" style="background:#0284c7; padding:4px 12px; font-size:0.82rem;" onclick="printCdrRecoveryLetter()">🖨️ Print Request Letter</button>
+          <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-cdr-recovery-letter')">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y:auto; padding:20px; background:#f1f5f9;">
+        <div id="cdr-letter-printable-area" class="a4-letterhead-container" style="background:white; padding:35px; border-radius:var(--radius-sm); border:1px solid #cbd5e1; box-shadow:0 4px 12px rgba(0,0,0,0.08); font-size:0.92rem; line-height:1.6; color:#0f172a;">
+          <!-- Injected via openCdrRecoveryLetterModal(id) -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 27. Stock Reservation Engine Modal -->
+  <div class="modal-backdrop" id="modal-stock-reservation">
+    <div class="modal-card" style="max-width: 640px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">📦 Reserve Warehouse Stock for Order</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-stock-reservation')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-stock-reservation" onsubmit="event.preventDefault(); submitStockReservationForm();">
+          <div class="form-group">
+            <label class="form-label">Select Warehouse *</label>
+            <select class="form-select" id="res-warehouse-select" required onchange="updateReservationProductStock()"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Select Catalog Product SKU *</label>
+            <select class="form-select" id="res-product-select" required onchange="updateReservationProductStock()"></select>
+          </div>
+          <div id="res-stock-info" style="background:#f8fafc; border:1px solid var(--border); padding:8px 12px; border-radius:var(--radius-sm); font-size:0.82rem; margin-bottom:12px; color:#475569;">
+            Available Stock: <strong id="res-avail-stock-disp">0</strong>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Batch / Lot #</label>
+              <input type="text" class="form-input" id="res-batch-no" value="STANDARD">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Quantity to Reserve *</label>
+              <input type="number" class="form-input" id="res-qty" required min="1" step="any" placeholder="e.g. 50">
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-stock-reservation')">Cancel</button>
+            <button type="submit" class="primary-btn">🔒 Confirm Stock Reservation</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 28. Past Performance Credential Portfolio Dossier Modal -->
+  <div class="modal-backdrop" id="modal-portfolio-dossier">
+    <div class="modal-card modal-lg" style="max-width: 920px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="background: #1e293b; color: white;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: white;">🏆 Past Performance & Executed Contracts Portfolio</h2>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="primary-btn" style="background:#059669; padding:4px 12px; font-size:0.82rem;" onclick="printPortfolioDossier()">🖨️ Export Portfolio Dossier</button>
+          <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-portfolio-dossier')">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y:auto; padding:20px; background:#f8fafc;">
+        <div id="portfolio-printable-area" style="background:white; padding:24px; border-radius:var(--radius-sm); border:1px solid #cbd5e1;">
+          <!-- Injected via openPortfolioDossierModal() -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 29. Revealing Soon Animated Modal -->
+  <div class="modal-backdrop" id="modal-revealing-soon" style="backdrop-filter: blur(8px); background: rgba(15, 23, 42, 0.75); z-index: 100005;">
+    <div class="revealing-soon-card" style="margin: auto;">
+      <button class="modal-close-btn" style="color: #94a3b8; position: absolute; top: 18px; right: 20px; font-size: 1.5rem; background: none; border: none; cursor: pointer;" onclick="closeModal('modal-revealing-soon')">&times;</button>
+      
+      <div class="revealing-feature-pill" id="revealing-feature-tag">
+        ✨ Mashrue Next Generation
+      </div>
+
+      <div class="revealing-orb">
+        <span style="font-size: 2.4rem;">🚀</span>
+      </div>
+
+      <h2 class="revealing-gradient-text" id="revealing-title">Revealing soon</h2>
+      
+      <p class="revealing-subtext" id="revealing-desc">
+        We are crafting an exceptional, AI-augmented procurement and commercial bidding experience. This module will be unlocked in our upcoming platform release.
+      </p>
+
+      <div style="display: flex; justify-content: center; gap: 12px;">
+        <button type="button" class="primary-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); padding: 10px 24px; font-size: 0.92rem; font-weight: 700; border-radius: 10px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);" onclick="closeModal('modal-revealing-soon')">
+          ← Return to Sign In
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Enterprise Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=2.9"></script>
-  <script src="js/state.js?v=2.9"></script>
-  <script src="js/app.js?v=2.9"></script>
+  <script src="js/api.js?v=3.6"></script>
+  <script src="js/state.js?v=3.6"></script>
+  <script src="js/app.js?v=3.6"></script>
 </body>
 </html>

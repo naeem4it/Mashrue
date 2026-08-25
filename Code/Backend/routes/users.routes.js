@@ -95,6 +95,28 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
+function validatePasswordPolicy(password) {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: 'Password is required.' };
+  }
+  if (password.length < 8 || password.length > 20) {
+    return { valid: false, message: 'Password length must be between 8 and 20 characters.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter (A-Z).' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter (a-z).' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one numeric digit (0-9).' };
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one special character (e.g. !@#$%^&*).' };
+  }
+  return { valid: true };
+}
+
 /**
  * POST create new user (Super Admin or Client Admin)
  */
@@ -114,6 +136,11 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
 
   if (!full_name || !email || !password) {
     return res.status(400).json({ success: false, message: 'Full name, email, and password are required.' });
+  }
+
+  const policyCheck = validatePasswordPolicy(password);
+  if (!policyCheck.valid) {
+    return res.status(400).json({ success: false, message: policyCheck.message });
   }
 
   try {
@@ -306,6 +333,11 @@ router.post('/:id/reset-password', authenticate, requireRoles('SuperAdmin', 'Cli
 
   const tempPassword = new_password || 'TempPass123!';
 
+  const policyCheck = validatePasswordPolicy(tempPassword);
+  if (!policyCheck.valid) {
+    return res.status(400).json({ success: false, message: policyCheck.message });
+  }
+
   try {
     // Security check: If not SuperAdmin, verify the user belongs to the caller's tenant
     if (req.user.role !== 'SuperAdmin') {
@@ -346,6 +378,11 @@ router.post('/tenants', authenticate, requireRoles('SuperAdmin'), async (req, re
 
   if (!company_name || !admin_email || !admin_password) {
     return res.status(400).json({ success: false, message: 'Company name, admin email, and admin password are required.' });
+  }
+
+  const adminPassCheck = validatePasswordPolicy(admin_password);
+  if (!adminPassCheck.valid) {
+    return res.status(400).json({ success: false, message: adminPassCheck.message });
   }
 
   try {

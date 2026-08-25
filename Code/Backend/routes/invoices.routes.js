@@ -134,7 +134,12 @@ router.post('/', optionalAuth, async (req, res) => {
     subtotal,
     tax_amount,
     status,
-    fbr_integration_required
+    fbr_integration_required,
+    submission_diary_no,
+    submission_diary_date,
+    dealing_officer_name,
+    department_section,
+    dtl_clearance_ref
   } = req.body;
 
   if (!customer_id) {
@@ -159,8 +164,8 @@ router.post('/', optionalAuth, async (req, res) => {
 
     const insertRes = await db.query(
       `INSERT INTO invoices 
-       (tenant_id, business_profile_id, delivery_challan_id, purchase_order_id, contract_id, opportunity_id, customer_id, invoice_number, invoice_date, due_date, subtotal, tax_amount, total_amount, paid_amount, fbr_integration_required, fbr_status, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       (tenant_id, business_profile_id, delivery_challan_id, purchase_order_id, contract_id, opportunity_id, customer_id, invoice_number, invoice_date, due_date, subtotal, tax_amount, total_amount, paid_amount, fbr_integration_required, fbr_status, status, submission_diary_no, submission_diary_date, dealing_officer_name, department_section, dtl_clearance_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
       [
         tenantId,
@@ -179,7 +184,12 @@ router.post('/', optionalAuth, async (req, res) => {
         0.00,
         fbrRequired,
         initialFbrStatus,
-        initialStatus
+        initialStatus,
+        submission_diary_no || null,
+        submission_diary_date || null,
+        dealing_officer_name || null,
+        department_section || null,
+        dtl_clearance_ref || null
       ]
     );
 
@@ -228,28 +238,52 @@ router.put('/:id/status', async (req, res) => {
 
 // PUT update Invoice details
 router.put('/:id', async (req, res) => {
-  const { invoice_number, invoice_date, due_date, total_amount, status, payment_terms, notes } = req.body;
+  const {
+    invoice_number,
+    invoice_date,
+    due_date,
+    subtotal,
+    tax_amount,
+    total_amount,
+    status,
+    submission_diary_no,
+    submission_diary_date,
+    dealing_officer_name,
+    department_section,
+    dtl_clearance_ref
+  } = req.body;
+
   try {
     const result = await db.query(
       `UPDATE invoices
        SET invoice_number = COALESCE($1, invoice_number),
            invoice_date = COALESCE($2, invoice_date),
            due_date = COALESCE($3, due_date),
-           total_amount = COALESCE($4, total_amount),
-           status = COALESCE($5, status),
-           payment_terms = COALESCE($6, payment_terms),
-           notes = COALESCE($7, notes),
+           subtotal = COALESCE($4, subtotal),
+           tax_amount = COALESCE($5, tax_amount),
+           total_amount = COALESCE($6, total_amount),
+           status = COALESCE($7, status),
+           submission_diary_no = COALESCE($8, submission_diary_no),
+           submission_diary_date = COALESCE($9, submission_diary_date),
+           dealing_officer_name = COALESCE($10, dealing_officer_name),
+           department_section = COALESCE($11, department_section),
+           dtl_clearance_ref = COALESCE($12, dtl_clearance_ref),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $8
+       WHERE id = $13
        RETURNING *`,
       [
         invoice_number || null,
         invoice_date || null,
         due_date || null,
+        subtotal !== undefined ? parseFloat(subtotal) : null,
+        tax_amount !== undefined ? parseFloat(tax_amount) : null,
         total_amount !== undefined ? parseFloat(total_amount) : null,
         status || null,
-        payment_terms || null,
-        notes || null,
+        submission_diary_no || null,
+        submission_diary_date || null,
+        dealing_officer_name || null,
+        department_section || null,
+        dtl_clearance_ref || null,
         req.params.id
       ]
     );

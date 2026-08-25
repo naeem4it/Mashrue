@@ -1878,10 +1878,110 @@ body {
     box-shadow: none !important;
     border: none !important;
   }
-  @page {
-    size: A4 portrait;
-    margin: 12mm 10mm;
-  }
+/* ==========================================================================
+   REVEALING SOON ANIMATED MODAL & LANDING STYLES
+   ========================================================================== */
+.revealing-soon-card {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 48px 36px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px rgba(56, 189, 248, 0.15);
+  max-width: 520px;
+  width: 90%;
+  animation: revealingEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+@keyframes revealingEntrance {
+  from { opacity: 0; transform: scale(0.92) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.revealing-orb {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #38bdf8 0%, #3b82f6 40%, rgba(79, 70, 229, 0.4) 70%, transparent 100%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 35px rgba(56, 189, 248, 0.6);
+  animation: orbFloat 4s ease-in-out infinite alternate;
+}
+
+@keyframes orbFloat {
+  0% { transform: translateY(0) scale(1); box-shadow: 0 0 35px rgba(56, 189, 248, 0.5); }
+  100% { transform: translateY(-8px) scale(1.06); box-shadow: 0 0 50px rgba(129, 140, 248, 0.8); }
+}
+
+.revealing-orb::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 2px dashed rgba(56, 189, 248, 0.4);
+  animation: orbRotate 12s linear infinite;
+}
+
+@keyframes orbRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.revealing-gradient-text {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc, #38bdf8);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientShimmer 4s ease infinite;
+  margin: 0 0 12px 0;
+}
+
+@keyframes gradientShimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.revealing-subtext {
+  color: #94a3b8;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.revealing-feature-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 30px;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  font-weight: 500;
+  margin-bottom: 24px;
+}
+
+#modal-revealing-soon {
+  z-index: 100005 !important;
+}
+
+#modal-revealing-soon.open {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  display: flex !important;
+}
+
+
 
 

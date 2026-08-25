@@ -236,6 +236,7 @@ async function handleUserLogin() {
     }
   }
 }
+window.handleUserLogin = handleUserLogin;
 
 function fillLoginCredentials(username, password) {
   const u = document.getElementById('login-username');
@@ -245,6 +246,7 @@ function fillLoginCredentials(username, password) {
   const err = document.getElementById('login-error-msg');
   if (err) err.style.display = 'none';
 }
+window.fillLoginCredentials = fillLoginCredentials;
 
 function handleUserLogout() {
   State.clearSession();
@@ -555,6 +557,32 @@ function openUserProfileModal() {
   openModal('modal-user-profile');
 }
 
+// --------------------------------------------------------------------------
+// CENTRALIZED PASSWORD VALIDATOR & POLICY ENFORCER
+// --------------------------------------------------------------------------
+function validatePasswordStrength(password) {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: 'Password is required.' };
+  }
+  if (password.length < 8 || password.length > 20) {
+    return { valid: false, message: 'Password length must be between 8 and 20 characters.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter (A-Z).' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter (a-z).' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one numeric digit (0-9).' };
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one special character (e.g. !@#$%^&*).' };
+  }
+  return { valid: true };
+}
+window.validatePasswordStrength = validatePasswordStrength;
+
 function openChangePasswordModal() {
   const newPassEl = document.getElementById('user-new-password');
   const confPassEl = document.getElementById('user-confirm-password');
@@ -575,9 +603,10 @@ async function submitUserChangePasswordForm() {
   const confPass = document.getElementById('user-confirm-password')?.value;
   const errBox = document.getElementById('user-change-password-error-msg');
 
-  if (!newPass || newPass.length < 6) {
+  const check = validatePasswordStrength(newPass);
+  if (!check.valid) {
     if (errBox) {
-      errBox.innerText = 'New password must be at least 6 characters long.';
+      errBox.innerText = `⚠️ ${check.message}`;
       errBox.style.display = 'block';
     }
     return;
@@ -585,7 +614,7 @@ async function submitUserChangePasswordForm() {
 
   if (newPass !== confPass) {
     if (errBox) {
-      errBox.innerText = 'Password confirmation does not match. Please verify.';
+      errBox.innerText = '⚠️ Password confirmation does not match. Please verify.';
       errBox.style.display = 'block';
     }
     return;
@@ -595,7 +624,7 @@ async function submitUserChangePasswordForm() {
     const res = await API.changePassword(newPass);
     if (res && res.success) {
       closeModal('modal-change-password');
-      alert('✅ Password updated successfully! Your new password is now active.');
+      showToast('✓ Password updated successfully! Your new password is active.', 'success');
     } else {
       if (errBox) {
         errBox.innerText = res.message || 'Failed to update password.';
@@ -609,6 +638,51 @@ async function submitUserChangePasswordForm() {
     }
   }
 }
+
+async function handleFirstPasswordChange() {
+  const newPass = document.getElementById('force-new-password')?.value;
+  const confPass = document.getElementById('force-confirm-password')?.value;
+  const errBox = document.getElementById('force-password-error-msg');
+
+  const check = validatePasswordStrength(newPass);
+  if (!check.valid) {
+    if (errBox) {
+      errBox.innerText = `⚠️ ${check.message}`;
+      errBox.style.display = 'block';
+    }
+    return;
+  }
+
+  if (newPass !== confPass) {
+    if (errBox) {
+      errBox.innerText = '⚠️ Password confirmation does not match. Please verify.';
+      errBox.style.display = 'block';
+    }
+    return;
+  }
+
+  try {
+    const res = await API.changePassword(newPass);
+    if (res && res.success) {
+      closeModal('modal-force-password');
+      if (State.currentUser) State.currentUser.mustChangePassword = false;
+      localStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+      showToast('✓ Permanent password set successfully!', 'success');
+      await initApp();
+    } else {
+      if (errBox) {
+        errBox.innerText = res.message || 'Failed to set password.';
+        errBox.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    if (errBox) {
+      errBox.innerText = `Error: ${err.message}`;
+      errBox.style.display = 'block';
+    }
+  }
+}
+window.handleFirstPasswordChange = handleFirstPasswordChange;
 
 function renderDynamicSidebarNavigation() {
   const container = document.getElementById('dynamic-sidebar-container');
@@ -3866,13 +3940,15 @@ async function handleQuickAddCompletion(entityType, createdItem) {
   // 1. Refresh all matching select dropdowns in DOM
   if (entityType === 'customer') {
     const customers = await API.getCustomers();
+    State.customers = customers;
     document.querySelectorAll('select[id*="customer"]').forEach(sel => {
       const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
-      sel.innerHTML = customers.map(c => `<option value="${c.id}">${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
+      sel.innerHTML = `<option value="">-- Select Customer / Department --</option>` + customers.map(c => `<option value="${c.id}">${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
       if (curVal) sel.value = curVal;
     });
   } else if (entityType === 'supplier') {
     const suppliers = await API.getSuppliers();
+    State.suppliers = suppliers;
     document.querySelectorAll('select[id*="supplier"]').forEach(sel => {
       const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
       sel.innerHTML = `<option value="">-- Select Preferred Supplier --</option>` + suppliers.map(s => `<option value="${s.id}">${s.supplier_name} (${s.country || 'Pakistan'})</option>`).join('');
@@ -3880,17 +3956,28 @@ async function handleQuickAddCompletion(entityType, createdItem) {
     });
   } else if (entityType === 'product' || entityType === 'item') {
     const products = await API.getProducts();
-    document.querySelectorAll('select[id*="item-select"], select[id*="product-select"]').forEach(sel => {
+    State.products = products;
+    document.querySelectorAll('select[id*="item-select"], select[id*="product-select"], .tender-item-sku-select').forEach(sel => {
       const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
-      sel.innerHTML = `<option value="">-- Choose item to auto-fill --</option>` + products.map(p => `
+      sel.innerHTML = `<option value="">-- Custom Scope Item / Choose Item --</option>` + products.map(p => `
         <option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-price="${p.selling_price || 0}">
-          ${p.name} (Stock: ${p.current_stock || 0} ${p.unit})
+          ${p.sku ? '[' + p.sku + '] ' : ''}${p.name} (Stock: ${p.current_stock || 0} ${p.unit || 'PCS'})
         </option>
       `).join('');
       if (curVal) sel.value = curVal;
     });
+
+    const itemSelects = document.querySelectorAll('.tender-item-sku-select');
+    if (createdItem && createdItem.id && itemSelects.length > 0) {
+      const lastSelect = itemSelects[itemSelects.length - 1];
+      if (lastSelect && (!lastSelect.value || lastSelect.value === '')) {
+        lastSelect.value = createdItem.id;
+        if (typeof handleTenderProductSelected === 'function') handleTenderProductSelected(lastSelect);
+      }
+    }
   } else if (entityType === 'warehouse') {
     const warehouses = await API.getWarehouses();
+    State.warehouses = warehouses;
     document.querySelectorAll('select[id*="warehouse"]').forEach(sel => {
       const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
       sel.innerHTML = `<option value="">-- Select Warehouse --</option>` + warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city || 'Location'})</option>`).join('');
@@ -3898,9 +3985,11 @@ async function handleQuickAddCompletion(entityType, createdItem) {
     });
   } else if (entityType === 'company' || entityType === 'businessProfile') {
     const profiles = await API.getBusinessProfiles();
+    State.businessProfiles = profiles;
+    if (typeof populateBusinessSwitcher === 'function') populateBusinessSwitcher();
     document.querySelectorAll('select[id*="business-profile"], select[id*="company"]').forEach(sel => {
       const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
-      sel.innerHTML = profiles.map(p => `<option value="${p.id}">${p.business_name}</option>`).join('');
+      sel.innerHTML = `<option value="">-- Select Submitting Entity --</option>` + profiles.map(p => `<option value="${p.id}">${p.business_name || p.legal_name}</option>`).join('');
       if (curVal) sel.value = curVal;
     });
   }
@@ -7015,6 +7104,12 @@ async function submitCreateUserForm() {
     return;
   }
 
+  const passCheck = validatePasswordStrength(password);
+  if (!passCheck.valid) {
+    alert(`⚠️ Password Requirement:\n${passCheck.message}`);
+    return;
+  }
+
   // Gather granular permissions
   const permissions = {};
   const toggles = document.querySelectorAll('.perm-toggle');
@@ -7110,6 +7205,12 @@ async function submitResetPasswordForm() {
     return;
   }
 
+  const passCheck = validatePasswordStrength(newPass);
+  if (!passCheck.valid) {
+    alert(`⚠️ Password Requirement:\n${passCheck.message}`);
+    return;
+  }
+
   try {
     const res = await API.resetPassword(userId, newPass, forceChange);
     if (res && res.success) {
@@ -7140,6 +7241,12 @@ async function submitCreateTenantForm() {
 
   if (!name || !adminEmail || !adminPassword) {
     alert('Company name, admin email, and password are required.');
+    return;
+  }
+
+  const passCheck = validatePasswordStrength(adminPassword);
+  if (!passCheck.valid) {
+    alert(`⚠️ Admin Password Requirement:\n${passCheck.message}`);
     return;
   }
 
@@ -8299,5 +8406,341 @@ async function openTender360Cockpit(oppId) {
   openModal('modal-tender-360-cockpit');
 }
 
+// ============================================================================
+// DYNAMIC WORKFLOW GATING, DEDUCTIONS, INVENTORY & PORTFOLIO EXTENSIONS
+// ============================================================================
 
+// 1. Live Payment Deduction Calculation
+function calculatePaymentNetBreakdown(fromWhtAmount = false) {
+  const gross = parseFloat(document.getElementById('pay-gross-amount')?.value || 0);
+  const whtPctEl = document.getElementById('pay-wht-pct');
+  const whtAmtEl = document.getElementById('pay-wht-amount');
+  const stWht = parseFloat(document.getElementById('pay-st-wht')?.value || 0);
+  const ld = parseFloat(document.getElementById('pay-ld-penalties')?.value || 0);
+  const netEl = document.getElementById('pay-amount');
+
+  if (!netEl) return;
+
+  let itWht = 0;
+  if (fromWhtAmount) {
+    itWht = parseFloat(whtAmtEl?.value || 0);
+    if (gross > 0 && whtPctEl) {
+      whtPctEl.value = ((itWht / gross) * 100).toFixed(2);
+    }
+  } else {
+    const pct = parseFloat(whtPctEl?.value || 0);
+    itWht = (gross * pct) / 100;
+    if (whtAmtEl) whtAmtEl.value = Math.round(itWht);
+  }
+
+  const net = Math.max(0, gross - itWht - stWht - ld);
+  netEl.value = Math.round(net);
+}
+
+// 2. GRN Inspection Logic
+function calculateGrnAcceptedQty() {
+  const total = parseFloat(document.getElementById('grn-total-qty')?.value || 0);
+  const rejected = parseFloat(document.getElementById('grn-rejected-qty')?.value || 0);
+  const acceptedEl = document.getElementById('grn-accepted-qty');
+  if (acceptedEl) {
+    acceptedEl.value = Math.max(0, total - rejected);
+  }
+}
+
+function toggleGrnDtlFields(checked) {
+  const fields = document.getElementById('grn-dtl-fields');
+  if (fields) fields.style.display = checked ? 'grid' : 'none';
+}
+
+function openGrnModal(dcId, poId) {
+  const form = document.getElementById('form-grn-inspection');
+  if (form) form.reset();
+  
+  const dcIdEl = document.getElementById('grn-dc-id');
+  const poIdEl = document.getElementById('grn-po-id');
+  const dateEl = document.getElementById('grn-date');
+  const numEl = document.getElementById('grn-number');
+
+  if (dcIdEl) dcIdEl.value = dcId || '';
+  if (poIdEl) poIdEl.value = poId || '';
+  if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+  if (numEl) numEl.value = `GRN-${Date.now().toString().slice(-6)}`;
+
+  toggleGrnDtlFields(false);
+  openModal('modal-grn-inspection');
+}
+
+async function submitGrnInspectionForm() {
+  const dcId = document.getElementById('grn-dc-id')?.value;
+  const poId = document.getElementById('grn-po-id')?.value;
+  const grnNo = document.getElementById('grn-number')?.value;
+  const inspDate = document.getElementById('grn-date')?.value;
+  const totalQty = parseFloat(document.getElementById('grn-total-qty')?.value || 0);
+  const acceptedQty = parseFloat(document.getElementById('grn-accepted-qty')?.value || 0);
+  const rejectedQty = parseFloat(document.getElementById('grn-rejected-qty')?.value || 0);
+  const dtlReq = document.getElementById('grn-dtl-required')?.checked || false;
+  const dtlSample = document.getElementById('grn-dtl-sample')?.value || '';
+  const dtlReport = document.getElementById('grn-dtl-report')?.value || '';
+  const dtlStatus = document.getElementById('grn-dtl-status')?.value || 'Pending';
+  const remarks = document.getElementById('grn-remarks')?.value || '';
+
+  const res = await API.createGrn({
+    delivery_challan_id: dcId || null,
+    purchase_order_id: poId || null,
+    grn_number: grnNo,
+    inspection_date: inspDate,
+    total_received_qty: totalQty,
+    accepted_qty: acceptedQty,
+    rejected_qty: rejectedQty,
+    dtl_required: dtlReq,
+    dtl_sample_code: dtlSample,
+    dtl_report_number: dtlReport,
+    dtl_status: dtlStatus,
+    remarks
+  });
+
+  if (res.success) {
+    showToast(res.message || 'GRN & Inspection recorded successfully.', 'success');
+    closeModal('modal-grn-inspection');
+    if (typeof refreshCurrentView === 'function') refreshCurrentView();
+  } else {
+    showToast(res.message || 'Failed to save GRN', 'error');
+  }
+}
+
+// 3. Official CDR Recovery Request Letter Generator
+async function openCdrRecoveryLetterModal(securityId) {
+  const res = await API.getCdrRecoveryLetter(securityId);
+  if (!res.success) {
+    showToast(res.message || 'Unable to generate CDR letter', 'error');
+    return;
+  }
+
+  const d = res.data;
+  const container = document.getElementById('cdr-letter-printable-area');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div style="border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start;">
+      <div>
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: #0f172a; margin: 0;">${d.sender.companyName}</h2>
+        <div style="font-size: 0.85rem; color: #475569;">${d.sender.address}</div>
+        ${d.sender.ntn ? `<div style="font-size: 0.82rem; color: #64748b;"><strong>NTN:</strong> ${d.sender.ntn}</div>` : ''}
+      </div>
+      <div style="text-align: right; font-size: 0.85rem;">
+        <div><strong>Ref:</strong> ${d.letterReference}</div>
+        <div><strong>Date:</strong> ${d.date}</div>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 20px; font-size: 0.9rem;">
+      <div><strong>To:</strong></div>
+      <div>${d.recipient.title}</div>
+      <div>${d.recipient.department}</div>
+      <div>${d.recipient.organization}</div>
+    </div>
+
+    <div style="margin-bottom: 18px; font-weight: 700; text-decoration: underline; font-size: 0.95rem;">
+      ${d.subject}
+    </div>
+
+    <div style="font-size: 0.88rem; line-height: 1.7; color: #334155; margin-bottom: 20px;">
+      <p>Dear Sir / Madam,</p>
+      <p>With reference to the subject tender captioned above, we had submitted our bid along with the mandatory Call Deposit Receipt (CDR) / Earnest Money instrument as per procurement guidelines.</p>
+      
+      <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 14px; margin: 14px 0;">
+        <table style="width: 100%; font-size: 0.85rem; border-collapse: collapse;">
+          <tr><td style="padding: 4px 0; width: 35%; color: #64748b;"><strong>Tender Reference:</strong></td><td><strong>${d.tenderDetails.tenderNumber}</strong></td></tr>
+          <tr><td style="padding: 4px 0; color: #64748b;"><strong>Tender Description:</strong></td><td>${d.tenderDetails.tenderName}</td></tr>
+          <tr><td style="padding: 4px 0; color: #64748b;"><strong>Instrument Type & No:</strong></td><td><strong>${d.tenderDetails.instrumentType} - ${d.tenderDetails.instrumentNumber}</strong></td></tr>
+          <tr><td style="padding: 4px 0; color: #64748b;"><strong>Issuing Bank:</strong></td><td>${d.tenderDetails.bankName}</td></tr>
+          <tr><td style="padding: 4px 0; color: #64748b;"><strong>Instrument Amount:</strong></td><td><strong style="color: #059669;">PKR ${parseFloat(d.tenderDetails.amountPKR).toLocaleString()}</strong></td></tr>
+          <tr><td style="padding: 4px 0; color: #64748b;"><strong>Instrument Validity:</strong></td><td>${formatDateDDMMYYYY(d.tenderDetails.expiryDate)}</td></tr>
+        </table>
+      </div>
+
+      <p>Since the financial / technical evaluation stage of the aforementioned tender has concluded, we respectfully request your office to kindly release and return our original Call Deposit Receipt (CDR) at your earliest convenience to facilitate our bank reconciliation.</p>
+      <p>Thanking you in anticipation for your prompt cooperation.</p>
+    </div>
+
+    <div style="margin-top: 40px; display: flex; justify-content: space-between;">
+      <div style="font-size: 0.85rem;">
+        <div>Yours faithfully,</div>
+        <div style="margin-top: 35px; font-weight: 700;">For ${d.sender.companyName}</div>
+        <div style="color: #64748b;">Authorized Signatory & Official Stamp</div>
+      </div>
+    </div>
+  `;
+
+  openModal('modal-cdr-recovery-letter');
+}
+
+function printCdrRecoveryLetter() {
+  const content = document.getElementById('cdr-letter-printable-area');
+  if (!content) return;
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html>
+      <head>
+        <title>CDR Return Request Letter</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #0f172a; }
+          table { width: 100%; border-collapse: collapse; }
+        </style>
+      </head>
+      <body>${content.innerHTML}</body>
+    </html>
+  `);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+// 4. Stock Reservation Engine
+async function openStockReservationModal(poId = '', oppId = '') {
+  const form = document.getElementById('form-stock-reservation');
+  if (form) form.reset();
+
+  const whSelect = document.getElementById('res-warehouse-select');
+  const prodSelect = document.getElementById('res-product-select');
+
+  if (whSelect && Array.isArray(State.warehouses)) {
+    whSelect.innerHTML = State.warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city || 'Lahore'})</option>`).join('');
+  }
+
+  if (prodSelect && Array.isArray(State.products)) {
+    prodSelect.innerHTML = State.products.map(p => `<option value="${p.id}">${p.name} [SKU: ${p.sku || 'N/A'}] - Stock: ${p.current_stock || 0} ${p.unit || 'PCS'}</option>`).join('');
+  }
+
+  updateReservationProductStock();
+  openModal('modal-stock-reservation');
+}
+
+function updateReservationProductStock() {
+  const prodSelect = document.getElementById('res-product-select');
+  const disp = document.getElementById('res-avail-stock-disp');
+  if (!prodSelect || !disp) return;
+
+  const prodId = prodSelect.value;
+  const prod = (State.products || []).find(p => String(p.id) === String(prodId));
+  disp.textContent = prod ? `${prod.current_stock || 0} ${prod.unit || 'PCS'}` : '0 PCS';
+}
+
+async function submitStockReservationForm() {
+  const whId = document.getElementById('res-warehouse-select')?.value;
+  const prodId = document.getElementById('res-product-select')?.value;
+  const batch = document.getElementById('res-batch-no')?.value || 'STANDARD';
+  const qty = parseFloat(document.getElementById('res-qty')?.value || 0);
+
+  const res = await API.createStockReservation({
+    warehouse_id: whId,
+    product_id: prodId,
+    batch_number: batch,
+    reserved_quantity: qty
+  });
+
+  if (res.success) {
+    showToast(res.message || 'Stock reserved successfully.', 'success');
+    closeModal('modal-stock-reservation');
+  } else {
+    showToast(res.message || 'Failed to reserve stock', 'error');
+  }
+}
+
+// 5. Past Performance Credential Dossier
+async function openPortfolioDossierModal() {
+  const list = await API.getPastPerformancePortfolio();
+  const container = document.getElementById('portfolio-printable-area');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h2 style="font-size: 1.25rem; font-weight: 800; color: #0f172a; margin: 0;">🏆 Past Performance & Executed Contracts Dossier</h2>
+        <div style="font-size: 0.82rem; color: #64748b;">Official Pre-Qualification & Experience Credential Register</div>
+      </div>
+      <div style="font-size: 0.82rem; color: #475569;">
+        Total Executed Contracts: <strong>${list.length}</strong>
+      </div>
+    </div>
+
+    <table class="data-table" style="font-size: 0.82rem; width: 100%;">
+      <thead>
+        <tr style="background: #f1f5f9;">
+          <th>Contract / Project #</th>
+          <th>Executing Entity</th>
+          <th>Client & Department</th>
+          <th>Project Title</th>
+          <th>Contract Value</th>
+          <th>Invoiced</th>
+          <th>Collected</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.length === 0 ? `
+          <tr><td colspan="8" style="text-align: center; padding: 18px; color: #64748b;">No executed contracts recorded yet.</td></tr>
+        ` : list.map(c => `
+          <tr>
+            <td><strong>${c.contract_number}</strong></td>
+            <td><span class="badge badge-sec-attached">${c.executing_company || 'Active Profile'}</span></td>
+            <td><strong>${c.client_name}</strong><br><span style="font-size: 0.72rem; color: #64748b;">${c.department_name || c.client_type || ''}</span></td>
+            <td>${c.project_title || c.opportunity_number || 'Contract Delivery'}</td>
+            <td><strong style="color: #0f172a;">PKR ${parseFloat(c.contract_value || 0).toLocaleString()}</strong></td>
+            <td><strong style="color: #0284c7;">PKR ${parseFloat(c.total_invoiced || 0).toLocaleString()}</strong></td>
+            <td><strong style="color: #059669;">PKR ${parseFloat(c.total_collected || 0).toLocaleString()}</strong></td>
+            <td><span class="badge badge-won">${c.contract_status || 'Completed'}</span></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  openModal('modal-portfolio-dossier');
+}
+
+function printPortfolioDossier() {
+  const content = document.getElementById('portfolio-printable-area');
+  if (!content) return;
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html>
+      <head>
+        <title>Past Performance Portfolio Dossier</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #0f172a; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+          th { background: #f1f5f9; }
+        </style>
+      </head>
+      <body>${content.innerHTML}</body>
+    </html>
+  `);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+// 6. Public Portal Revealing Soon Overlay Handler
+function openRevealingSoonModal(featureName = 'Upcoming Module') {
+  const tagEl = document.getElementById('revealing-feature-tag');
+  const titleEl = document.getElementById('revealing-title');
+  const descEl = document.getElementById('revealing-desc');
+
+  if (tagEl) tagEl.textContent = `✨ Mashrue: ${featureName}`;
+  if (titleEl) titleEl.textContent = 'Revealing soon';
+  if (descEl) {
+    if (featureName.includes('Pricing')) {
+      descEl.textContent = 'Our dynamic, transparent subscription packages and custom modular plans for enterprise bidding are being unveiled shortly.';
+    } else if (featureName.includes('Contact')) {
+      descEl.textContent = 'Our 24/7 dedicated enterprise onboarding desk and hotline will be accessible directly through the portal in our upcoming release.';
+    } else {
+      descEl.textContent = 'We are crafting an exceptional, AI-augmented procurement experience. This section will be unlocked in our upcoming platform release.';
+    }
+  }
+
+  openModal('modal-revealing-soon');
+}
+window.openRevealingSoonModal = openRevealingSoonModal;
 

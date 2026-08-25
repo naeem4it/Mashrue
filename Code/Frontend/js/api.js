@@ -1685,5 +1685,168 @@ const API = {
       paidUsers,
       totalMonthly
     };
+  },
+
+  // ==========================================================================
+  // ADVANCED INVENTORY & WORKFLOW GATING API METHODS
+  // ==========================================================================
+
+  async getWarehouseStock(params = {}) {
+    try {
+      const q = new URLSearchParams(params).toString();
+      const res = await fetch(`${API_BASE}/logistics/warehouse-stock?${q}`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('Backend warehouse stock fallback:', e.message);
+      return [];
+    }
+  },
+
+  async getStockReservations(params = {}) {
+    try {
+      const q = new URLSearchParams(params).toString();
+      const res = await fetch(`${API_BASE}/logistics/reservations?${q}`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('Backend stock reservations fallback:', e.message);
+      return [];
+    }
+  },
+
+  async createStockReservation(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/logistics/reserve`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async releaseStockReservation(reservationId, reason = '') {
+    try {
+      const res = await fetch(`${API_BASE}/logistics/release-reservation`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ reservation_id: reservationId, reason })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getGrnList(params = {}) {
+    try {
+      const q = new URLSearchParams(params).toString();
+      const res = await fetch(`${API_BASE}/logistics/grn?${q}`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('Backend GRN list fallback:', e.message);
+      return [];
+    }
+  },
+
+  async createGrn(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/logistics/grn`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async updateDtlClearance(grnId, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/logistics/grn/${grnId}/dtl-clearance`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getCdrRecoveryLetter(secId) {
+    try {
+      const res = await fetch(`${API_BASE}/bid-securities/${secId}/recovery-letter`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getGrievances(params = {}) {
+    try {
+      const q = new URLSearchParams(params).toString();
+      const res = await fetch(`${API_BASE}/contracts/grievances?${q}`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('Backend grievances fallback:', e.message);
+      return [];
+    }
+  },
+
+  async fileGrievance(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/contracts/grievances`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async updateGrievance(id, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/contracts/grievances/${id}`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async logStampDuty(contractId, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/contracts/contracts/${contractId}/stamp-duty`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getPastPerformancePortfolio() {
+    try {
+      const res = await fetch(`${API_BASE}/contracts/portfolio`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('Backend portfolio fallback:', e.message);
+      return [];
+    }
   }
 };

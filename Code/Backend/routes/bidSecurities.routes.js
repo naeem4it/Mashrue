@@ -187,6 +187,9 @@ router.put('/:id', async (req, res) => {
     bank_name,
     bank_branch,
     status,
+    department_diary_number,
+    recovery_letter_date,
+    recovery_letter_ref,
     comments
   } = req.body;
 
@@ -202,9 +205,12 @@ router.put('/:id', async (req, res) => {
            bank_name = COALESCE($7, bank_name),
            bank_branch = COALESCE($8, bank_branch),
            status = COALESCE($9, status),
-           comments = COALESCE($10, comments),
+           department_diary_number = COALESCE($10, department_diary_number),
+           recovery_letter_date = COALESCE($11, recovery_letter_date),
+           recovery_letter_ref = COALESCE($12, recovery_letter_ref),
+           comments = COALESCE($13, comments),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $11
+       WHERE id = $14
        RETURNING *`,
       [
         account_title || null,
@@ -216,6 +222,9 @@ router.put('/:id', async (req, res) => {
         bank_name || null,
         bank_branch || null,
         status || null,
+        department_diary_number || null,
+        recovery_letter_date || null,
+        recovery_letter_ref || null,
         comments || null,
         req.params.id
       ]
@@ -229,6 +238,69 @@ router.put('/:id', async (req, res) => {
       success: true,
       data: result.rows[0],
       message: 'Bid Security updated successfully'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET generate official CDR refund / return request letter
+router.get('/:id/recovery-letter', optionalAuth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT bs.*, 
+              o.opportunity_number, o.tender_name, o.title as tender_title, o.tender_source, o.status as tender_status,
+              bp.business_name, bp.legal_name, bp.address as bp_address, bp.ntn as bp_ntn,
+              c.business_name as procuring_agency, c.department_name
+       FROM bid_securities bs
+       JOIN opportunities o ON bs.opportunity_id = o.id
+       JOIN business_profiles bp ON bs.business_profile_id = bp.id
+       LEFT JOIN customers c ON o.customer_id = c.id
+       WHERE bs.id = $1`,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Bid Security record not found' });
+    }
+
+    const row = result.rows[0];
+    const letterRef = `REF/${row.business_name.substring(0, 3).toUpperCase()}/CDR-RET/${Date.now().toString().slice(-5)}`;
+    
+    // Automatically update recovery letter metadata
+    await db.query(
+      `UPDATE bid_securities SET recovery_letter_date = CURRENT_DATE, recovery_letter_ref = $1 WHERE id = $2`,
+      [letterRef, req.params.id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        letterReference: letterRef,
+        date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+        recipient: {
+          title: 'The Purchase / Procurement Officer',
+          department: row.department_name || row.procuring_agency || 'Procuring Authority',
+          organization: row.procuring_agency || 'Government Department'
+        },
+        sender: {
+          companyName: row.legal_name || row.business_name,
+          address: row.bp_address || 'Pakistan',
+          ntn: row.bp_ntn
+        },
+        subject: `APPLICATION FOR RELEASE / RETURN OF EARNEST MONEY (BID SECURITY) - TENDER NO: ${row.opportunity_number}`,
+        tenderDetails: {
+          tenderNumber: row.opportunity_number,
+          tenderName: row.tender_name || row.tender_title,
+          instrumentType: row.instrument_type,
+          instrumentNumber: row.instrument_number,
+          bankName: row.bank_name,
+          amountPKR: row.amount,
+          issueDate: row.issue_date,
+          expiryDate: row.expiry_date,
+          diaryReference: row.department_diary_number || 'Under Department Diary'
+        }
+      }
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

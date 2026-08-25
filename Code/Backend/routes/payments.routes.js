@@ -72,10 +72,18 @@ router.post('/', optionalAuth, async (req, res) => {
     bank_account,
     deposited_in_bank,
     reference_number,
+    gross_invoice_amount,
+    income_tax_wht_pct,
+    income_tax_wht_amount,
+    sales_tax_wht_amount,
+    ld_penalties_amount,
+    other_deductions_amount,
+    net_received_amount,
+    deduction_certificate_no,
     notes
   } = req.body;
 
-  if (!amount || (!invoice_id && !invoice_number)) {
+  if (!amount && !net_received_amount && !gross_invoice_amount) {
     return res.status(400).json({ success: false, message: 'Invoice and Payment Amount are mandatory.' });
   }
 
@@ -102,14 +110,21 @@ router.post('/', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
-    const payAmount = parseFloat(amount);
+    const gross = parseFloat(gross_invoice_amount || amount || 0);
+    const itWht = parseFloat(income_tax_wht_amount || 0);
+    const stWht = parseFloat(sales_tax_wht_amount || 0);
+    const ld = parseFloat(ld_penalties_amount || 0);
+    const other = parseFloat(other_deductions_amount || 0);
+    const net = parseFloat(net_received_amount || (gross - itWht - stWht - ld - other) || amount || 0);
+    const payAmount = net; // Net deposited into bank
+
     const payNum = payment_number || `PAY-${Date.now().toString().slice(-6)}`;
 
     // Insert Payment Record
     const result = await db.query(
       `INSERT INTO payments 
-       (tenant_id, business_profile_id, invoice_id, payment_number, payment_date, payment_method, amount, check_no, check_from, bank_account, deposited_in_bank, reference_number, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       (tenant_id, business_profile_id, invoice_id, payment_number, payment_date, payment_method, amount, check_no, check_from, bank_account, deposited_in_bank, reference_number, gross_invoice_amount, income_tax_wht_pct, income_tax_wht_amount, sales_tax_wht_amount, ld_penalties_amount, other_deductions_amount, net_received_amount, deduction_certificate_no, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING *`,
       [
         tenantId,
@@ -124,13 +139,22 @@ router.post('/', optionalAuth, async (req, res) => {
         bank_account || null,
         deposited_in_bank || null,
         reference_number || null,
+        gross,
+        parseFloat(income_tax_wht_pct || 0),
+        itWht,
+        stWht,
+        ld,
+        other,
+        net,
+        deduction_certificate_no || null,
         notes || null
       ]
     );
 
-    // Update Invoice Paid Amount and Status
-    const newPaidAmount = parseFloat(inv.paid_amount || 0) + payAmount;
-    const isFullyPaid = newPaidAmount >= parseFloat(inv.total_amount || 0);
+    // Update Invoice Paid Amount (Full gross settled amount credited)
+    const settledAmount = gross > 0 ? gross : payAmount;
+    const newPaidAmount = parseFloat(inv.paid_amount || 0) + settledAmount;
+    const isFullyPaid = newPaidAmount >= (parseFloat(inv.total_amount || 0) - 1.0); // 1 PKR tolerance for rounding
     const nextStatus = isFullyPaid ? 'Paid' : 'Submitted';
 
     await db.query(

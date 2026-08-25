@@ -537,4 +537,311 @@ router.put('/procurements/:id', async (req, res) => {
   }
 });
 
+// ============================================================================
+// 4. ADVANCED INVENTORY: WAREHOUSE STOCK BALANCES, RESERVATIONS & GRN/DTL
+// ============================================================================
+
+// GET Warehouse Stock Balances with Reservations & Batches
+router.get('/warehouse-stock', optionalAuth, async (req, res) => {
+  const { warehouse_id, product_id } = req.query;
+  try {
+    let queryText = `
+      SELECT ws.*, 
+             p.name as product_name, p.sku, p.unit, p.reorder_level,
+             w.warehouse_name, w.city as warehouse_city
+      FROM warehouse_stock ws
+      JOIN products_services p ON ws.product_id = p.id
+      JOIN warehouses w ON ws.warehouse_id = w.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (req.user && req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
+      const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+      params.push(tid);
+      queryText += ` AND ws.tenant_id::text = $${params.length}`;
+    }
+
+    if (warehouse_id) {
+      params.push(warehouse_id);
+      queryText += ` AND ws.warehouse_id = $${params.length}`;
+    }
+
+    if (product_id) {
+      params.push(product_id);
+      queryText += ` AND ws.product_id = $${params.length}`;
+    }
+
+    queryText += ` ORDER BY w.warehouse_name ASC, p.name ASC`;
+    const result = await db.query(queryText, params);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Stock Reservations
+router.get('/reservations', optionalAuth, async (req, res) => {
+  const { purchase_order_id, opportunity_id, product_id } = req.query;
+  try {
+    let queryText = `
+      SELECT sr.*, 
+             p.name as product_name, p.sku, p.unit,
+             w.warehouse_name,
+             po.po_number,
+             o.opportunity_number, o.title as opportunity_title
+      FROM stock_reservations sr
+      JOIN products_services p ON sr.product_id = p.id
+      JOIN warehouses w ON sr.warehouse_id = w.id
+      LEFT JOIN purchase_orders po ON sr.purchase_order_id = po.id
+      LEFT JOIN opportunities o ON sr.opportunity_id = o.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (req.user && req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
+      const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+      params.push(tid);
+      queryText += ` AND sr.tenant_id::text = $${params.length}`;
+    }
+
+    if (purchase_order_id) {
+      params.push(purchase_order_id);
+      queryText += ` AND sr.purchase_order_id = $${params.length}`;
+    }
+
+    if (opportunity_id) {
+      params.push(opportunity_id);
+      queryText += ` AND sr.opportunity_id = $${params.length}`;
+    }
+
+    queryText += ` ORDER BY sr.created_at DESC`;
+    const result = await db.query(queryText, params);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Create Stock Reservation
+router.post('/reserve', optionalAuth, async (req, res) => {
+  const { opportunity_id, purchase_order_id, product_id, warehouse_id, batch_number, reserved_quantity } = req.body;
+
+  if (!product_id || !warehouse_id || !reserved_quantity) {
+    return res.status(400).json({ success: false, message: 'Product, Warehouse and Reserved Quantity are required' });
+  }
+
+  try {
+    let tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
+      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    }
+
+    const qty = parseFloat(reserved_quantity);
+    const batch = batch_number || 'STANDARD';
+
+    const insertRes = await db.query(
+      `INSERT INTO stock_reservations 
+       (tenant_id, opportunity_id, purchase_order_id, product_id, warehouse_id, batch_number, reserved_quantity, status, reserved_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'Active', $8)
+       RETURNING *`,
+      [tenantId, opportunity_id || null, purchase_order_id || null, product_id, warehouse_id, batch, qty, req.user?.id || null]
+    );
+
+    // Update warehouse_stock reservation balance
+    await db.query(
+      `INSERT INTO warehouse_stock (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved)
+       VALUES ($1, $2, $3, $4, $5, $5)
+       ON CONFLICT (warehouse_id, product_id, batch_number)
+       DO UPDATE SET quantity_reserved = warehouse_stock.quantity_reserved + $5, updated_at = CURRENT_TIMESTAMP`,
+      [tenantId, warehouse_id, product_id, batch, qty]
+    );
+
+    res.status(201).json({
+      success: true,
+      data: insertRes.rows[0],
+      message: `Stock reservation of ${qty} reserved successfully against Order.`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Release / Cancel Stock Reservation
+router.post('/release-reservation', optionalAuth, async (req, res) => {
+  const { reservation_id, reason } = req.body;
+  if (!reservation_id) {
+    return res.status(400).json({ success: false, message: 'Reservation ID is required' });
+  }
+
+  try {
+    const resRow = await db.query(`SELECT * FROM stock_reservations WHERE id = $1`, [reservation_id]);
+    if (resRow.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Reservation not found' });
+    }
+    const r = resRow.rows[0];
+
+    await db.query(
+      `UPDATE stock_reservations SET status = 'Cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [reservation_id]
+    );
+
+    await db.query(
+      `UPDATE warehouse_stock 
+       SET quantity_reserved = GREATEST(0, quantity_reserved - $1), updated_at = CURRENT_TIMESTAMP
+       WHERE warehouse_id = $2 AND product_id = $3 AND batch_number = $4`,
+      [parseFloat(r.reserved_quantity), r.warehouse_id, r.product_id, r.batch_number]
+    );
+
+    res.json({ success: true, message: 'Stock reservation released successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET GRN & Inspection Records
+router.get('/grn', optionalAuth, async (req, res) => {
+  const { delivery_challan_id, purchase_order_id, dtl_status } = req.query;
+  try {
+    let queryText = `
+      SELECT grn.*, 
+             dc.dc_number,
+             po.po_number,
+             s.supplier_name,
+             w.warehouse_name
+      FROM grn_inspections grn
+      LEFT JOIN delivery_challans dc ON grn.delivery_challan_id = dc.id
+      LEFT JOIN purchase_orders po ON grn.purchase_order_id = po.id
+      LEFT JOIN suppliers s ON grn.supplier_id = s.id
+      LEFT JOIN warehouses w ON grn.warehouse_id = w.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (req.user && req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
+      const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+      params.push(tid);
+      queryText += ` AND grn.tenant_id::text = $${params.length}`;
+    }
+
+    if (delivery_challan_id) {
+      params.push(delivery_challan_id);
+      queryText += ` AND grn.delivery_challan_id = $${params.length}`;
+    }
+
+    if (dtl_status) {
+      params.push(dtl_status);
+      queryText += ` AND grn.dtl_status = $${params.length}`;
+    }
+
+    queryText += ` ORDER BY grn.inspection_date DESC, grn.created_at DESC`;
+    const result = await db.query(queryText, params);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Create GRN & Inspection Record
+router.post('/grn', optionalAuth, async (req, res) => {
+  const {
+    delivery_challan_id,
+    purchase_order_id,
+    supplier_id,
+    warehouse_id,
+    grn_number,
+    inspection_date,
+    inspector_name,
+    total_received_qty,
+    accepted_qty,
+    rejected_qty,
+    dtl_required,
+    dtl_sample_code,
+    dtl_report_number,
+    dtl_status,
+    remarks
+  } = req.body;
+
+  try {
+    let tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
+      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    }
+
+    const grnNo = grn_number || `GRN-${Date.now().toString().slice(-6)}`;
+    const inspStatus = dtl_required && dtl_status === 'Pending' ? 'Awaiting DTL' : (parseFloat(rejected_qty || 0) > 0 ? 'Partial Acceptance' : 'Inspection Passed');
+
+    const result = await db.query(
+      `INSERT INTO grn_inspections 
+       (tenant_id, delivery_challan_id, purchase_order_id, supplier_id, warehouse_id, grn_number, inspection_date, inspector_name, total_received_qty, accepted_qty, rejected_qty, dtl_required, dtl_sample_code, dtl_report_number, dtl_status, inspection_status, remarks)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       RETURNING *`,
+      [
+        tenantId,
+        delivery_challan_id || null,
+        purchase_order_id || null,
+        supplier_id || null,
+        warehouse_id || null,
+        grnNo,
+        inspection_date || new Date(),
+        inspector_name || 'Inspection Officer',
+        parseFloat(total_received_qty || 0),
+        parseFloat(accepted_qty || total_received_qty || 0),
+        parseFloat(rejected_qty || 0),
+        !!dtl_required,
+        dtl_sample_code || null,
+        dtl_report_number || null,
+        dtl_status || (dtl_required ? 'Pending' : 'N/A'),
+        inspStatus,
+        remarks || null
+      ]
+    );
+
+    // If DC linked, update DC status to GRN Received
+    if (delivery_challan_id) {
+      await db.query(
+        `UPDATE delivery_challans SET grn_number = $1, grn_date = $2, status = 'GRN Received' WHERE id = $3`,
+        [grnNo, inspection_date || new Date(), delivery_challan_id]
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      message: 'Goods Receipt Note & Inspection logged successfully'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT Update DTL Clearance on GRN
+router.put('/grn/:id/dtl-clearance', optionalAuth, async (req, res) => {
+  const { dtl_report_number, dtl_report_date, dtl_status, dtl_remarks } = req.body;
+  try {
+    const nextInspStatus = dtl_status === 'Cleared' ? 'Inspection Passed' : 'Inspection Failed';
+    const result = await db.query(
+      `UPDATE grn_inspections 
+       SET dtl_report_number = COALESCE($1, dtl_report_number),
+           dtl_report_date = COALESCE($2, dtl_report_date, CURRENT_DATE),
+           dtl_status = COALESCE($3, dtl_status),
+           dtl_remarks = COALESCE($4, dtl_remarks),
+           inspection_status = $5
+       WHERE id = $6
+       RETURNING *`,
+      [dtl_report_number || null, dtl_report_date || null, dtl_status || 'Cleared', dtl_remarks || null, nextInspStatus, req.params.id]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: `DTL Lab Clearance status updated to ${dtl_status}`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

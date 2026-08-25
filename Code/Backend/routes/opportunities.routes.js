@@ -172,6 +172,7 @@ router.post('/', optionalAuth, async (req, res) => {
     estimated_value,
     currency,
     location,
+    workflow_gates,
     items
   } = req.body;
 
@@ -190,10 +191,29 @@ router.post('/', optionalAuth, async (req, res) => {
     const nameStr = tender_name || title;
     const titleStr = title || tender_name;
 
+    // Resolve workflow gates from body or customer default or standard default
+    let gates = workflow_gates;
+    if (!gates && customer_id) {
+      const custRes = await db.query(`SELECT workflow_gates FROM customers WHERE id = $1`, [customer_id]);
+      if (custRes.rows.length > 0 && custRes.rows[0].workflow_gates) {
+        gates = custRes.rows[0].workflow_gates;
+      }
+    }
+    if (!gates) {
+      gates = {
+        requires_bid_security: tender_source !== 'DIRECT SALES',
+        requires_performance_guarantee: tender_source !== 'DIRECT SALES',
+        requires_stamp_duty: tender_source !== 'DIRECT SALES',
+        requires_dtl_inspection: false,
+        requires_fbr_e_invoice: true,
+        requires_diary_tracking: tender_source !== 'DIRECT SALES'
+      };
+    }
+
     const result = await db.query(
       `INSERT INTO opportunities 
-       (tenant_id, business_profile_id, opportunity_number, external_tender_number, tender_name, title, tender_source, tender_type, description, customer_id, department, publication_date, closing_date, submission_deadline, opening_date, estimated_value, currency, location, status, selection_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+       (tenant_id, business_profile_id, opportunity_number, external_tender_number, tender_name, title, tender_source, tender_type, description, customer_id, department, publication_date, closing_date, submission_deadline, opening_date, estimated_value, currency, location, status, selection_status, workflow_gates)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING *`,
       [
         tenantId,
@@ -215,7 +235,8 @@ router.post('/', optionalAuth, async (req, res) => {
         currency || 'PKR',
         location || 'Pakistan',
         'New',
-        'Pending'
+        'Pending',
+        JSON.stringify(gates)
       ]
     );
 
@@ -320,7 +341,8 @@ router.put('/:id', optionalAuth, async (req, res) => {
     opening_date,
     estimated_value,
     status,
-    description
+    description,
+    workflow_gates
   } = req.body;
 
   try {
@@ -339,8 +361,9 @@ router.put('/:id', optionalAuth, async (req, res) => {
            estimated_value = COALESCE($11, estimated_value),
            status = COALESCE($12, status),
            description = COALESCE($13, description),
+           workflow_gates = COALESCE($14::jsonb, workflow_gates),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $14
+       WHERE id = $15
     `;
     const params = [
       tender_name || null,
@@ -356,6 +379,7 @@ router.put('/:id', optionalAuth, async (req, res) => {
       estimated_value !== undefined ? parseFloat(estimated_value) : null,
       status || null,
       description || null,
+      workflow_gates ? JSON.stringify(workflow_gates) : null,
       req.params.id
     ];
 

@@ -164,14 +164,37 @@ router.post('/login', async (req, res) => {
   }
 });
 
+function validatePasswordPolicy(password) {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: 'Password is required.' };
+  }
+  if (password.length < 8 || password.length > 20) {
+    return { valid: false, message: 'Password length must be between 8 and 20 characters.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter (A-Z).' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter (a-z).' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one numeric digit (0-9).' };
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one special character (e.g. !@#$%^&*).' };
+  }
+  return { valid: true };
+}
+
 /**
  * Change Password Endpoint (Supports forced first-time change and regular change)
  */
 router.post('/change-password', authenticate, async (req, res) => {
   const { newPassword, currentPassword } = req.body;
 
-  if (!newPassword || newPassword.length < 6) {
-    return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long.' });
+  const policyCheck = validatePasswordPolicy(newPassword);
+  if (!policyCheck.valid) {
+    return res.status(400).json({ success: false, message: policyCheck.message });
   }
 
   try {
