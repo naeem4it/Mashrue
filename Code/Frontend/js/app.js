@@ -835,17 +835,17 @@ function populateBusinessSwitcher() {
   const switcher = document.getElementById('business-select');
   if (!switcher) return;
 
-  if (!State.businessProfiles || State.businessProfiles.length === 0) {
-    switcher.innerHTML = `<option value="none">🏢 (No Company Profile Configured)</option>`;
-    return;
+  const profiles = State.businessProfiles || [];
+  let optionsHtml = `<option value="all">🏢 All Business Entities (Consolidated)</option>`;
+
+  if (profiles.length > 0) {
+    optionsHtml += profiles.map(p => `
+      <option value="${p.id}" ${State.currentBusinessProfileId === p.id ? 'selected' : ''}>${p.business_name} (${p.ntn || 'NTN Pending'})</option>
+    `).join('');
   }
 
-  switcher.innerHTML = `
-    <option value="all">🏢 All Business Entities (Consolidated)</option>
-    ${State.businessProfiles.map(p => `
-      <option value="${p.id}" ${State.currentBusinessProfileId === p.id ? 'selected' : ''}>${p.business_name} (${p.ntn || 'NTN Pending'})</option>
-    `).join('')}
-  `;
+  optionsHtml += `<option value="__add_new_entity__" style="color:#2563eb; font-weight:700;">➕ + Add New Business Entity...</option>`;
+  switcher.innerHTML = optionsHtml;
 }
 
 // --------------------------------------------------------------------------
@@ -3084,7 +3084,7 @@ async function renderProductsHTML() {
                 <tr class="${isLoss ? 'loss-row' : ''}">
                   <td><strong><code>${p.sku || 'SKU'}</code></strong></td>
                   <td>
-                    <strong>${p.name}</strong><br>
+                    <strong>${p.name}</strong>${p.specifications ? ` <span style="display:inline-block; font-size:0.75rem; background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:4px;">${p.specifications}</span>` : ''}<br>
                     <span style="font-size:0.75rem; color:var(--text-muted);">${p.description ? p.description.slice(0, 50) + '...' : ''}</span>
                   </td>
                   <td>
@@ -4087,7 +4087,12 @@ function openModal(id) {
     return;
   }
   const el = document.getElementById(id);
-  if (el) el.classList.add('open');
+  if (el) {
+    el.classList.add('open');
+    el.scrollTop = 0;
+    const cards = el.querySelectorAll('.modal-card, .modal-body, .modal-content, .table-responsive');
+    cards.forEach(c => { c.scrollTop = 0; });
+  }
 }
 
 function closeModal(id) {
@@ -4106,6 +4111,11 @@ function navigateToView(view) {
 let _tenderLineItems = [];
 
 async function openNewTenderModal() {
+  const form = document.getElementById('form-add-tender');
+  if (form) form.reset();
+  const otherContainer = document.getElementById('tender-source-other-container');
+  if (otherContainer) otherContainer.style.display = 'none';
+
   const customers = await API.getCustomers();
   const profiles = await API.getBusinessProfiles();
   window._cachedProducts = await API.getProducts();
@@ -4135,7 +4145,7 @@ async function openNewTenderModal() {
   if (tbody) tbody.innerHTML = '';
   addTenderItemRow();
 
-  // Initialize date inputs with DD/MM/YYYY auto-close on AM/PM
+  // Initialize date inputs with DD/MM/YYYY
   initCustomDateTimePickers();
 
   openModal('modal-add-tender');
@@ -4360,14 +4370,14 @@ function initCustomDateTimePickers() {
 }
 
 async function submitNewTenderForm() {
-  const tenderName = document.getElementById('tender-name')?.value;
+  const tenderName = document.getElementById('tender-name')?.value?.trim();
   let source = document.getElementById('tender-source')?.value || 'PPRA (Federal)';
   const customSource = document.getElementById('tender-source-other')?.value?.trim();
   if ((source === 'OTHER' || source.startsWith('OTHER')) && customSource) {
     source = `OTHER: ${customSource}`;
   }
-  const oppNo = document.getElementById('tender-opp-no')?.value;
-  const extNo = document.getElementById('tender-ext-no')?.value;
+  const oppNo = document.getElementById('tender-opp-no')?.value?.trim();
+  const extNo = document.getElementById('tender-ext-no')?.value?.trim();
   const currency = document.getElementById('tender-currency')?.value || 'PKR';
   const custId = document.getElementById('tender-customer')?.value;
   const bizId = document.getElementById('tender-business-profile')?.value;
@@ -4381,62 +4391,101 @@ async function submitNewTenderForm() {
     return;
   }
 
-  const rows = document.querySelectorAll('#tender-items-tbody tr');
-  const items = [];
-  rows.forEach(row => {
-    const prodId = row.querySelector('.tnd-item-product')?.value || null;
-    const itemDesc = row.querySelector('.tnd-item-desc')?.value;
-    const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
-    const unit = row.querySelector('.tnd-item-unit')?.value || 'PCS';
-    const unitPrice = parseCurrency(row.querySelector('.tnd-item-price')?.value);
+  const submitBtn = document.querySelector('#form-add-tender button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Saving Tender...</span>';
+  }
 
-    if (itemDesc) {
-      items.push({
-        product_service_id: prodId,
-        item_name: itemDesc,
-        item_description: itemDesc,
-        quantity: qty,
-        unit: unit,
-        estimated_unit_price: unitPrice,
-        estimated_total_price: qty * unitPrice
-      });
+  try {
+    // Pre-flight duplicate check
+    const existingOpps = await API.getOpportunities(bizId || 'all');
+    const isDup = existingOpps.some(o => 
+      o.tender_name?.toLowerCase().trim() === tenderName.toLowerCase() && 
+      (!custId || String(o.customer_id) === String(custId))
+    );
+    if (isDup) {
+      alert(`⚠️ Duplicate Tender Error:\nA tender named "${tenderName}" is already registered for this customer.`);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>💾 Save & Attach Bid Security</span>';
+      }
+      return;
     }
-  });
 
-  const isExempt = document.getElementById('tender-gst-exempt')?.checked || false;
-  const isInclusive = document.getElementById('tender-gst-inclusive')?.checked || false;
-  const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
-  const itemsSubtotal = items.reduce((acc, itm) => acc + (itm.estimated_total_price || 0), 0);
+    const rows = document.querySelectorAll('#tender-items-tbody tr');
+    const items = [];
+    rows.forEach(row => {
+      const prodId = row.querySelector('.tnd-item-product')?.value || null;
+      const itemDesc = row.querySelector('.tnd-item-desc')?.value;
+      const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
+      const unit = row.querySelector('.tnd-item-unit')?.value || 'PCS';
+      const unitPrice = parseCurrency(row.querySelector('.tnd-item-price')?.value);
 
-  const res = await API.createOpportunity({
-    tender_name: tenderName,
-    title: tenderName,
-    opportunity_number: oppNo || undefined,
-    external_tender_number: extNo || undefined,
-    tender_source: source,
-    currency: currency,
-    customer_id: custId,
-    business_profile_id: bizId,
-    estimated_value: estVal,
-    closing_date: closing,
-    opening_date: opening,
-    description: desc,
-    items: items,
-    is_gst_exempt: isExempt,
-    is_gst_inclusive: isInclusive,
-    gst_rate_pct: isExempt ? 0 : gstRate,
-    subtotal: itemsSubtotal
-  });
+      if (itemDesc) {
+        items.push({
+          product_service_id: prodId,
+          item_name: itemDesc,
+          item_description: itemDesc,
+          quantity: qty,
+          unit: unit,
+          estimated_unit_price: unitPrice,
+          estimated_total_price: qty * unitPrice
+        });
+      }
+    });
 
-  closeModal('modal-add-tender');
-  showToast('✓ Tender Record saved successfully!', 'success');
+    const isExempt = document.getElementById('tender-gst-exempt')?.checked || false;
+    const isInclusive = document.getElementById('tender-gst-inclusive')?.checked || false;
+    const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
+    const itemsSubtotal = items.reduce((acc, itm) => acc + (itm.estimated_total_price || 0), 0);
 
-  const createdId = res.data?.id || ('tnd-' + Date.now());
-  const createdNo = res.data?.opportunity_number || oppNo || 'TND-2026';
-  
-  // Immediately prompt mandatory Bid Security modal
-  promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
-  await renderActiveView();
+    const res = await API.createOpportunity({
+      tender_name: tenderName,
+      title: tenderName,
+      opportunity_number: oppNo || undefined,
+      external_tender_number: extNo || undefined,
+      tender_source: source,
+      currency: currency,
+      customer_id: custId,
+      business_profile_id: bizId,
+      estimated_value: estVal,
+      closing_date: closing,
+      opening_date: opening,
+      description: desc,
+      items: items,
+      is_gst_exempt: isExempt,
+      is_gst_inclusive: isInclusive,
+      gst_rate_pct: isExempt ? 0 : gstRate,
+      subtotal: itemsSubtotal
+    });
+
+    if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
+      alert(`⚠️ ${res.message}`);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>💾 Save & Attach Bid Security</span>';
+      }
+      return;
+    }
+
+    closeModal('modal-add-tender');
+    showToast('✓ Tender Record saved successfully!', 'success');
+
+    const createdId = res.data?.id || ('tnd-' + Date.now());
+    const createdNo = res.data?.opportunity_number || oppNo || 'TND-2026';
+    
+    // Immediately prompt mandatory Bid Security modal
+    promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
+    await renderActiveView();
+  } catch (err) {
+    alert(`Error saving tender: ${err.message}`);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span>💾 Save & Attach Bid Security</span>';
+    }
+  }
 }
 
 async function handleTenderSecuritySearch(query) {
@@ -5754,28 +5803,21 @@ async function submitPaymentForm() {
 // --------------------------------------------------------------------------
 
 // 1. CUSTOMER CONTROLLERS
-async function openNewCustomerModal() {
-  document.getElementById('cust-edit-id').value = '';
-  document.getElementById('cust-code').value = 'CUST-PK-' + Math.floor(1000 + Math.random() * 9000);
-  document.getElementById('cust-name').value = '';
-  document.getElementById('cust-department').value = '';
-  document.getElementById('cust-ntn').value = '';
-  document.getElementById('cust-strn').value = '';
-  document.getElementById('cust-city').value = 'Lahore';
-  document.getElementById('cust-address').value = '';
-  document.getElementById('cust-delivery-address').value = '';
-  document.getElementById('cust-contact').value = '';
-  document.getElementById('cust-phone').value = '';
-  document.getElementById('cust-email').value = '';
-  document.getElementById('cust-credit-limit').value = '';
-  document.getElementById('cust-bank-name').value = '';
-  document.getElementById('cust-bank-iban').value = '';
-  document.getElementById('cust-notes').value = '';
-  
-  const termsSelect = document.getElementById('cust-terms');
-  if (termsSelect) termsSelect.value = 'Net 30 Days';
-  toggleCustomerOtherTerms('Net 30 Days');
+function openNewCustomerModal() {
+  const form = document.getElementById('form-add-customer');
+  if (form) form.reset();
+  const editEl = document.getElementById('cust-edit-id');
+  if (editEl) editEl.value = '';
+  const codeEl = document.getElementById('cust-code');
+  if (codeEl) codeEl.value = 'CUST-' + Math.floor(1000 + Math.random() * 9000);
+  const otherTermsCont = document.getElementById('cust-other-terms-container');
+  if (otherTermsCont) otherTermsCont.style.display = 'none';
 
+  const modal = document.getElementById('modal-add-customer');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '🏢 Register New Customer Organization';
+  }
   openModal('modal-add-customer');
 }
 
@@ -5819,6 +5861,11 @@ async function openEditCustomerModal(id) {
   document.getElementById('cust-bank-iban').value = c.bank_iban || '';
   document.getElementById('cust-notes').value = c.notes || '';
 
+  const modal = document.getElementById('modal-add-customer');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '✏️ Edit Customer Organization';
+  }
   openModal('modal-add-customer');
 }
 
@@ -5853,45 +5900,83 @@ async function submitNewCustomerForm() {
     return;
   }
 
-  const payload = {
-    customer_code: code || 'CUST-' + Math.floor(1000 + Math.random() * 9000),
-    business_name: name,
-    customer_type: orgType,
-    org_type: orgType,
-    department_name: dept,
-    ntn: ntn,
-    strn: strn,
-    city: city,
-    province: province,
-    address: address,
-    delivery_address: delAddress,
-    contact_person: contact,
-    phone: phone,
-    email: email,
-    payment_terms: terms,
-    credit_limit: limit,
-    status: status,
-    bank_name: bankName,
-    bank_iban: bankIban,
-    notes: notes
-  };
-
-  let created = null;
-  if (editId) {
-    await API.updateEntity('customer', editId, payload);
-    created = { id: editId, ...payload };
-    showToast('✓ Customer record updated successfully.', 'success');
-  } else {
-    const res = await API.createCustomer(payload);
-    created = (res && res.data) ? res.data : { id: 'cust-' + Date.now(), ...payload };
-    showToast('✓ Customer registered successfully.', 'success');
+  const submitBtn = document.querySelector('#form-add-customer button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Saving Customer...</span>';
   }
 
-  closeModal('modal-add-customer');
-  if (_quickAddContext && _quickAddContext.entityType === 'customer') {
-    await handleQuickAddCompletion('customer', created);
-  } else {
-    await renderActiveView();
+  try {
+    // Pre-flight duplicate check
+    const existing = await API.getCustomers();
+    const isDup = existing.some(c => 
+      c.business_name?.toLowerCase().trim() === name.toLowerCase() && 
+      String(c.id) !== String(editId || '')
+    );
+    if (isDup) {
+      alert(`⚠️ Duplicate Customer Error:\nA customer named "${name}" is already registered.`);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>💾 Save Customer Master</span>';
+      }
+      return;
+    }
+
+    const payload = {
+      customer_code: code || 'CUST-' + Math.floor(1000 + Math.random() * 9000),
+      business_name: name,
+      customer_type: orgType,
+      org_type: orgType,
+      department_name: dept,
+      ntn: ntn,
+      strn: strn,
+      city: city,
+      province: province,
+      address: address,
+      delivery_address: delAddress,
+      contact_person: contact,
+      phone: phone,
+      email: email,
+      payment_terms: terms,
+      credit_limit: limit,
+      status: status,
+      bank_name: bankName,
+      bank_iban: bankIban,
+      notes: notes
+    };
+
+    let created = null;
+    if (editId) {
+      await API.updateEntity('customer', editId, payload);
+      created = { id: editId, ...payload };
+      showToast('✓ Customer record updated successfully.', 'success');
+    } else {
+      const res = await API.createCustomer(payload);
+      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
+        alert(`⚠️ ${res.message}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Customer Master</span>';
+        }
+        return;
+      }
+      created = (res && res.data) ? res.data : { id: 'cust-' + Date.now(), ...payload };
+      showToast('✓ Customer registered successfully.', 'success');
+    }
+
+    closeModal('modal-add-customer');
+    if (_quickAddContext && _quickAddContext.entityType === 'customer') {
+      await handleQuickAddCompletion('customer', created);
+    } else {
+      await renderActiveView();
+    }
+  } catch (err) {
+    alert(`Error saving customer: ${err.message}`);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span>💾 Save Customer Master</span>';
+    }
   }
 }
 
@@ -5919,21 +6004,21 @@ function handleSupplierTypeChanged(type) {
 }
 
 async function openNewSupplierModal() {
-  document.getElementById('sup-edit-id').value = '';
-  document.getElementById('sup-code').value = 'SUP-INT-' + Math.floor(1000 + Math.random() * 9000);
-  document.getElementById('sup-name').value = '';
-  document.getElementById('sup-type').value = 'International Supplier';
+  const form = document.getElementById('form-add-supplier');
+  if (form) form.reset();
+  const editEl = document.getElementById('sup-edit-id');
+  if (editEl) editEl.value = '';
+  const codeEl = document.getElementById('sup-code');
+  if (codeEl) codeEl.value = 'SUP-INT-' + Math.floor(1000 + Math.random() * 9000);
+  const typeEl = document.getElementById('sup-type');
+  if (typeEl) typeEl.value = 'International Supplier';
   handleSupplierTypeChanged('International Supplier');
-  document.getElementById('sup-ntn').value = '';
-  document.getElementById('sup-strn').value = '';
-  document.getElementById('sup-contact').value = '';
-  document.getElementById('sup-phone').value = '';
-  document.getElementById('sup-email').value = '';
-  document.getElementById('sup-bank-name').value = '';
-  document.getElementById('sup-bank-iban').value = '';
-  document.getElementById('sup-bank-swift').value = '';
-  document.getElementById('sup-categories').value = '';
-  document.getElementById('sup-notes').value = '';
+
+  const modal = document.getElementById('modal-add-supplier');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '🏭 Register Sourcing Partner / OEM Supplier';
+  }
   openModal('modal-add-supplier');
 }
 
@@ -5963,13 +6048,18 @@ async function openEditSupplierModal(id) {
   document.getElementById('sup-categories').value = s.product_categories || '';
   document.getElementById('sup-notes').value = s.notes || '';
 
+  const modal = document.getElementById('modal-add-supplier');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '✏️ Edit Sourcing Partner / Supplier';
+  }
   openModal('modal-add-supplier');
 }
 
 async function submitNewSupplierForm() {
   const editId = document.getElementById('sup-edit-id')?.value;
   const code = document.getElementById('sup-code')?.value;
-  const name = document.getElementById('sup-name')?.value;
+  const name = document.getElementById('sup-name')?.value?.trim();
   const type = document.getElementById('sup-type')?.value;
   const country = document.getElementById('sup-country')?.value;
   const originPort = document.getElementById('sup-origin-port')?.value;
@@ -5993,46 +6083,84 @@ async function submitNewSupplierForm() {
     return;
   }
 
-  const payload = {
-    supplier_code: code || 'SUP-' + Math.floor(1000 + Math.random() * 9000),
-    supplier_name: name,
-    supplier_type: type,
-    origin: type.includes('International') ? 'International' : 'Local',
-    country: country,
-    origin_port_city: originPort,
-    currency: currency,
-    incoterms: incoterms,
-    rating: parseInt(rating || 5, 10),
-    ntn: ntn,
-    strn: strn,
-    payment_terms: terms,
-    contact_person: contact,
-    phone: phone,
-    email: email,
-    bank_name: bankName,
-    bank_iban: bankIban,
-    bank_swift: bankSwift,
-    product_categories: categories,
-    status: 'Active',
-    notes: notes
-  };
-
-  let created = null;
-  if (editId) {
-    await API.updateEntity('supplier', editId, payload);
-    created = { id: editId, ...payload };
-    alert('✓ Supplier details updated successfully.');
-  } else {
-    const res = await API.createSupplier(payload);
-    created = (res && res.data) ? res.data : { id: 'sup-' + Date.now(), ...payload };
-    alert('✓ Supplier registered successfully.');
+  const submitBtn = document.querySelector('#form-add-supplier button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Saving Supplier...</span>';
   }
 
-  closeModal('modal-add-supplier');
-  if (_quickAddContext && _quickAddContext.entityType === 'supplier') {
-    await handleQuickAddCompletion('supplier', created);
-  } else {
-    await renderActiveView();
+  try {
+    // Pre-flight duplicate check
+    const existing = await API.getSuppliers();
+    const isDup = existing.some(s => 
+      s.supplier_name?.toLowerCase().trim() === name.toLowerCase() && 
+      String(s.id) !== String(editId || '')
+    );
+    if (isDup) {
+      alert(`⚠️ Duplicate Supplier Error:\nA supplier named "${name}" is already registered.`);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>💾 Save Sourcing Partner</span>';
+      }
+      return;
+    }
+
+    const payload = {
+      supplier_code: code || 'SUP-' + Math.floor(1000 + Math.random() * 9000),
+      supplier_name: name,
+      supplier_type: type,
+      origin: type.includes('International') ? 'International' : 'Local',
+      country: country,
+      origin_port_city: originPort,
+      currency: currency,
+      incoterms: incoterms,
+      rating: parseInt(rating || 5, 10),
+      ntn: ntn,
+      strn: strn,
+      payment_terms: terms,
+      contact_person: contact,
+      phone: phone,
+      email: email,
+      bank_name: bankName,
+      bank_iban: bankIban,
+      bank_swift: bankSwift,
+      product_categories: categories,
+      status: 'Active',
+      notes: notes
+    };
+
+    let created = null;
+    if (editId) {
+      await API.updateEntity('supplier', editId, payload);
+      created = { id: editId, ...payload };
+      showToast('✓ Supplier details updated successfully.', 'success');
+    } else {
+      const res = await API.createSupplier(payload);
+      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
+        alert(`⚠️ ${res.message}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Sourcing Partner</span>';
+        }
+        return;
+      }
+      created = (res && res.data) ? res.data : { id: 'sup-' + Date.now(), ...payload };
+      showToast('✓ Supplier registered successfully.', 'success');
+    }
+
+    closeModal('modal-add-supplier');
+    if (_quickAddContext && _quickAddContext.entityType === 'supplier') {
+      await handleQuickAddCompletion('supplier', created);
+    } else {
+      await renderActiveView();
+    }
+  } catch (err) {
+    alert(`Error saving supplier: ${err.message}`);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span>💾 Save Sourcing Partner</span>';
+    }
   }
 }
 
@@ -6076,6 +6204,9 @@ function checkProductSellingPriceMargin() {
 }
 
 async function openNewProductModal() {
+  const form = document.getElementById('form-add-product');
+  if (form) form.reset();
+
   const suppliers = await API.getSuppliers();
   const supSelect = document.getElementById('prod-supplier-select');
   if (supSelect) {
@@ -6084,18 +6215,38 @@ async function openNewProductModal() {
     `).join('');
   }
 
-  document.getElementById('prod-edit-id').value = '';
-  document.getElementById('prod-sku').value = 'SKU-' + Math.floor(1000 + Math.random() * 9000);
-  document.getElementById('prod-name').value = '';
-  document.getElementById('prod-type').value = 'Product';
-  document.getElementById('prod-unit').value = 'PCS';
-  document.getElementById('prod-hs-code').value = '';
-  document.getElementById('prod-country').value = 'Pakistan';
-  document.getElementById('prod-reorder-level').value = '10';
-  document.getElementById('prod-currency').value = 'PKR';
-  document.getElementById('prod-cost-pkr').value = '';
-  document.getElementById('prod-selling-price').value = '';
-  document.getElementById('prod-description').value = '';
+  const editEl = document.getElementById('prod-edit-id');
+  if (editEl) editEl.value = '';
+  const skuEl = document.getElementById('prod-sku');
+  if (skuEl) skuEl.value = 'SKU-' + Math.floor(1000 + Math.random() * 9000);
+  const nameEl = document.getElementById('prod-name');
+  if (nameEl) nameEl.value = '';
+  const specEl = document.getElementById('prod-spec');
+  if (specEl) specEl.value = '';
+  const typeEl = document.getElementById('prod-type');
+  if (typeEl) typeEl.value = 'Product';
+  const unitEl = document.getElementById('prod-unit');
+  if (unitEl) unitEl.value = 'PCS';
+  const hsEl = document.getElementById('prod-hs-code');
+  if (hsEl) hsEl.value = '';
+  const countryEl = document.getElementById('prod-country');
+  if (countryEl) countryEl.value = 'Pakistan';
+  const reorderEl = document.getElementById('prod-reorder-level');
+  if (reorderEl) reorderEl.value = '10';
+  const currEl = document.getElementById('prod-currency');
+  if (currEl) currEl.value = 'PKR';
+  const costEl = document.getElementById('prod-cost-pkr');
+  if (costEl) costEl.value = '';
+  const sellEl = document.getElementById('prod-selling-price');
+  if (sellEl) sellEl.value = '';
+  const descEl = document.getElementById('prod-description');
+  if (descEl) descEl.value = '';
+
+  const modal = document.getElementById('modal-add-product');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '📦 Register Master Product / Item SKU';
+  }
 
   checkProductSellingPriceMargin();
   openModal('modal-add-product');
@@ -6119,6 +6270,8 @@ async function openEditProductModal(id) {
   document.getElementById('prod-edit-id').value = p.id;
   document.getElementById('prod-sku').value = p.sku || '';
   document.getElementById('prod-name').value = p.name || '';
+  const specEl = document.getElementById('prod-spec');
+  if (specEl) specEl.value = p.specifications || p.spec || '';
   document.getElementById('prod-type').value = p.item_type || 'Product';
   document.getElementById('prod-unit').value = p.unit || 'PCS';
   document.getElementById('prod-hs-code').value = p.hs_code || '';
@@ -6129,6 +6282,12 @@ async function openEditProductModal(id) {
   document.getElementById('prod-selling-price').value = p.selling_price ? Number(p.selling_price).toLocaleString() : '';
   document.getElementById('prod-description').value = p.description || '';
 
+  const modal = document.getElementById('modal-add-product');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '✏️ Edit Master Product SKU';
+  }
+
   checkProductSellingPriceMargin();
   openModal('modal-add-product');
 }
@@ -6137,8 +6296,9 @@ async function submitNewProductForm() {
   const editId = document.getElementById('prod-edit-id')?.value;
   const sku = document.getElementById('prod-sku')?.value?.trim();
   const name = document.getElementById('prod-name')?.value?.trim();
+  const spec = document.getElementById('prod-spec')?.value?.trim() || '';
   const type = document.getElementById('prod-type')?.value;
-  const unit = document.getElementById('prod-unit')?.value;
+  const unit = document.getElementById('prod-unit')?.value?.trim() || 'PCS';
   const hsCode = document.getElementById('prod-hs-code')?.value?.trim();
   const country = document.getElementById('prod-country')?.value;
   const supplierId = document.getElementById('prod-supplier-select')?.value;
@@ -6153,37 +6313,78 @@ async function submitNewProductForm() {
     return;
   }
 
-  const payload = {
-    sku: sku,
-    name: name,
-    item_type: type,
-    unit: unit,
-    hs_code: hsCode,
-    country_of_origin: country,
-    default_supplier_id: supplierId || null,
-    reorder_level: parseFloat(reorder || 10),
-    currency: currency,
-    cost_price: cost,
-    selling_price: price || cost,
-    description: desc
-  };
-
-  let created = null;
-  if (editId) {
-    await API.updateEntity('product', editId, payload);
-    created = { id: editId, ...payload };
-    showToast('✓ Master Product SKU updated.', 'success');
-  } else {
-    const res = await API.createProduct(payload);
-    created = (res && res.data) ? res.data : { id: 'prod-' + Date.now(), ...payload };
-    showToast('✓ Master Product SKU registered into Catalog.', 'success');
+  const submitBtn = document.querySelector('#form-add-product button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Saving Product...</span>';
   }
 
-  closeModal('modal-add-product');
-  if (_quickAddContext && (_quickAddContext.entityType === 'product' || _quickAddContext.entityType === 'item')) {
-    await handleQuickAddCompletion('product', created);
-  } else {
-    await renderActiveView();
+  try {
+    // Pre-flight duplicate check
+    const existing = await API.getProducts();
+    const isDup = existing.some(p => 
+      (p.sku?.toLowerCase().trim() === sku.toLowerCase() && String(p.id) !== String(editId || '')) ||
+      (p.name?.toLowerCase().trim() === name.toLowerCase() && 
+       (p.specifications || p.description || '').toLowerCase().trim() === spec.toLowerCase() && 
+       String(p.id) !== String(editId || ''))
+    );
+    if (isDup) {
+      alert(`⚠️ Duplicate Product Error:\nAn item with SKU "${sku}" or name "${name}" (${spec}) is already registered in your catalog.`);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
+      }
+      return;
+    }
+
+    const payload = {
+      sku: sku,
+      name: name,
+      specifications: spec,
+      item_type: type,
+      unit: unit,
+      hs_code: hsCode,
+      country_of_origin: country,
+      default_supplier_id: supplierId || null,
+      reorder_level: parseFloat(reorder || 10),
+      currency: currency,
+      cost_price: cost,
+      selling_price: price || cost,
+      description: desc
+    };
+
+    let created = null;
+    if (editId) {
+      await API.updateEntity('product', editId, payload);
+      created = { id: editId, ...payload };
+      showToast('✓ Master Product SKU updated.', 'success');
+    } else {
+      const res = await API.createProduct(payload);
+      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
+        alert(`⚠️ ${res.message}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
+        }
+        return;
+      }
+      created = (res && res.data) ? res.data : { id: 'prod-' + Date.now(), ...payload };
+      showToast('✓ Master Product SKU registered into Catalog.', 'success');
+    }
+
+    closeModal('modal-add-product');
+    if (_quickAddContext && (_quickAddContext.entityType === 'product' || _quickAddContext.entityType === 'item')) {
+      await handleQuickAddCompletion('product', created);
+    } else {
+      await renderActiveView();
+    }
+  } catch (err) {
+    alert(`Error saving product: ${err.message}`);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
+    }
   }
 }
 
@@ -7169,9 +7370,9 @@ function handleUserRoleSelection(role) {
 }
 
 async function submitCreateUserForm() {
-  const fullname = document.getElementById('newuser-fullname')?.value;
-  const username = document.getElementById('newuser-username')?.value;
-  const email = document.getElementById('newuser-email')?.value;
+  const fullname = document.getElementById('newuser-fullname')?.value?.trim();
+  const username = document.getElementById('newuser-username')?.value?.trim();
+  const email = document.getElementById('newuser-email')?.value?.trim();
   const password = document.getElementById('newuser-password')?.value;
   const role = document.getElementById('newuser-role')?.value || 'ClientEmployee';
   const canSeePrices = document.getElementById('newuser-can-see-prices')?.checked;
@@ -7187,32 +7388,54 @@ async function submitCreateUserForm() {
     return;
   }
 
-  // Gather granular permissions
-  const permissions = {};
-  const toggles = document.querySelectorAll('.perm-toggle');
-  toggles.forEach(t => {
-    const mod = t.dataset.module;
-    const act = t.dataset.action;
-    if (!permissions[mod]) permissions[mod] = {};
-    permissions[mod][act] = t.checked;
-  });
-
-  // Gather selected company IDs
-  const compCheckboxes = document.querySelectorAll('.user-company-checkbox:checked');
-  const businessProfileIds = Array.from(compCheckboxes).map(c => c.value);
-
-  const payload = {
-    full_name: fullname,
-    username: username || email.split('@')[0],
-    email,
-    password,
-    role,
-    can_see_bidding_prices: canSeePrices,
-    permissions,
-    business_profile_ids: businessProfileIds
-  };
+  const submitBtn = document.querySelector('#form-create-user button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Creating User Account...</span>';
+  }
 
   try {
+    const effectiveUsername = (username || email.split('@')[0]).toLowerCase();
+    const effectiveEmail = email.toLowerCase();
+    const existingUsers = State.getStoredUsers ? State.getStoredUsers() : [];
+    const isDup = existingUsers.some(u => 
+      (u.username && u.username.toLowerCase() === effectiveUsername) ||
+      (u.email && u.email.toLowerCase() === effectiveEmail)
+    );
+    if (isDup) {
+      alert(`⚠️ Duplicate User Error:\nA user with username "${effectiveUsername}" or email "${effectiveEmail}" is already registered.`);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>💾 Create User Account</span>';
+      }
+      return;
+    }
+
+    // Gather granular permissions
+    const permissions = {};
+    const toggles = document.querySelectorAll('.perm-toggle');
+    toggles.forEach(t => {
+      const mod = t.dataset.module;
+      const act = t.dataset.action;
+      if (!permissions[mod]) permissions[mod] = {};
+      permissions[mod][act] = t.checked;
+    });
+
+    // Gather selected company IDs
+    const compCheckboxes = document.querySelectorAll('.user-company-checkbox:checked');
+    const businessProfileIds = Array.from(compCheckboxes).map(c => c.value);
+
+    const payload = {
+      full_name: fullname,
+      username: username || email.split('@')[0],
+      email,
+      password,
+      role,
+      can_see_bidding_prices: canSeePrices,
+      permissions,
+      business_profile_ids: businessProfileIds
+    };
+
     const res = await fetch(`${API_BASE}/users`, {
       method: 'POST',
       headers: API.getHeaders(),
@@ -7235,6 +7458,11 @@ async function submitCreateUserForm() {
     }
   } catch (err) {
     alert(`Failed to create user: ${err.message}`);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span>💾 Create User Account</span>';
+    }
   }
 }
 

@@ -996,9 +996,13 @@
               <label class="form-label">SKU / Item Code *</label>
               <input type="text" class="form-input" id="prod-sku" required placeholder="e.g. TRF-132KV-01">
             </div>
-            <div class="form-group" style="grid-column: span 2;">
+            <div class="form-group">
               <label class="form-label">Item / Product Name *</label>
-              <input type="text" class="form-input" id="prod-name" required placeholder="e.g. 132kV Power Transformer 20/26 MVA ONAN/ONAF">
+              <input type="text" class="form-input" id="prod-name" required placeholder="e.g. Syringe, Paper Rim, Gloves">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Product Specification / Size / Variant</label>
+              <input type="text" class="form-input" id="prod-spec" placeholder="e.g. 5cc, A4, Size 7.5, 100ml, 20 MVA">
             </div>
           </div>
 
@@ -1013,15 +1017,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">Unit of Measure (UOM) *</label>
-              <select class="form-select" id="prod-unit" required>
-                <option value="PCS" selected>PCS (Pieces)</option>
-                <option value="SET">SET</option>
-                <option value="MTR">MTR (Meters)</option>
-                <option value="KG">KG (Kilograms)</option>
-                <option value="LTR">LTR (Liters)</option>
-                <option value="JOB">JOB</option>
-                <option value="LOT">LOT</option>
-              </select>
+              <input type="text" list="uom-datalist" class="form-input" id="prod-unit" required placeholder="e.g. PCS, Pack, Box, Vial..." value="PCS">
             </div>
             <div class="form-group">
               <label class="form-label">Pakistan Customs HS Code</label>

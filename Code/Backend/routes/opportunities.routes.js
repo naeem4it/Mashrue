@@ -191,6 +191,20 @@ router.post('/', optionalAuth, async (req, res) => {
     const nameStr = tender_name || title;
     const titleStr = title || tender_name;
 
+    // Strict duplicate check
+    const dupCheck = await db.query(
+      `SELECT id FROM opportunities 
+       WHERE (LOWER(tender_name) = LOWER($1) OR (external_tender_number IS NOT NULL AND LOWER(external_tender_number) = LOWER($2))) 
+         AND tenant_id = $3`,
+      [nameStr.trim(), (external_tender_number || '').trim(), tenantId]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Duplicate Error: A tender named "${nameStr.trim()}" or reference number already exists in your organization.`
+      });
+    }
+
     // Resolve workflow gates from body or customer default or standard default
     let gates = workflow_gates;
     if (!gates && customer_id) {

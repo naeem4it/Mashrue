@@ -78,6 +78,31 @@ const State = {
   },
 
   setBusinessProfile(id) {
+    if (id === '__add_new_entity__') {
+      const switcher = document.getElementById('business-select');
+      if (switcher) switcher.value = this.currentBusinessProfileId;
+
+      const tenant = this.currentUser?.tenant;
+      const companyCount = this.businessProfiles ? this.businessProfiles.length : 0;
+      const freeLimit = (tenant && tenant.freeCompanyLimit) || 2;
+
+      if (!this.isSuperAdmin() && companyCount >= freeLimit) {
+        if (typeof openModal === 'function') {
+          openModal('modal-quota-upgrade');
+        } else {
+          alert('Subscription limit reached. Please upgrade your plan to add more business profiles.');
+        }
+        return;
+      }
+
+      if (typeof openNewCompanyModal === 'function') {
+        openNewCompanyModal();
+      } else if (typeof openModal === 'function') {
+        openModal('modal-add-company');
+      }
+      return;
+    }
+
     this.currentBusinessProfileId = id;
     window.dispatchEvent(new CustomEvent('businessProfileChanged', { detail: { id } }));
   },

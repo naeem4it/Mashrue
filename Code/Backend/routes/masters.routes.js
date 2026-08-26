@@ -47,6 +47,18 @@ router.post('/customers', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    // Strict duplicate customer check
+    const dupCheck = await db.query(
+      `SELECT id FROM customers WHERE LOWER(business_name) = LOWER($1) AND tenant_id = $2`,
+      [business_name.trim(), tenantId]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Duplicate Error: A customer named "${business_name.trim()}" is already registered in your organization.`
+      });
+    }
+
     const result = await db.query(
       `INSERT INTO customers 
        (tenant_id, business_name, org_type, department_name, ntn, strn, contact_person, email, phone, address, city)
@@ -54,7 +66,7 @@ router.post('/customers', optionalAuth, async (req, res) => {
        RETURNING *`,
       [
         tenantId,
-        business_name,
+        business_name.trim(),
         org_type || 'Government',
         department_name || null,
         ntn || null,
@@ -113,6 +125,18 @@ router.post('/suppliers', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    // Strict duplicate supplier check
+    const dupCheck = await db.query(
+      `SELECT id FROM suppliers WHERE LOWER(supplier_name) = LOWER($1) AND tenant_id = $2`,
+      [supplier_name.trim(), tenantId]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Duplicate Error: A supplier named "${supplier_name.trim()}" is already registered in your organization.`
+      });
+    }
+
     const result = await db.query(
       `INSERT INTO suppliers 
        (tenant_id, supplier_name, origin, country, city, address, ntn, strn, contact_person, email, phone, rating, payment_terms)
@@ -120,7 +144,7 @@ router.post('/suppliers', optionalAuth, async (req, res) => {
        RETURNING *`,
       [
         tenantId,
-        supplier_name,
+        supplier_name.trim(),
         origin || 'Local',
         country || 'Pakistan',
         city || 'Lahore',
@@ -186,6 +210,22 @@ router.post('/products', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    const effectiveSku = (sku || `SKU-${Date.now().toString().slice(-6)}`).trim();
+
+    // Strict duplicate product check
+    const dupCheck = await db.query(
+      `SELECT id FROM products_services 
+       WHERE (LOWER(sku) = LOWER($1) OR (LOWER(name) = LOWER($2) AND LOWER(COALESCE(description, '')) = LOWER($3))) 
+         AND tenant_id = $4`,
+      [effectiveSku, name.trim(), (description || '').trim(), tenantId]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Duplicate Error: Item SKU "${effectiveSku}" or Product Name already exists in catalog.`
+      });
+    }
+
     const result = await db.query(
       `INSERT INTO products_services 
        (tenant_id, item_type, sku, name, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id)
@@ -194,8 +234,8 @@ router.post('/products', optionalAuth, async (req, res) => {
       [
         tenantId,
         item_type || 'Product',
-        sku || `SKU-${Date.now().toString().slice(-6)}`,
-        name,
+        effectiveSku,
+        name.trim(),
         description || '',
         unit || 'PCS',
         parseFloat(cost_price || 0),
