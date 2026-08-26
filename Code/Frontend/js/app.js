@@ -195,7 +195,7 @@ async function initApp() {
     const meRes = await API.getMe();
     if (meRes && meRes.success && meRes.data) {
       State.currentUser = { ...State.currentUser, ...meRes.data };
-      localStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+      sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
     }
   } catch (e) {
     console.warn('Profile refresh fallback:', e.message);
@@ -288,11 +288,29 @@ function fillLoginCredentials(username, password) {
   if (p) p.value = password;
   const err = document.getElementById('login-error-msg');
   if (err) err.style.display = 'none';
+  showToast(`Autofilled credentials for: ${username}`, 'info', 2000);
 }
 window.fillLoginCredentials = fillLoginCredentials;
 
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (btn) btn.innerText = '🔒';
+  } else {
+    input.type = 'password';
+    if (btn) btn.innerText = '👁️';
+  }
+}
+window.togglePasswordVisibility = togglePasswordVisibility;
+
 function handleUserLogout() {
   State.clearSession();
+  const usernameInput = document.getElementById('login-username');
+  const passwordInput = document.getElementById('login-password');
+  if (usernameInput) usernameInput.value = '';
+  if (passwordInput) passwordInput.value = '';
   const loginView = document.getElementById('login-view');
   const appContainer = document.getElementById('app-container');
   if (loginView) loginView.style.display = 'flex';
@@ -326,7 +344,7 @@ async function handleFirstPasswordChange() {
     if (res && res.success) {
       closeModal('modal-force-password');
       State.currentUser.mustChangePassword = false;
-      localStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+      sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
 
       // After password change, if Client Admin has no companies, guide to 1st company creation
       if (State.isClientAdmin() && (!State.businessProfiles || State.businessProfiles.length === 0)) {
@@ -364,10 +382,6 @@ function updateHeaderUserProfile() {
   const dropdownEmail = document.getElementById('dropdown-user-email');
   const dropdownRole = document.getElementById('dropdown-user-role');
 
-  if (u.username === 'naeem4it' || u.email === 'naeem@mashrue.com') {
-    u.role = 'SuperAdmin';
-    u.tenant = null;
-  }
 
   const initials = (u.fullName || u.username || 'User')
     .split(' ')
@@ -709,7 +723,7 @@ async function handleFirstPasswordChange() {
     if (res && res.success) {
       closeModal('modal-force-password');
       if (State.currentUser) State.currentUser.mustChangePassword = false;
-      localStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+      sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
       showToast('✓ Permanent password set successfully!', 'success');
       await initApp();
     } else {
@@ -1231,7 +1245,7 @@ async function renderOpportunitiesHTML() {
 
                     ${o.status !== 'Won' && o.status !== 'won' && o.status !== 'Lost' && o.status !== 'loose' ? `
                       <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#ecfdf5; color:#059669; font-weight:700;" onclick="handleUpdateTenderStatus('${o.id}', 'Won', '${encodeURIComponent(o.tender_name || o.title)}')">🏆 Won</button>
-                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="handleUpdateTenderStatus('${o.id}', 'Lost', '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})">❌ Lose</button>
+                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="handleUpdateTenderStatus('${o.id}', 'Lost', '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})">❌ Lost</button>
                     ` : ''}
 
                     ${o.status === 'Won' || o.status === 'won' ? `
@@ -2734,7 +2748,7 @@ async function renderReportsHTML() {
                   <td><span class="badge badge-won">STATE_INIT</span></td>
                   <td>Tender & Sourcing Engine</td>
                   <td><code>SYS-INIT-2026</code></td>
-                  <td><strong>naeem4it (SuperAdmin)</strong></td>
+                  <td><strong>System Admin</strong></td>
                   <td>Workflow engine initialized with 3-tier expenses and multi-PO distribution.</td>
                 </tr>
               ` : auditLogs.map(l => `
@@ -6908,8 +6922,8 @@ async function openEditEntityModal(entityType, id) {
     // Fallback search in userList or mock if not found in list
     if (entityType === 'user') {
       const mockUsers = [
-        { id: 'u1', full_name: 'Muhammad Naeem Khan', email: 'naeem@mashrue.com', role: 'CompanyAdmin', status: 'Active' },
-        { id: 'u2', full_name: 'Tariq Javed', email: 'tariq@mashrue.com', role: 'BidManager', status: 'Active' }
+        { id: 'u1', full_name: 'Company Administrator', email: 'admin@company.pk', role: 'CompanyAdmin', status: 'Active' },
+        { id: 'u2', full_name: 'Bid Manager', email: 'manager@company.pk', role: 'BidManager', status: 'Active' }
       ];
       record = mockUsers.find(u => String(u.id) === String(id)) || mockUsers[0];
     } else {
@@ -7867,7 +7881,7 @@ async function toggleTenantActivation(tenantId, currentStatus) {
 
 function requestPlanUpgradeFromModal() {
   closeModal('modal-quota-upgrade');
-  alert('🎉 Upgrade request submitted to Super Admin naeem4it! You will be contacted shortly for plan adjustment.');
+  alert('🎉 Upgrade request submitted to Mashrue Support! You will be contacted shortly for plan adjustment.');
 }
 
 

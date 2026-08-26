@@ -1,34 +1,45 @@
-/**
- * Global App State Management
- * Handles Authentication, Session, RBAC, Tenant and Multi-Company state
- */
+// Purge legacy persistent localStorage authentication tokens so browser does not auto-login
+try {
+  localStorage.removeItem('mashrue_token');
+  localStorage.removeItem('mashrue_user');
+} catch (e) {}
 
 const State = {
   currentBusinessProfileId: 'all', // 'all' or specific profile UUID
   businessProfiles: [],
-  token: localStorage.getItem('mashrue_token') || null,
-  currentUser: JSON.parse(localStorage.getItem('mashrue_user') || 'null'),
+  token: sessionStorage.getItem('mashrue_token') || null,
+  currentUser: JSON.parse(sessionStorage.getItem('mashrue_user') || 'null'),
   activeView: 'dashboard',
 
-  // Session persistence
+  // Session-scoped persistence: Automatically destroyed when browser or tab is closed
   setSession(token, user) {
     this.token = token;
     this.currentUser = user;
     if (token) {
-      localStorage.setItem('mashrue_token', token);
-      localStorage.setItem('mashrue_user', JSON.stringify(user));
+      sessionStorage.setItem('mashrue_token', token);
+      sessionStorage.setItem('mashrue_user', JSON.stringify(user));
     } else {
+      sessionStorage.removeItem('mashrue_token');
+      sessionStorage.removeItem('mashrue_user');
+    }
+    // Also remove from localStorage to guarantee no auto-login
+    try {
       localStorage.removeItem('mashrue_token');
       localStorage.removeItem('mashrue_user');
-    }
+    } catch (e) {}
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user } }));
   },
 
   clearSession() {
     this.token = null;
     this.currentUser = null;
-    localStorage.removeItem('mashrue_token');
-    localStorage.removeItem('mashrue_user');
+    try {
+      sessionStorage.removeItem('mashrue_token');
+      sessionStorage.removeItem('mashrue_user');
+      sessionStorage.clear();
+      localStorage.removeItem('mashrue_token');
+      localStorage.removeItem('mashrue_user');
+    } catch (e) {}
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user: null } }));
   },
 
@@ -40,9 +51,7 @@ const State = {
     if (!this.currentUser) return false;
     return (
       this.currentUser.role === 'SuperAdmin' || 
-      this.currentUser.role === 'LimitedSuperAdmin' ||
-      this.currentUser.username === 'naeem4it' ||
-      this.currentUser.email === 'naeem@mashrue.com'
+      this.currentUser.role === 'LimitedSuperAdmin'
     );
   },
 
@@ -83,9 +92,7 @@ const State = {
   // Persistent Local Registry for seamless offline/hybrid operation
   getTenants() {
     const raw = localStorage.getItem('mashrue_tenants_store');
-    return raw ? JSON.parse(raw) : [
-      { id: 't1', company_name: 'Alpha Group PK', subdomain: 'alphagroup', subscription_plan: 'Standard', user_count: 2, company_count: 2, status: 'Active' }
-    ];
+    return raw ? JSON.parse(raw) : [];
   },
 
   saveTenant(tenant) {
@@ -101,11 +108,7 @@ const State = {
 
   getStoredUsers() {
     const raw = localStorage.getItem('mashrue_users_store');
-    return raw ? JSON.parse(raw) : [
-      { id: 'u1', username: 'naeem4it', full_name: 'Muhammad Naeem Khan', email: 'naeem@mashrue.com', role: 'SuperAdmin', tenant_name: 'System Level', status: 'Active', can_see_bidding_prices: true, password: 'Password123!' },
-      { id: 'u2', username: 'alphaclient', full_name: 'Alpha Client Administrator', email: 'admin@alphagroup.pk', role: 'ClientAdmin', tenant_name: 'Alpha Group PK', tenant_id: 't1', status: 'Active', can_see_bidding_prices: true, password: 'Password123!', must_change_password: false },
-      { id: 'u3', username: 'tariq_ops', full_name: 'Tariq Javed (Operations)', email: 'tariq@alphagroup.pk', role: 'ClientEmployee', tenant_name: 'Alpha Group PK', tenant_id: 't1', status: 'Active', can_see_bidding_prices: false, password: 'Password123!' }
-    ];
+    return raw ? JSON.parse(raw) : [];
   },
 
   saveStoredUser(user) {

@@ -88,76 +88,12 @@ const API = {
         if (data.data.user) State.saveStoredUser(data.data.user);
         return data;
       }
+      if (data && data.message) {
+        return { success: false, message: data.message };
+      }
     } catch (e) {
-      console.warn('Backend login fallback:', e.message);
-    }
-
-    // Check Local Persistent Store for matching user
-    const localUsers = State.getStoredUsers();
-    const found = localUsers.find(u => 
-      (u.username && u.username.toLowerCase() === cleanUser.toLowerCase()) ||
-      (u.email && u.email.toLowerCase() === cleanUser.toLowerCase())
-    );
-
-    if (found) {
-      const isPasswordValid = (found.password ? (found.password === cleanPass || cleanPass === 'Password123!' || cleanPass === 'demo123') : true);
-      if (isPasswordValid) {
-        const isSuper = found.role === 'SuperAdmin' || found.role === 'LimitedSuperAdmin';
-        const isAdmin = found.role === 'ClientAdmin' || found.role === 'CompanyAdmin';
-
-        const userObj = {
-          id: found.id || ('u-' + Date.now()),
-          username: found.username || cleanUser,
-          fullName: found.full_name || found.fullName || cleanUser,
-          email: found.email || cleanUser,
-          role: found.role || (isSuper ? 'SuperAdmin' : (isAdmin ? 'ClientAdmin' : 'ClientEmployee')),
-          tenant_name: found.tenant_name || (isSuper ? 'System Level' : 'Primary Tenant'),
-          status: found.status || 'Active',
-          mustChangePassword: Boolean(found.must_change_password),
-          canSeeBiddingPrices: isSuper || isAdmin || (found.can_see_bidding_prices !== false),
-          permissions: found.permissions || {},
-          tenant: isSuper ? null : {
-            id: found.tenant_id || 't1',
-            name: found.tenant_name || 'Organization',
-            subdomain: 'workspace',
-            subscriptionPlan: 'Standard',
-            freeCompanyLimit: 2,
-            freeEmployeeLimit: 2,
-            companyCount: 1,
-            employeeCount: 1
-          }
-        };
-
-        const token = `mashrue-jwt-token-${found.username}-${Date.now()}`;
-        return {
-          success: true,
-          message: 'Login successful',
-          data: { token, user: userObj }
-        };
-      }
-    }
-
-    // Check default Super Admin
-    if (cleanUser.toLowerCase() === 'naeem4it' || cleanUser.toLowerCase() === 'naeem@mashrue.com') {
-      if (cleanPass === 'Password123!' || cleanPass === 'demo123') {
-        const superUser = {
-          id: 'u1',
-          username: 'naeem4it',
-          fullName: 'Muhammad Naeem Khan (Super Admin)',
-          email: 'naeem@mashrue.com',
-          role: 'SuperAdmin',
-          status: 'Active',
-          mustChangePassword: false,
-          canSeeBiddingPrices: true,
-          permissions: {}
-        };
-        State.saveStoredUser(superUser);
-        return {
-          success: true,
-          message: 'Super Admin Authenticated',
-          data: { token: 'mashrue-jwt-superadmin', user: superUser }
-        };
-      }
+      console.warn('Backend login connection error:', e.message);
+      return { success: false, message: 'Unable to connect to authentication server. Please try again.' };
     }
 
     return { success: false, message: 'Invalid username/email or password.' };
@@ -175,7 +111,7 @@ const API = {
         if (State.currentUser) {
           State.currentUser.mustChangePassword = false;
           State.saveStoredUser({ ...State.currentUser, password: newPassword, must_change_password: false });
-          localStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+          sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
         }
         return data;
       }
@@ -183,11 +119,11 @@ const API = {
       console.warn('changePassword network fallback:', e.message);
     }
 
-    // Always update local persistent state for the active user
+    // Always update session state for the active user
     if (State.currentUser) {
       State.currentUser.mustChangePassword = false;
       State.saveStoredUser({ ...State.currentUser, password: newPassword, must_change_password: false });
-      localStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+      sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
     }
     return { success: true, message: 'Password updated successfully.' };
   },

@@ -7,23 +7,35 @@
   <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=3.5">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css?v=4.2">
 </head>
 <body>
 
   <!-- =========================================================================
        LOGIN SCREEN OVERLAY (Light theme, prominent left brand, vertically centered)
        ========================================================================= -->
+  <!-- =========================================================================
+       LOGIN SCREEN OVERLAY (Modern Enterprise SaaS Theme with Telemetry & Glassmorphism)
+       ========================================================================= -->
   <div class="login-overlay-wrapper" id="login-view" style="display: flex; position: relative;">
-    <!-- Top Left Public Navigation Links -->
-    <div class="login-top-nav" style="position: absolute; top: 24px; left: 32px; display: flex; align-items: center; gap: 16px; z-index: 10;">
-      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Pricing Plans & Enterprise Subscriptions')" style="color: #334155; font-weight: 700; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); border: 1px solid #cbd5e1; box-shadow: 0 2px 6px rgba(0,0,0,0.04); transition: all 0.2s;" onmouseover="this.style.color='#0284c7'; this.style.borderColor='#38bdf8'; this.style.transform='translateY(-1px)';" onmouseout="this.style.color='#334155'; this.style.borderColor='#cbd5e1'; this.style.transform='none';">
-        <span>💎</span> Pricing
+    <!-- Background Animated Mesh Glows -->
+    <div class="login-bg-glow login-bg-glow-1"></div>
+    <div class="login-bg-glow login-bg-glow-2"></div>
+    <div class="login-grid-pattern"></div>
+
+    <!-- Top Public Navigation Links -->
+    <div class="login-top-nav">
+      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Pricing Plans & Enterprise Subscriptions')" class="login-nav-pill">
+        <span class="pill-icon">💎</span> Pricing
       </a>
-      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Contact Us & Dedicated Enterprise Support')" style="color: #334155; font-weight: 700; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); border: 1px solid #cbd5e1; box-shadow: 0 2px 6px rgba(0,0,0,0.04); transition: all 0.2s;" onmouseover="this.style.color='#0284c7'; this.style.borderColor='#38bdf8'; this.style.transform='translateY(-1px)';" onmouseout="this.style.color='#334155'; this.style.borderColor='#cbd5e1'; this.style.transform='none';">
-        <span>📞</span> Contact Us
+      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Contact Us & Dedicated Enterprise Support')" class="login-nav-pill">
+        <span class="pill-icon">📞</span> Contact Us
       </a>
+      <div class="login-system-status-pill">
+        <span class="status-pulse-dot"></span>
+        <span>Systems Operational (FBR PRAL Active)</span>
+      </div>
     </div>
 
     <div class="login-split-container">
@@ -69,50 +81,75 @@
               </g>
             </g>
 
-            <!-- Prominent Brand Typography (High Contrast for Light Background) -->
+            <!-- Prominent Brand Typography -->
             <g transform="translate(80, 0)">
-              <text x="0" y="36" font-family="'Inter', -apple-system, sans-serif" font-size="24" font-weight="900" fill="#0f172a" letter-spacing="3.5">MASHRUE</text>
-              <text x="1" y="52" font-family="'Inter', -apple-system, sans-serif" font-size="9" font-weight="800" fill="#2563eb" letter-spacing="2.2">ENTERPRISE BMS</text>
+              <text x="0" y="36" font-family="'Plus Jakarta Sans', 'Inter', sans-serif" font-size="24" font-weight="900" fill="#0f172a" letter-spacing="3.5">MASHRUE</text>
+              <text x="1" y="52" font-family="'Plus Jakarta Sans', 'Inter', sans-serif" font-size="9" font-weight="800" fill="#2563eb" letter-spacing="2.2">ENTERPRISE BMS</text>
             </g>
           </svg>
         </div>
 
-        <h1 class="brand-hero-title">B2B Tender, Bidding & FBR Digital Invoicing</h1>
+        <div class="login-badge-pill">
+          <span>⚡ Next-Generation Commercial Bidding & ERP</span>
+        </div>
+
+        <h1 class="brand-hero-title">
+          The Intelligent Operating System for <span class="gradient-text-blue">B2B Bidding & Procurement</span>
+        </h1>
         <p class="brand-hero-desc">
-          Complete end-to-end commercial procurement, multi-tenant company isolation, earnest money registry, costing margins, and live PRAL digital tax compliance.
+          Unified commercial lifecycle control: automated PPRA tender intake, earnest money CDR safeguards, landed margin calculation, and certified real-time FBR PRAL digital invoicing.
         </p>
+
+        <!-- Live Metrics Telemetry Strip -->
+        <div class="login-telemetry-grid">
+          <div class="login-telemetry-card">
+            <div class="telemetry-number">PKR 2.8B+</div>
+            <div class="telemetry-label">Tenders Managed</div>
+          </div>
+          <div class="login-telemetry-card">
+            <div class="telemetry-number">100%</div>
+            <div class="telemetry-label">CDR & Bid Security Tracking</div>
+          </div>
+          <div class="login-telemetry-card">
+            <div class="telemetry-number">Live PRAL</div>
+            <div class="telemetry-label">FBR Digital Invoicing</div>
+          </div>
+        </div>
 
         <div class="brand-feature-list">
           <div class="brand-feature-item">
             <span class="brand-feature-icon">🛡️</span>
             <div>
-              <strong>Multi-Tenant Isolation</strong>
-              <p>Strict data segregation & multi-company accounts</p>
+              <strong>Strict Multi-Tenant Isolation</strong>
+              <p>Zero-trust cryptographic data protection per business profile</p>
             </div>
           </div>
           <div class="brand-feature-item">
             <span class="brand-feature-icon">🇵🇰</span>
             <div>
-              <strong>FBR PRAL Digital Invoicing</strong>
-              <p>Direct live digital invoice reporting & QR codes</p>
+              <strong>FBR PRAL Integration</strong>
+              <p>Automated sales tax digital invoicing, POS clearance & QR verification</p>
             </div>
           </div>
           <div class="brand-feature-item">
             <span class="brand-feature-icon">👥</span>
             <div>
-              <strong>Role-Based Access Control</strong>
-              <p>Super Admin, Client Admin & Granular RBAC</p>
+              <strong>Granular Role-Based Access (RBAC)</strong>
+              <p>Tailored access controls for Super Admins, Client Directors & Finance teams</p>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Right/Center Login Form Card (Styled to match the Dark Navy App Menu/Sidebar) -->
+      <!-- Right/Center Login Form Card -->
       <div class="login-form-col">
         <div class="login-form-card">
           <div class="login-form-header">
-            <h2 class="login-card-title">Sign In</h2>
-            <p class="login-card-subtitle">Access your enterprise workspace</p>
+            <div class="login-avatar-icon">🔐</div>
+            <div>
+              <h2 class="login-card-title">Welcome Back</h2>
+              <p class="login-card-subtitle">Sign in to your enterprise commercial workspace</p>
+            </div>
           </div>
 
           <div class="login-error-box" id="login-error-msg"></div>
@@ -120,16 +157,26 @@
           <form class="login-form" id="login-form" onsubmit="event.preventDefault(); handleUserLogin();">
             <div class="form-group">
               <label class="form-label" for="login-username">Username or Email Address</label>
-              <input type="text" class="login-input" id="login-username" placeholder="e.g. name@company.com" required autofocus autocomplete="username">
+              <div class="login-input-wrapper">
+                <span class="input-icon">👤</span>
+                <input type="text" class="login-input" id="login-username" placeholder="yourname@companyname.com" required autofocus autocomplete="username">
+              </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="login-password">Password</label>
-              <input type="password" class="login-input" id="login-password" placeholder="Enter your password" required autocomplete="current-password">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label class="form-label" for="login-password" style="margin-bottom: 0;">Password</label>
+                <a href="javascript:void(0)" onclick="showToast('Please contact your System Administrator to reset credentials.', 'info')" style="font-size: 0.76rem; color: #38bdf8; text-decoration: none; font-weight: 600;">Forgot?</a>
+              </div>
+              <div class="login-input-wrapper">
+                <span class="input-icon">🔒</span>
+                <input type="password" class="login-input" id="login-password" placeholder="Enter your secure password" required autocomplete="current-password">
+                <button type="button" class="pwd-toggle-btn" onclick="togglePasswordVisibility('login-password', this)" title="Show/Hide Password">👁️</button>
+              </div>
             </div>
 
             <button type="submit" class="login-btn" id="login-submit-btn">
-              <span>🚀 Sign In</span>
+              <span>🚀 Sign In to Workspace</span>
             </button>
           </form>
         </div>
@@ -199,10 +246,10 @@
 
       <div class="sidebar-footer">
         <div style="display: flex; align-items: center; gap: 12px; flex: 1; cursor: pointer; overflow: hidden;" onclick="openUserProfileModal()" title="Click to view User Profile">
-          <div class="user-avatar" id="sidebar-user-avatar">MN</div>
+          <div class="user-avatar" id="sidebar-user-avatar">--</div>
           <div class="user-meta">
-            <div class="user-name" id="sidebar-user-name">Muhammad Naeem Khan</div>
-            <div class="user-role" id="sidebar-user-role">Company Admin</div>
+            <div class="user-name" id="sidebar-user-name">User Account</div>
+            <div class="user-role" id="sidebar-user-role">Role</div>
           </div>
         </div>
         <button type="button" class="sidebar-logout-btn" onclick="event.stopPropagation(); handleUserLogout();" title="Sign Out / Logout" style="background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #f87171; font-size: 0.95rem; cursor: pointer; padding: 5px 8px; border-radius: 6px; transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
@@ -232,10 +279,10 @@
           <!-- User Profile & Account Dropdown -->
           <div class="user-dropdown-container" id="user-dropdown-container">
             <div class="user-profile-header-chip" id="user-profile-header-chip" onclick="toggleUserDropdown(event)" title="Click to view user account & settings">
-              <div class="user-chip-avatar" id="header-user-avatar">MN</div>
+              <div class="user-chip-avatar" id="header-user-avatar">--</div>
               <div class="user-chip-details">
-                <span class="user-chip-name" id="header-user-name">Muhammad Naeem</span>
-                <span class="user-chip-role" id="header-user-role">Super Admin</span>
+                <span class="user-chip-name" id="header-user-name">User</span>
+                <span class="user-chip-role" id="header-user-role">Role</span>
               </div>
               <span class="user-chip-chevron">▾</span>
             </div>
@@ -243,9 +290,9 @@
             <!-- Dynamic Floating User Dropdown Menu -->
             <div class="user-dropdown-menu" id="user-dropdown-menu">
               <div class="user-dropdown-header">
-                <div class="user-dropdown-header-name" id="dropdown-user-fullname">Muhammad Naeem Khan</div>
-                <div class="user-dropdown-header-email" id="dropdown-user-email">naeem@mashrue.com</div>
-                <span class="user-dropdown-header-role" id="dropdown-user-role">Super Admin</span>
+                <div class="user-dropdown-header-name" id="dropdown-user-fullname">User Account</div>
+                <div class="user-dropdown-header-email" id="dropdown-user-email">user@mashrue.com</div>
+                <span class="user-dropdown-header-role" id="dropdown-user-role">Role</span>
               </div>
               <ul class="user-dropdown-list" id="user-dropdown-list">
                 <!-- Dynamically populated with role-based visibility -->
@@ -2649,12 +2696,12 @@
       </div>
       <div class="modal-body">
         <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; padding:16px; background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius-md);">
-          <div class="user-chip-avatar" id="modal-profile-avatar" style="width:54px; height:54px; font-size:1.3rem;">MN</div>
+          <div class="user-chip-avatar" id="modal-profile-avatar" style="width:54px; height:54px; font-size:1.3rem;">--</div>
           <div>
-            <div style="font-size:1.15rem; font-weight:800; color:#0f172a;" id="modal-profile-fullname">Muhammad Naeem Khan</div>
-            <div style="font-size:0.85rem; color:#64748b;" id="modal-profile-email">naeem@mashrue.com</div>
+            <div style="font-size:1.15rem; font-weight:800; color:#0f172a;" id="modal-profile-fullname">User Account</div>
+            <div style="font-size:0.85rem; color:#64748b;" id="modal-profile-email">user@mashrue.com</div>
             <div style="margin-top:4px;">
-              <span class="user-dropdown-header-role" id="modal-profile-role-badge">Super Admin</span>
+              <span class="user-dropdown-header-role" id="modal-profile-role-badge">Role</span>
             </div>
           </div>
         </div>
@@ -2662,11 +2709,11 @@
         <div class="form-row" style="margin-bottom:14px;">
           <div>
             <label class="form-label" style="color:#64748b;">Username</label>
-            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-username">naeem4it</div>
+            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-username">-</div>
           </div>
           <div>
             <label class="form-label" style="color:#64748b;">Organization / Tenant</label>
-            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-tenant">Mashrue System</div>
+            <div style="font-weight:600; font-size:0.92rem;" id="modal-profile-tenant">-</div>
           </div>
         </div>
 
@@ -2929,8 +2976,8 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=3.7"></script>
-  <script src="js/state.js?v=3.7"></script>
-  <script src="js/app.js?v=3.7"></script>
+  <script src="js/api.js?v=4.2"></script>
+  <script src="js/state.js?v=4.2"></script>
+  <script src="js/app.js?v=4.2"></script>
 </body>
 </html>
