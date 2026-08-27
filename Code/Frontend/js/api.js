@@ -385,6 +385,58 @@ const API = {
     return { success: true, data: newCompany, message: 'Company profile created successfully.' };
   },
 
+  // 1B. Company-Based FBR PRAL Gateway Configuration
+  async getFbrSettings(businessProfileId) {
+    try {
+      const url = businessProfileId 
+        ? `${API_BASE}/fbr/settings?business_profile_id=${encodeURIComponent(businessProfileId)}`
+        : `${API_BASE}/fbr/settings`;
+      const res = await fetch(url, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json?.data || null;
+    } catch (e) {
+      console.warn('getFbrSettings error:', e.message);
+      return null;
+    }
+  },
+
+  async saveFbrSettings(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/fbr/settings`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async testFbrConnection(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/fbr/test-connection`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async checkFbrTaxpayerStatus(ntn) {
+    try {
+      const cleanNtn = String(ntn || '').replace(/[^0-9]/g, '');
+      if (!cleanNtn) return { success: false, message: 'Invalid NTN' };
+      const res = await fetch(`${API_BASE}/fbr/statl-check/${cleanNtn}`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
   // 2. Customers (STRICT ZERO-TRUST TENANT ISOLATION)
   async getCustomers() {
     let apiData = [];

@@ -180,10 +180,37 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// PUT update business profile
+// Auto-check business_profiles columns for company-level FBR configuration
+db.query(`
+  ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_environment VARCHAR(50) DEFAULT 'Sandbox';
+  ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_bearer_token TEXT;
+  ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_pos_id VARCHAR(100) DEFAULT 'POS-01';
+  ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_seller_ntn VARCHAR(50);
+`).catch(e => console.warn('business_profiles schema notice:', e.message));
+
+// PUT update business profile (including company-level FBR settings)
 router.put('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix } = req.body;
+  const {
+    business_name,
+    legal_name,
+    abbreviation,
+    ntn,
+    strn,
+    cnic,
+    address,
+    city,
+    email,
+    phone,
+    fbr_enabled,
+    fbr_environment,
+    fbr_bearer_token,
+    fbr_pos_id,
+    fbr_seller_ntn,
+    invoice_prefix,
+    po_prefix,
+    dc_prefix
+  } = req.body;
 
   const cleanNtn = ntn ? String(ntn).replace(/[^0-9]/g, '') : null;
   const cleanStrn = strn ? String(strn).replace(/[^0-9]/g, '') : null;
@@ -202,13 +229,37 @@ router.put('/:id', authenticate, async (req, res) => {
           email = COALESCE($9, email),
           phone = COALESCE($10, phone),
           fbr_enabled = COALESCE($11, fbr_enabled),
-          invoice_prefix = COALESCE($12, invoice_prefix),
-          po_prefix = COALESCE($13, po_prefix),
-          dc_prefix = COALESCE($14, dc_prefix),
+          fbr_environment = COALESCE($12, fbr_environment),
+          fbr_bearer_token = COALESCE($13, fbr_bearer_token),
+          fbr_pos_id = COALESCE($14, fbr_pos_id),
+          fbr_seller_ntn = COALESCE($15, fbr_seller_ntn),
+          invoice_prefix = COALESCE($16, invoice_prefix),
+          po_prefix = COALESCE($17, po_prefix),
+          dc_prefix = COALESCE($18, dc_prefix),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $15
+      WHERE id = $19
     `;
-    const params = [business_name, legal_name, abbreviation, cleanNtn, cleanStrn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix, id];
+    const params = [
+      business_name,
+      legal_name,
+      abbreviation,
+      cleanNtn,
+      cleanStrn,
+      cnic,
+      address,
+      city,
+      email,
+      phone,
+      fbr_enabled !== undefined ? Boolean(fbr_enabled) : null,
+      fbr_environment || null,
+      fbr_bearer_token !== undefined ? fbr_bearer_token : null,
+      fbr_pos_id || null,
+      fbr_seller_ntn || null,
+      invoice_prefix,
+      po_prefix,
+      dc_prefix,
+      id
+    ];
 
     if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
       const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
@@ -223,7 +274,7 @@ router.put('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Business Profile not found or unauthorized' });
     }
 
-    res.json({ success: true, data: result.rows[0], message: 'Business Profile updated successfully' });
+    res.json({ success: true, data: result.rows[0], message: 'Business Profile & FBR settings updated successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

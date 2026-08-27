@@ -984,9 +984,9 @@ async function renderActiveView() {
       break;
 
     case 'settings':
-      viewTitle.innerText = 'System Settings & FBR Configuration';
-      viewSubtitle.innerText = 'PRAL Digital Invoicing API keys, POS IDs, and Tenant Parameters';
-      contentArea.innerHTML = renderSettingsHTML();
+      viewTitle.innerText = '⚙️ System Settings & FBR Digital Invoicing';
+      viewSubtitle.innerText = 'Company-specific PRAL Digital Invoicing API keys, POS IDs, and Gateway Parameters';
+      contentArea.innerHTML = await renderSettingsHTML();
       break;
 
     default:
@@ -3398,34 +3398,346 @@ async function renderUsersHTML() {
 // --------------------------------------------------------------------------
 // 17. SETTINGS & FBR CONFIGURATION
 // --------------------------------------------------------------------------
-function renderSettingsHTML() {
-  return `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">⚙️ FBR PRAL Digital Invoicing Gateway Configuration</div>
+// FBR PRAL DIGITAL INVOICING GATEWAY CONFIGURATION (COMPANY-BASED)
+// --------------------------------------------------------------------------
+let _selectedFbrCompanyId = null;
+
+async function renderSettingsHTML() {
+  const profiles = State.businessProfiles || [];
+
+  if (profiles.length === 0) {
+    return `
+      <div class="card" style="text-align:center; padding:40px 20px;">
+        <div style="font-size:3rem; margin-bottom:12px;">🏢</div>
+        <h3 style="font-weight:700; color:#0f172a; margin-bottom:8px;">No Business Entities Configured</h3>
+        <p style="color:#64748b; max-width:500px; margin:0 auto 20px auto; font-size:0.9rem;">
+          To configure FBR PRAL Digital Invoicing, you must first register at least one company or business entity for your organization.
+        </p>
+        <div>
+          <button class="primary-btn" onclick="openNewCompanyModal()">➕ + Register First Business Entity</button>
+        </div>
       </div>
-      <div class="card-body">
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">FBR Environment</label>
-            <select class="form-select">
-              <option value="Sandbox" selected>Sandbox Gateway (https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb)</option>
-              <option value="Production">Production Live Gateway (https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata)</option>
+    `;
+  }
+
+  // Determine active company for FBR configuration
+  if (!_selectedFbrCompanyId || !profiles.some(p => p.id === _selectedFbrCompanyId)) {
+    _selectedFbrCompanyId = (State.currentBusinessProfileId && State.currentBusinessProfileId !== 'all') 
+      ? State.currentBusinessProfileId 
+      : profiles[0].id;
+  }
+
+  const selectedCompany = profiles.find(p => p.id === _selectedFbrCompanyId) || profiles[0];
+  const fbrData = (await API.getFbrSettings(selectedCompany.id)) || {};
+
+  const isEnabled = (fbrData.fbr_enabled !== undefined) ? Boolean(fbrData.fbr_enabled) : Boolean(selectedCompany.fbr_enabled);
+  const currentEnv = fbrData.environment || selectedCompany.fbr_environment || 'Sandbox';
+  const sellerNtn = fbrData.sellerNtn || selectedCompany.fbr_seller_ntn || selectedCompany.ntn || '';
+  const posId = fbrData.posId || selectedCompany.fbr_pos_id || 'POS-01';
+  const bearerToken = fbrData.bearerToken || selectedCompany.fbr_bearer_token || '';
+
+  const sandboxPostUrl = 'https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb';
+  const prodPostUrl = 'https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata';
+  const activeEndpoint = currentEnv === 'Production' ? prodPostUrl : sandboxPostUrl;
+
+  return `
+    <!-- Top Company Switcher Bar for FBR Settings -->
+    <div class="card" style="margin-bottom: 20px; border-left: 4px solid #2563eb;">
+      <div class="card-body" style="padding: 16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+          <div>
+            <div style="font-size:0.78rem; text-transform:uppercase; font-weight:700; color:#64748b; letter-spacing:0.5px;">Active Organization / Tenant Scope</div>
+            <div style="font-size:1.1rem; font-weight:800; color:#0f172a;">🏢 Company-Specific FBR Digital Invoicing Configuration</div>
+            <div style="font-size:0.82rem; color:#64748b; margin-top:2px;">Select a company from your organization below to configure its independent FBR PRAL Digital Invoicing credentials.</div>
+          </div>
+          <div style="min-width: 280px;">
+            <label class="form-label" style="font-weight:700; font-size:0.8rem; margin-bottom:4px; color:#1e293b;">Select Company / Business Entity:</label>
+            <select class="form-select" id="fbr-settings-company-select" style="font-weight:600; padding:8px 12px; border:2px solid #2563eb; background:#f8fafc;" onchange="onFbrSettingsCompanyChanged(this.value)">
+              ${profiles.map(p => `
+                <option value="${p.id}" ${p.id === selectedCompany.id ? 'selected' : ''}>
+                  🏢 ${p.business_name} (${p.ntn || 'NTN Pending'}) ${p.fbr_enabled ? '✓ [FBR Active]' : ''}
+                </option>
+              `).join('')}
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Seller NTN</label>
-            <input type="text" class="form-input" value="492019-1">
+        </div>
+      </div>
+    </div>
+
+    <!-- Company Badge & Overview Strip -->
+    <div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);">
+      <div class="card-body" style="padding: 14px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="width:42px; height:42px; border-radius:8px; background:#2563eb; color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.2rem; font-weight:800;">
+              ${(selectedCompany.abbreviation || selectedCompany.business_name || 'CO').slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <div style="font-weight:800; font-size:1.05rem; color:#0f172a;">${selectedCompany.business_name}</div>
+              <div style="font-size:0.8rem; color:#64748b;">
+                <strong>Legal Name:</strong> ${selectedCompany.legal_name || selectedCompany.business_name} | 
+                <strong>City:</strong> ${selectedCompany.city || 'Lahore'}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span class="badge badge-sec-attached" style="font-size:0.8rem; padding:5px 10px;">
+              NTN: <strong>${selectedCompany.ntn || 'N/A'}</strong>
+            </span>
+            <span class="badge badge-sec-attached" style="font-size:0.8rem; padding:5px 10px;">
+              STRN: <strong>${selectedCompany.strn || 'N/A'}</strong>
+            </span>
+            <span id="fbr-active-status-badge" class="badge ${isEnabled ? 'badge-won' : 'badge-withdraw'}" style="font-size:0.8rem; padding:5px 10px;">
+              ${isEnabled ? '✓ FBR PRAL Enabled' : '⏸️ FBR Disabled'}
+            </span>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">PRAL Bearer Token</label>
-          <input type="password" class="form-input" value="pral_sec_token_992019842">
-        </div>
-        <button class="primary-btn">💾 Save Gateway Configuration</button>
+      </div>
+    </div>
+
+    <!-- Main Configuration Card -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">⚙️ PRAL Digital Invoicing Gateway Parameters for ${selectedCompany.business_name}</div>
+        <span style="font-size:0.8rem; color:#64748b;">PRAL Rule 2024 / S.R.O. 1525(I)/2023 Compliant</span>
+      </div>
+      <div class="card-body">
+        <form id="form-fbr-settings" onsubmit="event.preventDefault(); saveFbrCompanySettings();">
+          <input type="hidden" id="fbr-config-company-id" value="${selectedCompany.id}">
+
+          <!-- Activation Toggle -->
+          <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:14px 18px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-weight:700; color:#1e40af; font-size:0.95rem;">Enable Automatic FBR Digital Invoicing</div>
+              <div style="font-size:0.82rem; color:#3b82f6;">When enabled, newly finalized sales invoices for ${selectedCompany.business_name} will automatically transmit to PRAL with QR code generation.</div>
+            </div>
+            <div>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="fbr-enabled-toggle" ${isEnabled ? 'checked' : ''} style="width:20px; height:20px; cursor:pointer;">
+                <span style="font-weight:700; font-size:0.9rem; color:#1e40af;">Active</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <!-- FBR Environment -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight:700;">FBR Gateway Environment <span class="required">*</span></label>
+              <select class="form-select" id="fbr-env-select" onchange="onFbrEnvChanged(this.value)">
+                <option value="Sandbox" ${currentEnv === 'Sandbox' ? 'selected' : ''}>🧪 Sandbox (Testing & Validation Environment)</option>
+                <option value="Production" ${currentEnv === 'Production' ? 'selected' : ''}>🚀 Production (Live Commercial Invoicing Gateway)</option>
+              </select>
+              <div style="font-size:0.75rem; color:#64748b; margin-top:4px;">
+                Endpoint: <code id="fbr-endpoint-display" style="color:#2563eb;">${activeEndpoint}</code>
+              </div>
+            </div>
+
+            <!-- Seller NTN with STATL Verify -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight:700;">Seller NTN (Registration Number) <span class="required">*</span></label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" class="form-input" id="fbr-seller-ntn" value="${sellerNtn}" placeholder="e.g. 492019-1" style="font-weight:600;">
+                <button type="button" class="secondary-btn" style="white-space:nowrap; padding:6px 12px;" onclick="verifyFbrTaxpayerStatl()">
+                  🔍 STATL Check
+                </button>
+              </div>
+              <div id="fbr-statl-result" style="font-size:0.78rem; margin-top:4px; display:none;"></div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <!-- POS ID / Station Identifier -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight:700;">POS / Terminal Identifier</label>
+              <input type="text" class="form-input" id="fbr-pos-id" value="${posId}" placeholder="e.g. POS-01 or HQ-BILLING-01">
+              <div style="font-size:0.75rem; color:#64748b; margin-top:4px;">Assigned by FBR e-invoicing portal or internal terminal code.</div>
+            </div>
+
+            <!-- PRAL Bearer Token -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight:700;">PRAL Bearer Token / API Secret Key</label>
+              <div style="display:flex; gap:8px;">
+                <input type="password" class="form-input" id="fbr-bearer-token" value="${bearerToken}" placeholder="Enter PRAL Bearer Token..." style="font-family:monospace;">
+                <button type="button" class="secondary-btn" style="padding:6px 12px;" onclick="toggleFbrTokenVisibility()">
+                  👁️
+                </button>
+              </div>
+              <div style="font-size:0.75rem; color:#64748b; margin-top:4px;">Obtained from FBR e-Services portal for this NTN.</div>
+            </div>
+          </div>
+
+          <!-- Connection Diagnostic Alert Box -->
+          <div id="fbr-test-result-box" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:0.88rem;"></div>
+
+          <!-- Form Buttons -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:24px; padding-top:18px; border-top:1px solid #e2e8f0;">
+            <button type="button" class="secondary-btn" id="btn-fbr-test-conn" onclick="testFbrGatewayConnection()" style="padding:9px 16px;">
+              ⚡ Test Gateway Connection & Ping
+            </button>
+            <button type="submit" class="primary-btn" id="btn-fbr-save-config" style="padding:9px 22px; font-weight:700;">
+              💾 Save Configuration for ${selectedCompany.business_name}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   `;
+}
+
+async function onFbrSettingsCompanyChanged(companyId) {
+  _selectedFbrCompanyId = companyId;
+  const contentArea = document.getElementById('main-content');
+  if (contentArea) {
+    contentArea.innerHTML = await renderSettingsHTML();
+  }
+}
+
+function onFbrEnvChanged(env) {
+  const disp = document.getElementById('fbr-endpoint-display');
+  if (disp) {
+    disp.innerText = env === 'Production'
+      ? 'https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata'
+      : 'https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb';
+  }
+}
+
+function toggleFbrTokenVisibility() {
+  const input = document.getElementById('fbr-bearer-token');
+  if (input) {
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+}
+
+async function verifyFbrTaxpayerStatl() {
+  const ntnInput = document.getElementById('fbr-seller-ntn');
+  const resultBox = document.getElementById('fbr-statl-result');
+  const ntn = ntnInput?.value?.trim();
+  if (!ntn) {
+    alert('Please enter Seller NTN to verify.');
+    return;
+  }
+
+  if (resultBox) {
+    resultBox.style.display = 'block';
+    resultBox.innerHTML = '<span style="color:#2563eb;">⏳ Querying PRAL STATL register...</span>';
+  }
+
+  const res = await API.checkFbrTaxpayerStatus(ntn);
+  if (res && res.success && res.data) {
+    const d = res.data;
+    resultBox.innerHTML = `
+      <span style="color:#10b981; font-weight:700;">✓ STATL Status: ${d.STATUS || 'Active'}</span> | 
+      <span style="color:#475569;">Type: ${d.REGISTRATION_TYPE || 'Registered'} (Reg: ${d.REGISTRATION_NO || ntn})</span>
+    `;
+  } else {
+    resultBox.innerHTML = `<span style="color:#ef4444;">⚠️ Could not verify NTN: ${res.message || 'Check NTN format'}</span>`;
+  }
+}
+
+async function testFbrGatewayConnection() {
+  const env = document.getElementById('fbr-env-select')?.value || 'Sandbox';
+  const token = document.getElementById('fbr-bearer-token')?.value?.trim();
+  const ntn = document.getElementById('fbr-seller-ntn')?.value?.trim();
+  const posId = document.getElementById('fbr-pos-id')?.value?.trim();
+  const resultBox = document.getElementById('fbr-test-result-box');
+  const testBtn = document.getElementById('btn-fbr-test-conn');
+
+  if (testBtn) {
+    testBtn.disabled = true;
+    testBtn.innerHTML = '<span>⏳ Pinging Gateway...</span>';
+  }
+
+  try {
+    const res = await API.testFbrConnection({
+      environment: env,
+      bearer_token: token,
+      seller_ntn: ntn,
+      pos_id: posId
+    });
+
+    if (resultBox) {
+      resultBox.style.display = 'block';
+      if (res && res.success) {
+        resultBox.style.background = '#f0fdf4';
+        resultBox.style.border = '1px solid #86efac';
+        resultBox.style.color = '#166534';
+        resultBox.innerHTML = `
+          <strong>${res.status || 'Connected'}:</strong> ${res.message}<br>
+          <span style="font-size:0.78rem; opacity:0.85;">Ping latency: ${res.responseTimeMs || 90}ms | Endpoint: <code>${res.gatewayUrl}</code></span>
+        `;
+      } else {
+        resultBox.style.background = '#fef2f2';
+        resultBox.style.border = '1px solid #fca5a5';
+        resultBox.style.color = '#991b1b';
+        resultBox.innerHTML = `<strong>Gateway Warning:</strong> ${res.message || 'Connection test failed.'}`;
+      }
+    }
+  } catch (e) {
+    if (resultBox) {
+      resultBox.style.display = 'block';
+      resultBox.style.background = '#fef2f2';
+      resultBox.style.border = '1px solid #fca5a5';
+      resultBox.style.color = '#991b1b';
+      resultBox.innerHTML = `<strong>Error:</strong> ${e.message}`;
+    }
+  } finally {
+    if (testBtn) {
+      testBtn.disabled = false;
+      testBtn.innerHTML = '<span>⚡ Test Gateway Connection & Ping</span>';
+    }
+  }
+}
+
+async function saveFbrCompanySettings() {
+  const compId = document.getElementById('fbr-config-company-id')?.value;
+  const isEnabled = document.getElementById('fbr-enabled-toggle')?.checked;
+  const env = document.getElementById('fbr-env-select')?.value || 'Sandbox';
+  const ntn = document.getElementById('fbr-seller-ntn')?.value?.trim();
+  const posId = document.getElementById('fbr-pos-id')?.value?.trim();
+  const token = document.getElementById('fbr-bearer-token')?.value?.trim();
+  const saveBtn = document.getElementById('btn-fbr-save-config');
+
+  if (!compId) {
+    alert('Error: No company selected.');
+    return;
+  }
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span>⏳ Saving Gateway Configuration...</span>';
+  }
+
+  try {
+    const payload = {
+      business_profile_id: compId,
+      fbr_enabled: Boolean(isEnabled),
+      environment: env,
+      seller_ntn: ntn,
+      pos_id: posId,
+      bearer_token: token
+    };
+
+    const res = await API.saveFbrSettings(payload);
+    if (res && res.success) {
+      showToast(res.message || '✓ FBR PRAL Gateway settings saved successfully!', 'success');
+      // Refresh business profiles in local state
+      State.businessProfiles = await API.getBusinessProfiles();
+      populateBusinessSwitcher();
+      const contentArea = document.getElementById('main-content');
+      if (contentArea) {
+        contentArea.innerHTML = await renderSettingsHTML();
+      }
+    } else {
+      alert(`Failed to save settings: ${res?.message || 'Unknown error'}`);
+    }
+  } catch (e) {
+    alert(`Error saving FBR settings: ${e.message}`);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<span>💾 Save Configuration</span>';
+    }
+  }
 }
 
 // --------------------------------------------------------------------------

@@ -90,6 +90,7 @@ class FBRService {
     const invRes = await db.query(
       `SELECT i.*, 
               bp.business_name, bp.legal_name, bp.ntn as bp_ntn, bp.province as bp_province, bp.address as bp_address, bp.city as bp_city,
+              bp.fbr_enabled, bp.fbr_environment, bp.fbr_bearer_token, bp.fbr_seller_ntn, bp.fbr_pos_id,
               c.business_name as cust_name, c.ntn as cust_ntn, c.address as cust_address, c.city as cust_city
        FROM invoices i
        LEFT JOIN business_profiles bp ON i.business_profile_id = bp.id
@@ -118,10 +119,11 @@ class FBRService {
 
     const businessProfile = {
       business_name: inv.business_name || inv.legal_name,
-      ntn: inv.bp_ntn,
+      ntn: inv.fbr_seller_ntn || inv.bp_ntn,
       province: inv.bp_province,
       address: inv.bp_address,
-      city: inv.bp_city
+      city: inv.bp_city,
+      pos_id: inv.fbr_pos_id || 'POS-01'
     };
 
     const customer = {
@@ -134,13 +136,13 @@ class FBRService {
     // 2. Prepare payload
     const payload = this.formatPayload(inv, businessProfile, customer, items);
     
-    // 3. Determine endpoint & credentials
-    const environment = process.env.FBR_ENVIRONMENT || 'Sandbox';
+    // 3. Determine endpoint & credentials from Business Profile (fallback to process.env)
+    const environment = inv.fbr_environment || process.env.FBR_ENVIRONMENT || 'Sandbox';
     const targetUrl = environment === 'Production' 
       ? (process.env.FBR_PRODUCTION_URL || 'https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata')
       : (process.env.FBR_SANDBOX_URL || 'https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb');
     
-    const bearerToken = process.env.FBR_BEARER_TOKEN || 'DEMO_SANDBOX_TOKEN';
+    const bearerToken = inv.fbr_bearer_token || process.env.FBR_BEARER_TOKEN || 'DEMO_SANDBOX_TOKEN';
 
     let result = null;
     let qrCodeBase64 = null;
