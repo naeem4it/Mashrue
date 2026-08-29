@@ -17,12 +17,15 @@ async function autoSeedSuperAdmin() {
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_profile_monthly_fee NUMERIC(10, 2) DEFAULT 2500.00;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_employee_limit INT DEFAULT 2;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_employee_monthly_fee NUMERIC(10, 2) DEFAULT 1500.00;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_period VARCHAR(50) DEFAULT '15 Days';
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS can_see_bidding_prices BOOLEAN DEFAULT TRUE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
       ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL;
+      ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
     `);
 
     // 2. Check if Super Admin user already exists

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact Us - Mashrue Enterprise BMS</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css?v=4.3">
+  <style>
+    body {
+      background: #0b1329;
+      color: #f8fafc;
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+    .public-page-wrapper {
+      position: relative;
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .public-nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-sizing: border-box;
+      z-index: 10;
+    }
+    .public-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .public-nav-pill {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+      padding: 8px 18px;
+      border-radius: 30px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .public-nav-pill:hover, .public-nav-pill.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+    .public-btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      padding: 9px 20px;
+      border-radius: 30px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+      cursor: pointer;
+    }
+    .public-btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+    }
+    .hero-section {
+      text-align: center;
+      padding: 50px 20px 30px;
+      max-width: 860px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 2;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+    .hero-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 2.6rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.2;
+      margin: 0 0 16px;
+    }
+    .hero-subtitle {
+      font-size: 1.05rem;
+      color: #94a3b8;
+      line-height: 1.6;
+      margin: 0 auto 30px;
+      max-width: 680px;
+    }
+    .contact-container {
+      max-width: 1040px;
+      margin: 0 auto 60px;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: 1fr 1.3fr;
+      gap: 30px;
+      position: relative;
+      z-index: 2;
+    }
+    @media (max-width: 840px) {
+      .contact-container {
+        grid-template-columns: 1fr;
+      }
+    }
+    .contact-card-dark {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .contact-info-block {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .contact-icon-box {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: #38bdf8;
+      flex-shrink: 0;
+    }
+    .form-group-custom {
+      margin-bottom: 18px;
+    }
+    .form-label-custom {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+    }
+    .form-input-custom {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: white;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .form-input-custom:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+    }
+    .public-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 24px 20px;
+      text-align: center;
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="public-page-wrapper">
+    
+    <!-- Top Navigation Header -->
+    <nav class="public-nav">
+      <a href="index.html" style="display: flex; align-items: center; text-decoration: none;">
+        <svg viewBox="0 0 240 64" width="190" height="50" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="mashrue-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#00f2fe"/>
+              <stop offset="50%" stop-color="#38bdf8"/>
+              <stop offset="100%" stop-color="#2563eb"/>
+            </linearGradient>
+            <linearGradient id="mashrue-white-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="100%" stop-color="#cbd5e1"/>
+            </linearGradient>
+          </defs>
+          <g transform="translate(4, 4) scale(0.48)">
+            <g fill="url(#mashrue-cyan-blue)">
+              <rect x="25" y="24" width="13" height="34" rx="2" ry="2" />
+              <path d="M 40 24 L 46 24 C 50 24 53 27 53 31 L 53 58 L 40 58 Z" />
+              <path d="M 55 29 C 55 25 58 24 61 24 C 71 24 78 31 78 41 L 78 58 L 65 58 L 65 43 C 65 37 61 35 55 35 Z" />
+            </g>
+            <g fill="#38bdf8">
+              <rect x="84" y="34" width="38" height="18" rx="2" ry="2" />
+              <rect x="79" y="51" width="7" height="7" rx="1.5" ry="1.5" />
+            </g>
+            <g fill="url(#mashrue-cyan-blue)">
+              <rect x="30" y="74" width="38" height="18" rx="2" ry="2" />
+              <rect x="69" y="66" width="7" height="7" rx="1.5" ry="1.5" />
+            </g>
+          </g>
+          <g transform="translate(70, 0)">
+            <text x="0" y="32" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="900" fill="url(#mashrue-white-grad)" letter-spacing="2.8">MASHRUE</text>
+            <text x="1" y="46" font-family="'Plus Jakarta Sans', sans-serif" font-size="7.5" font-weight="800" fill="#38bdf8" letter-spacing="2">ENTERPRISE BMS</text>
+          </g>
+        </svg>
+      </a>
+
+      <div class="public-nav-links">
+        <a href="plans.html" class="public-nav-pill">
+          <span>💎</span> Plans & Features
+        </a>
+        <a href="contact.html" class="public-nav-pill active">
+          <span>📞</span> Contact Us
+        </a>
+        <a href="index.html" class="public-btn-primary">
+          <span>🚀</span> Sign In
+        </a>
+      </div>
+    </nav>
+
+    <!-- Hero Header -->
+    <section class="hero-section">
+      <div class="hero-badge">📞 Dedicated Enterprise Desk</div>
+      <h1 class="hero-title">Connect with Mashrue Support</h1>
+      <p class="hero-subtitle">
+        Have questions regarding commercial modules, subscription pricing, 3-Month Personal Reference trial extensions, or FBR PRAL digital POS integration? We are here to assist you.
+      </p>
+    </section>
+
+    <!-- Contact Content Grid -->
+    <main class="contact-container">
+      
+      <!-- Left Info Column -->
+      <div class="contact-card-dark" style="border-color: rgba(56, 189, 248, 0.3);">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: white; margin: 0 0 20px;">Direct Enterprise Channels</h2>
+          
+          <!-- Email Box -->
+          <div class="contact-info-block">
+            <div class="contact-icon-box">✉️</div>
+            <div>
+              <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Official Support Email</div>
+              <a href="mailto:support@mashrue.com" style="font-size: 1.05rem; font-weight: 700; color: #38bdf8; text-decoration: none; word-break: break-all;">
+                support@mashrue.com
+              </a>
+              <div style="font-size: 0.76rem; color: #64748b; margin-top: 4px;">Primary channel for all platform inquiries, onboarding & discussion trials</div>
+            </div>
+          </div>
+
+          <!-- Extended Trial Discussion Box -->
+          <div class="contact-info-block">
+            <div class="contact-icon-box">🤝</div>
+            <div>
+              <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Personal Reference Trials</div>
+              <div style="font-size: 0.95rem; font-weight: 700; color: #ffffff;">Up to 3 Months Extension</div>
+              <div style="font-size: 0.76rem; color: #94a3b8; margin-top: 4px;">Available for corporate bidding contractors upon discussion with our executive team.</div>
+            </div>
+          </div>
+
+          <!-- FBR PRAL Technical Desk -->
+          <div class="contact-info-block" style="margin-bottom: 0;">
+            <div class="contact-icon-box">🇵🇰</div>
+            <div>
+              <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 700;">FBR PRAL Integration</div>
+              <div style="font-size: 0.95rem; font-weight: 700; color: #ffffff;">Certified Digital Invoicing</div>
+              <div style="font-size: 0.76rem; color: #94a3b8; margin-top: 4px;">Production POS Sandbox & QR verification assistance.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+          <a href="mailto:support@mashrue.com" class="public-btn-primary" style="width: 100%; justify-content: center; box-sizing: border-box; text-align: center; padding: 12px;">
+            ✉️ Email Us Directly
+          </a>
+        </div>
+      </div>
+
+      <!-- Right Contact / Inquiry Form -->
+      <div class="contact-card-dark">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: white; margin: 0 0 6px;">Send us an Inquiry</h2>
+          <p style="font-size: 0.84rem; color: #94a3b8; margin: 0 0 20px;">
+            Fill in your organization details and our team will get back to you promptly.
+          </p>
+
+          <form id="public-contact-form" onsubmit="event.preventDefault(); handleContactSubmit();">
+            <div class="form-group-custom">
+              <label class="form-label-custom">Your Full Name *</label>
+              <input type="text" class="form-input-custom" id="contact-name" placeholder="e.g. Tariq Khan" required>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group-custom">
+                <label class="form-label-custom">Company / Organization *</label>
+                <input type="text" class="form-input-custom" id="contact-company" placeholder="e.g. Falcon Enterprises PK" required>
+              </div>
+              <div class="form-group-custom">
+                <label class="form-label-custom">Contact Email *</label>
+                <input type="email" class="form-input-custom" id="contact-email" placeholder="tariq@falcon.pk" required>
+              </div>
+            </div>
+
+            <div class="form-group-custom">
+              <label class="form-label-custom">Inquiry Subject / Topic *</label>
+              <select class="form-input-custom" id="contact-subject">
+                <option value="Discussion on 3-Month Extended Trial" selected>Discussion on 3-Month Personal Reference Extended Trial</option>
+                <option value="Advance Plan Subscription & Custom Billing">Advance Plan Subscription & Multi-Cycle Billing</option>
+                <option value="FBR PRAL Digital Invoicing Integration">FBR PRAL Digital Invoicing Integration & Setup</option>
+                <option value="Dedicated On-Premise Enterprise Deployment">Dedicated On-Premise Enterprise Deployment</option>
+                <option value="General Commercial Inquiries">General Commercial & Bidding Desk Inquiries</option>
+              </select>
+            </div>
+
+            <div class="form-group-custom">
+              <label class="form-label-custom">Your Message / Requirements *</label>
+              <textarea class="form-input-custom" id="contact-message" rows="4" placeholder="Describe your commercial bidding requirements or question..." required></textarea>
+            </div>
+
+            <div id="contact-success-box" style="display: none; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; padding: 12px; border-radius: 8px; font-size: 0.85rem; color: #34d399; margin-bottom: 16px;">
+              ✅ Thank you! Your message has been routed to <strong>support@mashrue.com</strong>. Our enterprise team will respond shortly.
+            </div>
+
+            <button type="submit" class="public-btn-primary" style="width: 100%; justify-content: center; padding: 12px; font-size: 0.95rem;">
+              🚀 Submit Inquiry
+            </button>
+          </form>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="public-footer">
+      <p style="margin: 0 0 4px;">© 2026 Mashrue Enterprise BMS. All Rights Reserved.</p>
+      <p style="margin: 0;">Official Support Desk: <a href="mailto:support@mashrue.com" style="color: #38bdf8; text-decoration: none; font-weight: 600;">support@mashrue.com</a></p>
+    </footer>
+
+  </div>
+
+  <script>
+    function handleContactSubmit() {
+      const name = document.getElementById('contact-name')?.value;
+      const company = document.getElementById('contact-company')?.value;
+      const email = document.getElementById('contact-email')?.value;
+      const subject = document.getElementById('contact-subject')?.value;
+      const message = document.getElementById('contact-message')?.value;
+
+      const successBox = document.getElementById('contact-success-box');
+      if (successBox) {
+        successBox.style.display = 'block';
+      }
+
+      // Also trigger mailto as fallback so user can send direct email
+      setTimeout(() => {
+        const mailtoLink = `mailto:support@mashrue.com?subject=${encodeURIComponent('[Mashrue Inquiry] ' + subject + ' - ' + company)}&body=${encodeURIComponent('From: ' + name + ' (' + email + ')\nCompany: ' + company + '\n\n' + message)}`;
+        window.location.href = mailtoLink;
+      }, 1000);
+    }
+  </script>
+</body>
+</html>

@@ -32,9 +32,9 @@ router.post('/login', async (req, res) => {
       // Ignore migration errors if already present
     }
 
-    // 2. Query user by username or email (with fallback for naeem4it)
+    // 2. Query user by username or email (with support for naeem4it / naeem4it@gmail.com / naeem@mashrue.com)
     let result = await db.query(
-      `SELECT u.*, 
+      `      SELECT u.*, 
               t.company_name as tenant_name, 
               t.subdomain, 
               t.subscription_plan,
@@ -44,20 +44,25 @@ router.post('/login', async (req, res) => {
               (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count
        FROM users u
        LEFT JOIN tenants t ON u.tenant_id = t.id
-       WHERE LOWER(u.username) = LOWER($1) 
-          OR LOWER(u.email) = LOWER($1)
-          OR (LOWER($1) = 'naeem4it' AND (LOWER(u.email) = 'naeem@mashrue.com' OR u.role = 'SuperAdmin' OR u.role = 'CompanyAdmin'))
+       WHERE (u.username IS NOT NULL AND LOWER(TRIM(u.username)) = LOWER(TRIM($1))) 
+          OR (u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM($1)))
+          OR (LOWER(TRIM($1)) IN ('naeem4it', 'naeem4it@gmail.com', 'naeem@mashrue.com') AND (LOWER(u.username) = 'naeem4it' OR (u.email IS NOT NULL AND LOWER(u.email) LIKE '%naeem%') OR u.role = 'SuperAdmin'))
+       ORDER BY CASE 
+         WHEN u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM($1)) THEN 0 
+         WHEN u.username IS NOT NULL AND LOWER(TRIM(u.username)) = LOWER(TRIM($1)) THEN 1 
+         ELSE 2 
+       END
        LIMIT 1`,
       [loginIdentifier]
     );
 
     // If naeem4it Super Admin is requested but not in DB yet, auto-provision right now!
-    if (result.rows.length === 0 && (loginIdentifier.toLowerCase() === 'naeem4it' || loginIdentifier.toLowerCase() === 'naeem@mashrue.com')) {
+    if (result.rows.length === 0 && (loginIdentifier.toLowerCase() === 'naeem4it' || loginIdentifier.toLowerCase() === 'naeem@mashrue.com' || loginIdentifier.toLowerCase() === 'naeem4it@gmail.com')) {
       const salt = await bcrypt.genSalt(10);
       const hash = await bcrypt.hash('Password123!', salt);
       const insertRes = await db.query(
         `INSERT INTO users (id, tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions)
-         VALUES (uuid_generate_v4(), NULL, 'naeem4it', 'Muhammad Naeem Khan (Super Admin)', 'naeem@mashrue.com', $1, 'SuperAdmin', 'Active', FALSE, TRUE, '{}'::jsonb)
+         VALUES (uuid_generate_v4(), NULL, 'naeem4it', 'Muhammad Naeem Khan (Super Admin)', 'naeem4it@gmail.com', $1, 'SuperAdmin', 'Active', FALSE, TRUE, '{}'::jsonb)
          RETURNING *`,
         [hash]
       );
@@ -136,9 +141,9 @@ router.post('/login', async (req, res) => {
         token,
         user: {
           id: user.id,
-          username: user.username || user.email.split('@')[0],
+          username: user.username || (user.email ? user.email.split('@')[0] : (user.full_name ? user.full_name.toLowerCase().replace(/[^a-z0-9]/g, '') : 'user')),
           fullName: user.full_name,
-          email: user.email,
+          email: user.email || null,
           role: user.role,
           status: user.status,
           mustChangePassword: user.must_change_password || false,
@@ -161,6 +166,23 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('Login Endpoint Error:', err);
     res.status(500).json({ success: false, message: 'An error occurred during login.', error: err.message });
+  }
+});
+
+/**
+ * GET current authenticated user profile (/api/auth/me)
+ */
+router.get('/me', authenticate, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+    return res.json({
+      success: true,
+      data: req.user
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -294,6 +316,191 @@ router.get('/me', authenticate, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to fetch user profile', error: err.message });
+  }
+});
+
+/**
+ * GET /api/auth/test-email?to=...
+ * Diagnostic endpoint to test SMTP email delivery and return exact error logs
+ */
+router.get('/test-email', async (req, res) => {
+  const { to } = req.query;
+  const targetEmail = to || 'naeem4it@gmail.com';
+  const { sendWelcomeUserEmail, EMAIL_CONFIG } = require('../services/emailService');
+
+  try {
+    // Find matching user in database or use default admin to sign genuine token
+    let user;
+    try {
+      const userRes = await db.query(
+        `SELECT id, username, full_name, email, role FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+        [targetEmail]
+      );
+      if (userRes.rows.length > 0) {
+        user = userRes.rows[0];
+      } else {
+        const anyUser = await db.query(`SELECT id, username, full_name, email, role FROM users ORDER BY id ASC LIMIT 1`);
+        user = anyUser.rows[0] || { id: 1, username: 'admin', full_name: 'Muhammad Naeem Khan', email: targetEmail, role: 'SuperAdmin' };
+      }
+    } catch (dbErr) {
+      user = { id: 1, username: 'admin', full_name: 'Muhammad Naeem Khan', email: targetEmail, role: 'SuperAdmin' };
+    }
+
+    const resetToken = jwt.sign(
+      {
+        userId: user.id,
+        email: targetEmail,
+        purpose: 'set-password'
+      },
+      JWT_SECRET,
+      { expiresIn: '72h' }
+    );
+
+    const result = await sendWelcomeUserEmail({
+      toEmail: targetEmail,
+      fullName: user.full_name || 'Muhammad Naeem Khan',
+      username: user.username || targetEmail.split('@')[0],
+      resetToken,
+      role: user.role || 'ClientAdmin',
+      companyName: 'Mashrue BMS'
+    });
+
+    res.json({
+      success: result.success,
+      targetEmail,
+      sender: EMAIL_CONFIG?.fromEmail || 'support@mashrue.com',
+      result
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      targetEmail,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST Verify Password Setup / Reset Token
+ */
+router.post('/verify-reset-token', async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ success: false, message: 'Token is required.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded.userId || !['set-password', 'reset-password'].includes(decoded.purpose)) {
+      return res.status(400).json({ success: false, message: 'Invalid token purpose.' });
+    }
+
+    const userRes = await db.query(
+      `SELECT id, username, full_name, email, role, status FROM users WHERE id = $1`,
+      [decoded.userId]
+    );
+
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User associated with this token not found.' });
+    }
+
+    const user = userRes.rows[0];
+    if (user.status !== 'Active') {
+      return res.status(403).json({ success: false, message: 'This user account is not active.' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        userId: user.id,
+        fullName: user.full_name,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(400).json({ success: false, message: 'The password setup link has expired (72 hours limit). Please contact your administrator.' });
+    }
+    return res.status(400).json({ success: false, message: 'Invalid or corrupted setup link.', error: err.message });
+  }
+});
+
+/**
+ * POST Set / Reset Password using Token (e.g. from invitation email link)
+ */
+router.post('/reset-password-with-token', async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ success: false, message: 'Token and new password are required.' });
+  }
+
+  const policyCheck = validatePasswordPolicy(newPassword);
+  if (!policyCheck.valid) {
+    return res.status(400).json({ success: false, message: policyCheck.message });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded.userId || !['set-password', 'reset-password'].includes(decoded.purpose)) {
+      return res.status(400).json({ success: false, message: 'Invalid token purpose.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    const updateRes = await db.query(
+      `UPDATE users
+       SET password_hash = $1,
+           must_change_password = FALSE,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING id, tenant_id, username, full_name, email, role, status`,
+      [passwordHash, decoded.userId]
+    );
+
+    if (updateRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const user = updateRes.rows[0];
+
+    // Generate fresh session JWT so user is immediately logged in
+    const sessionToken = jwt.sign(
+      {
+        userId: user.id,
+        tenantId: user.tenant_id,
+        username: user.username,
+        role: user.role
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Password set successfully! Logging you in...',
+      data: {
+        token: sessionToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          fullName: user.full_name,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          mustChangePassword: false
+        }
+      }
+    });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(400).json({ success: false, message: 'The password setup link has expired. Please contact your administrator.' });
+    }
+    console.error('Reset Password with Token Error:', err);
+    res.status(500).json({ success: false, message: 'Failed to set password with token.', error: err.message });
   }
 });
 

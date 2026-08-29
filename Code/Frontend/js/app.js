@@ -34,7 +34,10 @@ function showToast(message, type = 'info', duration = 4000) {
 }
 
 // Universal Currency & Formatting Helpers
-function formatCurrency(amount, currency = 'PKR') {
+function formatCurrency(amount, currency = 'PKR', forceShow = false) {
+  if (!forceShow && typeof State !== 'undefined' && State.canSeeBiddingPrices && !State.canSeeBiddingPrices()) {
+    return '🔒 [Hidden]';
+  }
   const num = parseFloat(amount || 0);
   const formatted = isNaN(num) ? '0' : num.toLocaleString('en-US', { maximumFractionDigits: 2 });
   const curr = currency || 'PKR';
@@ -171,13 +174,231 @@ function toggleCustomerOtherTerms(val) {
   }
 }
 
+// --------------------------------------------------------------------------
+// INVITATION / SET PASSWORD FROM EMAIL LINK HANDLER
+// --------------------------------------------------------------------------
+
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (btn) btn.innerText = '🙈';
+  } else {
+    input.type = 'password';
+    if (btn) btn.innerText = '👁️';
+  }
+}
+
+async function checkAndHandleSetPasswordUrl() {
+  const hash = window.location.hash || '';
+  const search = window.location.search || '';
+  
+  let token = null;
+  let email = null;
+
+  // Check in URL hash: #set-password?token=...&email=...
+  if (hash.includes('token=')) {
+    const queryPart = hash.includes('?') ? hash.substring(hash.indexOf('?')) : hash;
+    const hashParams = new URLSearchParams(queryPart.replace(/^#/, ''));
+    token = hashParams.get('token');
+    email = hashParams.get('email');
+  }
+
+  // Check in URL query params: ?token=...
+  if (!token && search.includes('token=')) {
+    const searchParams = new URLSearchParams(search);
+    token = searchParams.get('token');
+    email = searchParams.get('email');
+  }
+
+  if (token) {
+    const loginView = document.getElementById('login-view');
+    const appContainer = document.getElementById('app-container');
+    if (loginView) loginView.style.display = 'none';
+    if (appContainer) appContainer.style.display = 'none';
+
+    const tokenInput = document.getElementById('set-password-token-input');
+    if (tokenInput) tokenInput.value = token;
+
+    const errorBox = document.getElementById('set-password-error-msg');
+    const successBox = document.getElementById('set-password-success-msg');
+    const nameEl = document.getElementById('set-password-display-name');
+    const emailEl = document.getElementById('set-password-display-email');
+    const avatarEl = document.getElementById('set-password-avatar-letter');
+
+    if (errorBox) { errorBox.style.display = 'none'; errorBox.innerText = ''; }
+    if (successBox) { successBox.style.display = 'none'; successBox.innerText = ''; }
+
+    // Clear password inputs to prevent browser autofill
+    const npInput = document.getElementById('set-new-password');
+    const cpInput = document.getElementById('set-confirm-password');
+    if (npInput) npInput.value = '';
+    if (cpInput) cpInput.value = '';
+
+    openModal('modal-set-password');
+
+    // Verify token with backend
+    try {
+      const res = await API.verifyResetToken(token);
+      if (res && res.success && res.data) {
+        const user = res.data;
+        if (nameEl) nameEl.innerText = user.fullName || user.username || 'User';
+        if (emailEl) emailEl.innerText = `${user.email || email || ''} • (${user.role || 'Member'})`;
+        if (avatarEl) avatarEl.innerText = (user.fullName || user.username || 'U').charAt(0).toUpperCase();
+      } else {
+        if (errorBox) {
+          errorBox.innerText = (res && res.message) ? res.message : 'Invalid or expired password setup link.';
+          errorBox.style.display = 'block';
+        }
+      }
+    } catch (e) {
+      if (errorBox) {
+        errorBox.innerText = 'Unable to verify setup link. Please contact administrator.';
+        errorBox.style.display = 'block';
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+async function submitSetPasswordTokenForm() {
+  const tokenInput = document.getElementById('set-password-token-input');
+  const newPassInput = document.getElementById('set-new-password');
+  const confirmPassInput = document.getElementById('set-confirm-password');
+  const errorBox = document.getElementById('set-password-error-msg');
+  const successBox = document.getElementById('set-password-success-msg');
+  const submitBtn = document.getElementById('btn-submit-set-password');
+
+  const token = tokenInput ? tokenInput.value : '';
+  const newPass = newPassInput ? newPassInput.value : '';
+  const confirmPass = confirmPassInput ? confirmPassInput.value : '';
+
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.innerText = ''; }
+  if (successBox) { successBox.style.display = 'none'; successBox.innerText = ''; }
+
+  if (!newPass || !confirmPass) {
+    if (errorBox) {
+      errorBox.innerText = 'Please enter and confirm your new password.';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+
+  if (newPass !== confirmPass) {
+    if (errorBox) {
+      errorBox.innerText = 'New password and confirmation password do not match.';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+
+  // Password Policy check
+  if (newPass.length < 8 || newPass.length > 20) {
+    if (errorBox) {
+      errorBox.innerText = 'Password must be between 8 and 20 characters.';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+  if (!/[A-Z]/.test(newPass)) {
+    if (errorBox) {
+      errorBox.innerText = 'Password must contain at least one uppercase letter (A-Z).';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+  if (!/[a-z]/.test(newPass)) {
+    if (errorBox) {
+      errorBox.innerText = 'Password must contain at least one lowercase letter (a-z).';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+  if (!/[0-9]/.test(newPass)) {
+    if (errorBox) {
+      errorBox.innerText = 'Password must contain at least one numeric digit (0-9).';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+  if (!/[^A-Za-z0-9]/.test(newPass)) {
+    if (errorBox) {
+      errorBox.innerText = 'Password must contain at least one special character (!@#$%^&*).';
+      errorBox.style.display = 'block';
+    }
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = '⏳ Setting Password...';
+  }
+
+  try {
+    const res = await API.resetPasswordWithToken(token, newPass);
+    if (res && res.success) {
+      if (successBox) {
+        successBox.innerText = '✓ Password set successfully! Redirecting into Mashrue...';
+        successBox.style.display = 'block';
+      }
+      showToast('🎉 Password set successfully! Welcome to Mashrue.', 'success');
+
+      // Clear hash/query string from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      setTimeout(async () => {
+        closeModal('modal-set-password');
+        // Clear login fields
+        const uInput = document.getElementById('login-username');
+        const pInput = document.getElementById('login-password');
+        if (uInput) uInput.value = '';
+        if (pInput) pInput.value = '';
+        await initApp();
+      }, 1000);
+    } else {
+      if (errorBox) {
+        errorBox.innerText = (res && res.message) ? res.message : 'Failed to set password. Link may have expired.';
+        errorBox.style.display = 'block';
+      }
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerText = '🚀 Set Password & Launch App';
+      }
+    }
+  } catch (err) {
+    if (errorBox) {
+      errorBox.innerText = 'An unexpected error occurred. Please try again.';
+      errorBox.style.display = 'block';
+    }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = '🚀 Set Password & Launch App';
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await initApp();
+});
+
+// Also listen to hash changes for set-password links
+window.addEventListener('hashchange', async () => {
+  if (window.location.hash.includes('token=')) {
+    await checkAndHandleSetPasswordUrl();
+  }
 });
 
 async function initApp() {
   const loginView = document.getElementById('login-view');
   const appContainer = document.getElementById('app-container');
+
+  // Check for Set Password Token in URL (from email link)
+  const isSetPasswordFlow = await checkAndHandleSetPasswordUrl();
+  if (isSetPasswordFlow) {
+    return;
+  }
 
   // Check Authentication Status
   if (!State.isLoggedIn()) {
@@ -428,6 +649,7 @@ function updateHeaderUserProfile() {
     const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
     const sub = State.getTenantSubscription(tid);
     const daysLeft = State.getTrialDaysRemaining(tid);
+    const quota = State.getTenantQuota(tid);
 
     if (sub.status === 'Suspended') {
       subStatusPill.innerHTML = `
@@ -436,15 +658,23 @@ function updateHeaderUserProfile() {
         </span>
       `;
     } else if (sub.is_trial && sub.status === 'Trial') {
+      const allSecurities = State.getTenantEntityList ? State.getTenantEntityList('bidSecurities') : [];
+      const secUsed = allSecurities.filter(b => b.tenant_id === tid).length || (quota.bid_securities_created || 0);
+
       subStatusPill.innerHTML = `
-        <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700; padding:6px 12px; cursor:pointer;" onclick="switchView('my-subscription')">
-          ⏳ ${sub.plan_type} Trial: <strong>${daysLeft} Days Left</strong>
+        <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700; padding:6px 12px; cursor:pointer; display:flex; align-items:center; gap:8px;" onclick="switchView('my-subscription')">
+          <span>⏳ <strong>${daysLeft}d</strong> Trial</span>
+          <span style="font-weight:400; color:#3b82f6;">|</span>
+          <span>📑 <strong>${quota.tenders_created || 0}/5</strong> Tenders</span>
+          <span style="font-weight:400; color:#3b82f6;">|</span>
+          <span>🏦 <strong>${secUsed}/3</strong> CDRs</span>
         </span>
       `;
     } else {
+      const cycleText = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
       subStatusPill.innerHTML = `
         <span class="badge badge-won" style="padding:6px 12px; cursor:pointer;" onclick="switchView('my-subscription')">
-          ✓ ${sub.plan_type} Plan (Active)
+          ✓ ${sub.plan_type} Plan (${cycleText})
         </span>
       `;
     }
@@ -751,14 +981,14 @@ function renderDynamicSidebarNavigation() {
   // Navigation schema with permissions & modular subscription keys
   const coreLinks = [
     { view: 'dashboard', icon: '📊', label: 'Dashboard & KPIs', perm: 'dashboard', always: true },
-    { view: 'opportunities', icon: '📑', label: 'Tenders & Quotations', perm: 'opportunities', moduleKey: 'mod_tenders', badge: '3' },
-    { view: 'bid-securities', icon: '🛡️', label: 'Bid Security Registry', perm: 'bid-securities', moduleKey: 'mod_bid_security', badge: '2', badgeBg: '#4338ca' },
+    { view: 'opportunities', icon: '📑', label: 'Tenders & Quotations', perm: 'opportunities', moduleKey: 'mod_tenders' },
+    { view: 'bid-securities', icon: '🛡️', label: 'Bid Security Registry', perm: 'bid-securities', moduleKey: 'mod_bid_security' },
     { view: 'costing', icon: '💰', label: 'Costing & Margin', perm: 'costing', moduleKey: 'mod_costing_eval' },
     { view: 'approvals', icon: '⚖️', label: 'Bid Approvals', perm: 'approvals', moduleKey: 'mod_costing_eval' },
     { view: 'awards', icon: '🏆', label: 'Awards & Guarantees', perm: 'awards', moduleKey: 'mod_tenders' },
     { view: 'purchase-orders', icon: '📦', label: 'Purchase Orders (PO)', perm: 'purchase-orders', moduleKey: 'mod_supply_dc' },
     { view: 'delivery-challans', icon: '🚚', label: 'Supply & Challan (DC)', perm: 'delivery-challans', moduleKey: 'mod_supply_dc' },
-    { view: 'invoices', icon: '🧾', label: 'Invoices & FBR PRAL', perm: 'invoices', moduleKey: 'mod_fbr_invoicing', badge: 'PRAL', badgeBg: '#10b981' },
+    { view: 'invoices', icon: '🧾', label: 'Invoices & FBR PRAL', perm: 'invoices', moduleKey: 'mod_fbr_invoicing' },
     { view: 'payments', icon: '💵', label: 'Payments Received', perm: 'payments', moduleKey: 'mod_finance_kpi' }
   ];
 
@@ -772,9 +1002,9 @@ function renderDynamicSidebarNavigation() {
     { view: 'customers', icon: '👥', label: 'Customer Directory', perm: 'customers' },
     { view: 'suppliers', icon: '🏭', label: 'Supplier Directory', perm: 'suppliers' },
     { view: 'products', icon: '📦', label: 'Item & SKU Catalog', perm: 'products', moduleKey: 'mod_inventory' },
-    { view: 'business-profiles', icon: '🏢', label: 'Companies & Profiles', adminOnly: true, badge: '2 Free', badgeBg: '#f59e0b' },
+    { view: 'business-profiles', icon: '🏢', label: 'Companies & Profiles', adminOnly: true },
     { view: 'users', icon: '👤', label: isSuper ? 'Tenants & Users' : 'Users & RBAC', adminOnly: true },
-    { view: 'subscriptions', icon: '👑', label: 'Subscriptions & Billing', isSuperOnly: true, badge: 'Hub', badgeBg: '#1e40af' },
+    { view: 'subscriptions', icon: '👑', label: 'Subscriptions & Billing', isSuperOnly: true },
     { view: 'my-subscription', icon: '💳', label: 'My Plan & Billing', isClientAdminOnly: true },
     { view: 'settings', icon: '⚙️', label: 'Settings & FBR', adminOnly: true, moduleKey: 'mod_fbr_invoicing' }
   ];
@@ -859,7 +1089,47 @@ async function renderActiveView() {
   if (!contentArea) return;
 
   const currentProfile = State.getCurrentBusinessProfile();
-  const isAdmin = State.currentUser.role === 'CompanyAdmin';
+  const isAdmin = State.isSuperAdmin() || State.isClientAdmin();
+
+  // Screen permission mapping
+  const viewPermMap = {
+    'opportunities': 'opportunities',
+    'bid-securities': 'bid-securities',
+    'costing': 'costing',
+    'approvals': 'approvals',
+    'awards': 'awards',
+    'purchase-orders': 'purchase-orders',
+    'delivery-challans': 'delivery-challans',
+    'invoices': 'invoices',
+    'payments': 'payments',
+    'inventory': 'inventory',
+    'expenses': 'expenses',
+    'reports': 'reports',
+    'customers': 'customers',
+    'suppliers': 'suppliers',
+    'products': 'inventory',
+    'business-profiles': 'settings',
+    'users': 'users',
+    'settings': 'settings'
+  };
+
+  const reqPerm = viewPermMap[State.activeView];
+  if (reqPerm && !State.hasPermission(reqPerm, 'view')) {
+    viewTitle.innerText = '⛔ Access Restricted';
+    viewSubtitle.innerText = 'Screen Permission Revoked';
+    contentArea.innerHTML = `
+      <div class="card" style="text-align:center; padding:50px 24px; max-width:560px; margin:40px auto; border-top:4px solid #ef4444; border-radius:12px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.08);">
+        <div style="font-size:3.5rem; margin-bottom:12px;">🔒</div>
+        <h3 style="font-size:1.3rem; font-weight:800; color:#1e293b; margin-bottom:8px;">Screen Access Restricted</h3>
+        <p style="font-size:0.9rem; color:#64748b; line-height:1.6; margin-bottom:24px;">
+          You do not have permission to view the <strong>${State.activeView.replace(/-/g, ' ').toUpperCase()}</strong> module.<br>
+          Please contact your <strong>Tenant Administrator</strong> to grant rights to this screen.
+        </p>
+        <button class="primary-btn" onclick="switchView('dashboard')" style="margin:0 auto; padding:10px 20px;">📊 Return to Dashboard</button>
+      </div>
+    `;
+    return;
+  }
 
   switch (State.activeView) {
     case 'dashboard':
@@ -870,7 +1140,7 @@ async function renderActiveView() {
 
     case 'opportunities':
       viewTitle.innerText = 'Tenders & Direct Quotations Pipeline';
-      viewSubtitle.innerText = `PPRA, DGP, RFQ, LPQ & Direct Sales Opportunities | Pricing View: ${isAdmin ? '🔓 Admin Unlocked' : '🔒 Masked'}`;
+      viewSubtitle.innerText = `PPRA, DGP, RFQ, LPQ & Direct Sales Opportunities | Pricing View: ${isAdmin ? '🔓 Admin Unlocked' : (State.canSeeBiddingPrices() ? '🔓 Unlocked' : '🔒 Masked')}`;
       contentArea.innerHTML = await renderOpportunitiesHTML();
       break;
 
@@ -961,13 +1231,13 @@ async function renderActiveView() {
 
     case 'business-profiles':
       viewTitle.innerText = 'Companies & Business Profiles';
-      viewSubtitle.innerText = 'Multi-Company Tenant Configuration (Up to 2 Companies Free)';
+      viewSubtitle.innerText = '';
       contentArea.innerHTML = await renderBusinessProfilesHTML();
       break;
 
     case 'users':
       viewTitle.innerText = 'User Management & Role-Based Access Control';
-      viewSubtitle.innerText = 'SuperAdmin, CompanyAdmin, BidManager, Procurement, Warehouse & Finance Roles';
+      viewSubtitle.innerText = '';
       contentArea.innerHTML = await renderUsersHTML();
       break;
 
@@ -1001,37 +1271,115 @@ async function renderDashboardHTML() {
   const kpis = await API.getDashboardKPIs(State.currentBusinessProfileId);
   const opps = await API.getOpportunities(State.currentBusinessProfileId);
   const pendingBills = await API.getPendingBills();
+  const securities = await API.getBidSecurities(State.currentBusinessProfileId);
 
   const tendersKPI = kpis?.tenders || { total_tenders: 0, in_process: 0, won_count: 0, total_pipeline_value: 0 };
   const secKPI = kpis?.bidSecurities || { active_securities_count: 0, active_securities_amount: 0 };
   const finKPI = kpis?.financials || { total_invoiced: 0, total_collected: 0, total_receivables: 0 };
 
+  const canSeePrices = State.canSeeBiddingPrices();
+
   const pipelineVal = parseFloat(tendersKPI.total_pipeline_value || 0);
-  const pipelineDisplay = pipelineVal >= 1000000 
-    ? `PKR ${(pipelineVal / 1000000).toFixed(1)}M` 
-    : `PKR ${pipelineVal.toLocaleString()}`;
+  const pipelineDisplay = !canSeePrices
+    ? '🔒 [Hidden]'
+    : (pipelineVal >= 1000000 
+      ? `PKR ${(pipelineVal / 1000000).toFixed(1)}M` 
+      : `PKR ${pipelineVal.toLocaleString()}`);
 
   const secVal = parseFloat(secKPI.active_securities_amount || 0);
-  const secDisplay = secVal >= 1000000 
-    ? `PKR ${(secVal / 1000000).toFixed(1)}M` 
-    : (secVal >= 1000 ? `PKR ${(secVal / 1000).toFixed(0)}k` : `PKR ${secVal.toLocaleString()}`);
+  const secDisplay = !canSeePrices
+    ? '🔒 [Hidden]'
+    : (secVal >= 1000000 
+      ? `PKR ${(secVal / 1000000).toFixed(1)}M` 
+      : (secVal >= 1000 ? `PKR ${(secVal / 1000).toFixed(0)}k` : `PKR ${secVal.toLocaleString()}`));
 
   const collectedVal = parseFloat(finKPI.total_collected || 0);
-  const collectedDisplay = collectedVal >= 1000000 
-    ? `PKR ${(collectedVal / 1000000).toFixed(1)}M` 
-    : `PKR ${collectedVal.toLocaleString()}`;
+  const collectedDisplay = !canSeePrices
+    ? '🔒 [Hidden]'
+    : (collectedVal >= 1000000 
+      ? `PKR ${(collectedVal / 1000000).toFixed(1)}M` 
+      : `PKR ${collectedVal.toLocaleString()}`);
 
   const invoicedVal = parseFloat(finKPI.total_invoiced || 0);
-  const invoicedDisplay = invoicedVal >= 1000000 
-    ? `PKR ${(invoicedVal / 1000000).toFixed(1)}M` 
-    : `PKR ${invoicedVal.toLocaleString()}`;
+  const invoicedDisplay = !canSeePrices
+    ? '🔒 [Hidden]'
+    : (invoicedVal >= 1000000 
+      ? `PKR ${(invoicedVal / 1000000).toFixed(1)}M` 
+      : `PKR ${invoicedVal.toLocaleString()}`);
 
   const recVal = parseFloat(finKPI.total_receivables || 0);
-  const recDisplay = recVal >= 1000000 
-    ? `PKR ${(recVal / 1000000).toFixed(1)}M` 
-    : `PKR ${recVal.toLocaleString()}`;
+  const recDisplay = !canSeePrices
+    ? '🔒 [Hidden]'
+    : (recVal >= 1000000 
+      ? `PKR ${(recVal / 1000000).toFixed(1)}M` 
+      : `PKR ${recVal.toLocaleString()}`);
+
+  // Calculate Bid Security Expiry Buckets
+  const now = new Date();
+  const activeSecs = (securities || []).filter(s => s.status === 'Active' || !s.status || s.status === 'active');
+  const criticalSecs = []; // <= 7 days
+  const upcomingSecs = []; // 8-30 days
+  const safeSecs = [];     // > 30 days
+
+  activeSecs.forEach(s => {
+    let expDate = null;
+    if (s.expiry_date) {
+      if (s.expiry_date.includes('/')) {
+        const p = s.expiry_date.split('/');
+        expDate = new Date(p[2], p[1] - 1, p[0]);
+      } else {
+        expDate = new Date(s.expiry_date);
+      }
+    }
+    if (!expDate || isNaN(expDate.getTime())) {
+      safeSecs.push(s);
+      return;
+    }
+    const diffDays = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 7) {
+      criticalSecs.push({ ...s, daysRemaining: diffDays });
+    } else if (diffDays <= 30) {
+      upcomingSecs.push({ ...s, daysRemaining: diffDays });
+    } else {
+      safeSecs.push({ ...s, daysRemaining: diffDays });
+    }
+  });
+
+  const criticalAmount = criticalSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  const upcomingAmount = upcomingSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
 
   return `
+    <!-- ⚠️ Urgent Proactive Expiry Alert Banner (if critical or upcoming instruments exist) -->
+    ${criticalSecs.length > 0 ? `
+      <div style="background: linear-gradient(135deg, #fee2e2, #fef2f2); border: 2px solid #ef4444; border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 1.8rem;">🚨</span>
+          <div>
+            <strong style="color: #991b1b; font-size: 0.98rem; display: block;">
+              CRITICAL NOTICE: ${criticalSecs.length} Bid Security Instrument(s) (${formatCurrency(criticalAmount, 'PKR')}) Expiring Within 7 Days!
+            </strong>
+            <span style="font-size: 0.82rem; color: #b91c1c;">
+              Earnest money instruments for tenders: ${criticalSecs.map(s => `<strong>${s.opportunity_number || s.instrument_number}</strong> (${s.daysRemaining <= 0 ? 'EXPIRED' : `${s.daysRemaining}d left`})`).join(', ')}. Action required to renew or request official release from beneficiary.
+            </span>
+          </div>
+        </div>
+        <button class="primary-btn" style="background: #dc2626; white-space: nowrap; padding: 6px 14px; font-size: 0.82rem;" onclick="navigateToView('bid-securities')">
+          🛡️ Manage & Release CDRs &rarr;
+        </button>
+      </div>
+    ` : (upcomingSecs.length > 0 ? `
+      <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">⚠️</span>
+          <div>
+            <strong style="color: #92400e; font-size: 0.92rem;">Upcoming Expiry: ${upcomingSecs.length} Bid Securities (${formatCurrency(upcomingAmount, 'PKR')}) maturing in 8–30 days</strong>
+            <p style="font-size: 0.78rem; color: #b45309; margin: 2px 0 0 0;">Review tender evaluation progress or prepare bank renewal letters.</p>
+          </div>
+        </div>
+        <button class="secondary-btn" style="padding: 4px 10px; font-size: 0.78rem;" onclick="navigateToView('bid-securities')">View Securities</button>
+      </div>
+    ` : '')}
+
     <div class="kpi-grid">
       <div class="kpi-card blue">
         <div class="kpi-card-header">
@@ -1070,13 +1418,45 @@ async function renderDashboardHTML() {
       </div>
     </div>
 
-    <!-- Quick Action Bar -->
-    <div style="display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap;">
-      <button class="primary-btn" onclick="openNewTenderModal()"><span style="font-size:1.1rem;">+</span> Register New Tender</button>
-      <button class="secondary-btn" onclick="openNewCustomerModal()">+ Add Customer</button>
-      <button class="secondary-btn" onclick="openNewSupplierModal()">+ Add Supplier</button>
-      <button class="secondary-btn" onclick="openModal('modal-add-payment')">💵 Record Cheque Payment</button>
-      <button class="secondary-btn" onclick="openModal('modal-add-expense')">💳 Log Expense</button>
+    <!-- Bid Security Expiry Maturity Heatmap & Funnel Row -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px;">
+      <!-- Bid Security Maturity Heatmap -->
+      <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="padding-bottom: 10px;">
+          <div class="card-title">🛡️ Bid Security Maturity & Bank Credit Heatmap</div>
+          <button class="secondary-btn" style="padding: 2px 8px; font-size: 0.75rem;" onclick="navigateToView('bid-securities')">All CDRs &rarr;</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 14px 16px;">
+          <div style="background: ${criticalSecs.length > 0 ? '#fee2e2' : '#f8fafc'}; border: 1px solid ${criticalSecs.length > 0 ? '#fca5a5' : '#e2e8f0'}; border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: ${criticalSecs.length > 0 ? '#b91c1c' : '#64748b'}; text-transform: uppercase;">🔴 Critical (&le; 7 Days)</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: ${criticalSecs.length > 0 ? '#dc2626' : '#1e293b'}; margin: 4px 0;">${criticalSecs.length} Instruments</div>
+            <div style="font-size: 0.78rem; font-weight: 600; color: #475569;">${formatCurrency(criticalAmount, 'PKR')}</div>
+          </div>
+          <div style="background: ${upcomingSecs.length > 0 ? '#fef3c7' : '#f8fafc'}; border: 1px solid ${upcomingSecs.length > 0 ? '#fcd34d' : '#e2e8f0'}; border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: ${upcomingSecs.length > 0 ? '#92400e' : '#64748b'}; text-transform: uppercase;">🟡 Soon (8–30 Days)</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: ${upcomingSecs.length > 0 ? '#d97706' : '#1e293b'}; margin: 4px 0;">${upcomingSecs.length} Instruments</div>
+            <div style="font-size: 0.78rem; font-weight: 600; color: #475569;">${formatCurrency(upcomingAmount, 'PKR')}</div>
+          </div>
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: #166534; text-transform: uppercase;">🟢 Safe (> 30 Days)</span>
+            <div style="font-size: 1.4rem; font-weight: 800; color: #16a34a; margin: 4px 0;">${safeSecs.length} Instruments</div>
+            <div style="font-size: 0.78rem; font-weight: 600; color: #475569;">${formatCurrency(safeSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0), 'PKR')}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Executive Action Center -->
+      <div class="card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="card-header" style="padding-bottom: 10px;">
+          <div class="card-title">⚡ Quick Actions</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px;">
+          ${State.hasPermission('opportunities', 'add') && !State.isReadOnly() ? `<button class="primary-btn" style="width:100%; justify-content:center;" onclick="openNewTenderModal()">+ Register New Tender</button>` : ''}
+          ${State.hasPermission('bid-securities', 'add') && !State.isReadOnly() ? `<button class="secondary-btn" style="width:100%; justify-content:center;" onclick="openModal('modal-add-bid-security')">🛡️ Issue Bid Security (CDR)</button>` : ''}
+          ${State.hasPermission('payments', 'add') && !State.isReadOnly() ? `<button class="secondary-btn" style="width:100%; justify-content:center;" onclick="openModal('modal-add-payment')">💵 Record Cheque Realization</button>` : ''}
+          ${State.hasPermission('expenses', 'add') && !State.isReadOnly() ? `<button class="secondary-btn" style="width:100%; justify-content:center;" onclick="openExpenseModal()">💸 Log Operating Expense</button>` : ''}
+        </div>
+      </div>
     </div>
 
     <!-- Active Pipeline Table -->
@@ -1113,10 +1493,10 @@ async function renderDashboardHTML() {
                   <span style="font-size:0.75rem; color:var(--text-muted);">${o.opportunity_number} | ${o.external_tender_number || 'Direct'}</span>
                 </td>
                 <td><span class="pill-source">${o.tender_source || 'PPRA'}</span></td>
-                <td>${o.customer_name || 'Open Market'}<br><span style="font-size:0.72rem; color:var(--text-muted);">${o.customer_org_type || ''}</span></td>
+                <td><strong>${o.customer_name || 'Govt Department / Client'}</strong><br><span style="font-size:0.72rem; color:var(--text-muted);">${o.customer_org_type || o.customer_type || 'Government Department'}</span></td>
                 <td>
                   ${State.canSeeBiddingPrices() 
-                    ? `<strong>PKR ${parseFloat(o.estimated_value || 0).toLocaleString()}</strong>` 
+                    ? `<strong>${formatCurrency(o.estimated_value, o.currency || 'PKR')}</strong>` 
                     : `<span class="badge badge-hold">🔒 Masked</span>`}
                 </td>
                 <td>
@@ -1126,7 +1506,10 @@ async function renderDashboardHTML() {
                 </td>
                 <td><span class="badge badge-${(o.status || 'new').toLowerCase().replace(/\s+/g, '')}">${o.status}</span></td>
                 <td>
-                  <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openTenderDetailsModal('${o.id}')">Manage</button>
+                  <div style="display:flex; gap:4px;">
+                    <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; background:#0f172a; color:white;" onclick="openTenderDiaryModal('${o.id}')" title="Open Tender Activity Diary & Timeline">📜 Diary</button>
+                    <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="openTender360Cockpit('${o.id}')">Cockpit</button>
+                  </div>
                 </td>
               </tr>
             `).join('')}
@@ -1227,30 +1610,28 @@ async function renderOpportunitiesHTML() {
                 </td>
                 <td>
                   <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
-                    <!-- 360 Cockpit Action / Manage -->
+                    <!-- 360 Cockpit Action & Diary -->
                     <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#0f172a; color:#ffffff; font-weight:700; border-color:#1e293b;" onclick="openTender360Cockpit('${o.id}')" title="Open Full 360 Project Cockpit">
                       🌐 360° Cockpit
                     </button>
+                    <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#3b82f6; color:#ffffff; font-weight:600; border-color:#2563eb;" onclick="openTenderDiaryModal('${o.id}')" title="Open Chronological Tender Diary & Timeline">
+                      📜 Diary
+                    </button>
 
-                    <button class="edit-btn" onclick="openEditEntityModal('opportunity', '${o.id}')" title="Edit Tender Details">✏️</button>
+                    <button class="edit-btn" onclick="openEditTenderModal('${o.id}')" title="Edit Tender Details & Line Items">✏️ Edit</button>
 
-                    ${o.selection_status !== 'Selected' && o.status === 'New' ? `
-                      <button class="secondary-btn" style="padding:3px 6px; font-size:0.75rem; background:#ecfdf5; color:#059669;" onclick="handleTenderSelection('${o.id}', 'Selected')">✓ Select</button>
-                      <button class="secondary-btn" style="padding:3px 6px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="handleTenderSelection('${o.id}', 'Rejected')">✗</button>
-                    ` : ''}
-                    
-                    ${o.status === 'Ready to submit' ? `
-                      <button class="primary-btn" style="padding:3px 7px; font-size:0.75rem;" onclick="handleBidSubmission('${o.id}')">🚀 Submit</button>
-                    ` : ''}
-
-                    ${o.status !== 'Won' && o.status !== 'won' && o.status !== 'Lost' && o.status !== 'loose' ? `
-                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#ecfdf5; color:#059669; font-weight:700;" onclick="handleUpdateTenderStatus('${o.id}', 'Won', '${encodeURIComponent(o.tender_name || o.title)}')">🏆 Won</button>
-                      <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#fef2f2; color:#dc2626;" onclick="handleUpdateTenderStatus('${o.id}', 'Lost', '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})">❌ Lost</button>
-                    ` : ''}
-
-                    ${o.status === 'Won' || o.status === 'won' ? `
-                      <button class="primary-btn" style="padding:3px 7px; font-size:0.75rem; background:#059669;" onclick="promptAwardLetterModal('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}')">+ Award LOA</button>
-                    ` : ''}
+                    <!-- Single Clean Action Dropdown -->
+                    <select class="form-select" style="font-size:0.72rem; padding:2px 6px; border-radius:4px; height:24px; min-width:92px; font-weight:600; background:#f8fafc; color:#0f172a;" onchange="handleTenderActionSelect('${o.id}', this.value, '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})" title="Select Action for this Tender">
+                      <option value="" disabled selected>Actions ▾</option>
+                      <option value="Won">🏆 Mark as Won</option>
+                      <option value="Lost">❌ Mark as Lost</option>
+                      <option value="Under Evaluation">🔍 Under Evaluation</option>
+                      <option value="Ready to submit">📋 Ready to Submit</option>
+                      <option value="Submitted">🚀 Submit Bid</option>
+                      <option value="Technical Disqualified">⚠️ Disqualified</option>
+                      <option value="Award">📜 + Award LOA</option>
+                      <option value="Edit">✏️ Edit Scope</option>
+                    </select>
                   </div>
                 </td>
               </tr>
@@ -1276,6 +1657,31 @@ function filterTendersBySource(source, btnEl) {
       r.style.display = (rowSrc === targetSrc || rowSrc.includes(targetSrc)) ? '' : 'none';
     }
   });
+}
+
+async function handleTenderActionSelect(oppId, action, encodedTitle, estVal) {
+  if (!action) return;
+  const title = decodeURIComponent(encodedTitle || '');
+  switch (action) {
+    case 'Won':
+      await handleUpdateTenderStatus(oppId, 'Won', title, estVal);
+      break;
+    case 'Lost':
+      await handleUpdateTenderStatus(oppId, 'Lost', title, estVal);
+      break;
+    case 'Award':
+      promptAwardLetterModal(oppId, title);
+      break;
+    case 'Submitted':
+      await handleBidSubmission(oppId);
+      break;
+    case 'Edit':
+      openEditTenderModal(oppId);
+      break;
+    default:
+      await handleUpdateTenderStatus(oppId, action, title, estVal);
+      break;
+  }
 }
 
 async function handleBidSubmission(oppId) {
@@ -1354,7 +1760,7 @@ async function renderBidSecuritiesHTML() {
                 </td>
                 <td>${s.account_title}</td>
                 <td><strong>${s.beneficiary}</strong></td>
-                <td><strong>PKR ${parseFloat(s.amount).toLocaleString()}</strong></td>
+                <td><strong>${formatCurrency(s.amount, 'PKR')}</strong></td>
                 <td>${s.bank_name || 'Corporate Branch'}</td>
                 <td>${s.expiry_date}</td>
                 <td>
@@ -1362,9 +1768,9 @@ async function renderBidSecuritiesHTML() {
                 </td>
                 <td>
                   <div class="action-buttons-group">
-                    <button class="edit-btn" onclick="openEditEntityModal('bid-security', '${s.id}')">✏️ Edit</button>
+                    ${!State.isReadOnly() && State.hasPermission('bid-securities', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('bid-security', '${s.id}')">✏️ Edit</button>` : ''}
                     ${s.status === 'Active' ? `
-                      <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="handleReleaseBidSecurity('${s.id}')">🔓 Release</button>
+                      ${!State.isReadOnly() && State.hasPermission('bid-securities', 'edit') ? `<button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="handleReleaseBidSecurity('${s.id}')">🔓 Release</button>` : ''}
                     ` : `<span style="font-size:0.75rem; color:var(--text-muted);">Released / Closed</span>`}
                   </div>
                 </td>
@@ -1399,7 +1805,7 @@ async function renderAwardsHTML() {
       </div>
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
         <div class="kpi-title">Total Awarded Value</div>
-        <div class="kpi-value">PKR ${totalAwardValue.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalAwardValue, 'PKR')}</div>
         <div class="kpi-subtext">Consolidated contract revenue</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #3b82f6;">
@@ -1425,7 +1831,7 @@ async function renderAwardsHTML() {
             <tr>
               <th>Award / LOA #</th>
               <th>Won Tender & Customer</th>
-              <th>Awarded Amount (PKR)</th>
+              <th>Awarded Amount</th>
               <th>Item-Level Breakdown</th>
               <th>Stamp Duty (0.25%)</th>
               <th>Acceptance & Deadline</th>
@@ -1459,7 +1865,7 @@ async function renderAwardsHTML() {
                     <span style="font-size:0.78rem; color:#475569;">${a.customer_name || 'Government Client'}</span>
                   </td>
                   <td>
-                    <strong style="color:#059669; font-size:0.95rem;">PKR ${parseFloat(a.award_amount).toLocaleString()}</strong>
+                    <strong style="color:#059669; font-size:0.95rem;">${formatCurrency(a.award_amount, 'PKR')}</strong>
                   </td>
                   <td>
                     <span class="badge ${awardedItemsCount === itemsCount ? 'badge-won' : 'badge-sec-attached'}">
@@ -1471,8 +1877,8 @@ async function renderAwardsHTML() {
                     ${isSdPaid ? `
                       <span class="badge badge-won" style="font-size:0.75rem;">✓ Paid (Challan: ${a.stamp_duty_challan_no || 'Verified'})</span>
                     ` : `
-                      <span class="badge badge-loss" style="font-size:0.75rem; cursor:pointer;" onclick="openStampDutyModal('${a.id}', '${a.award_number}', ${stampDutyAmt})" title="Click to Record Stamp Duty E-Challan">
-                        ⚠️ Unpaid: PKR ${stampDutyAmt.toLocaleString()} (+ Pay)
+                      <span class="badge badge-loss" style="font-size:0.75rem; ${!State.isReadOnly() ? 'cursor:pointer;' : ''}" ${!State.isReadOnly() ? `onclick="openStampDutyModal('${a.id}', '${a.award_number}', ${stampDutyAmt})"` : ''} title="Record Stamp Duty E-Challan">
+                        ⚠️ Unpaid: ${formatCurrency(stampDutyAmt, 'PKR')} ${!State.isReadOnly() ? '(+ Pay)' : ''}
                       </span>
                     `}
                   </td>
@@ -1488,13 +1894,17 @@ async function renderAwardsHTML() {
                   </td>
                   <td>
                     <div class="action-buttons-group">
-                      <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#0284c7;" onclick="openNewPOModal('${a.id}')" title="Issue new PO against this Award">
-                        📦 + Create PO
-                      </button>
-                      <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="promptAttachPBGForAward('${a.id}', '${a.award_number}', ${parseFloat(a.award_amount || 0)})" title="Issue Performance Bank Guarantee">
-                        🏦 PBG
-                      </button>
-                      <button class="edit-btn" onclick="openEditEntityModal('award', '${a.id}')">✏️ Edit</button>
+                      ${!State.isReadOnly() && State.hasPermission('purchase-orders', 'add') ? `
+                        <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#0284c7;" onclick="openNewPOModal('${a.id}')" title="Issue new PO against this Award">
+                          📦 + Create PO
+                        </button>
+                      ` : ''}
+                      ${!State.isReadOnly() && State.hasPermission('awards', 'edit') ? `
+                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="promptAttachPBGForAward('${a.id}', '${a.award_number}', ${parseFloat(a.award_amount || 0)})" title="Issue Performance Bank Guarantee">
+                          🏦 PBG
+                        </button>
+                        <button class="edit-btn" onclick="openEditEntityModal('award', '${a.id}')">✏️ Edit</button>
+                      ` : ''}
                     </div>
                   </td>
                 </tr>
@@ -1509,7 +1919,7 @@ async function renderAwardsHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🏦 Bank Performance Guarantees (PBG / Performance Bonds)</div>
-        <button class="primary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openModal('modal-add-guarantee')">+ Issue Performance Guarantee</button>
+        ${!State.isReadOnly() && State.hasPermission('awards', 'add') ? `<button class="primary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openModal('modal-add-guarantee')">+ Issue Performance Guarantee</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -1518,7 +1928,7 @@ async function renderAwardsHTML() {
               <th>Guarantee / PBG No</th>
               <th>Contract / Award Ref</th>
               <th>Issuing Bank & Branch</th>
-              <th>Amount (PKR)</th>
+              <th>Amount</th>
               <th>Expiry Date</th>
               <th>Status</th>
               <th>Actions</th>
@@ -1537,14 +1947,14 @@ async function renderAwardsHTML() {
                 <td><strong>${g.guarantee_number}</strong></td>
                 <td>${g.contract_number || g.award_number || 'Contract Award'}</td>
                 <td>${g.bank_name || 'Bank Guarantee Branch'}</td>
-                <td><strong style="color:#059669;">PKR ${parseFloat(g.amount).toLocaleString()}</strong></td>
+                <td><strong style="color:#059669;">${formatCurrency(g.amount, 'PKR')}</strong></td>
                 <td>${g.expiry_date}</td>
                 <td><span class="badge badge-${g.status === 'Active' ? 'active' : 'released'}">${g.status}</span></td>
                 <td>
                   <div class="action-buttons-group">
-                    <button class="edit-btn" onclick="openEditEntityModal('guarantee', '${g.id}')">✏️ Edit</button>
+                    ${!State.isReadOnly() && State.hasPermission('awards', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('guarantee', '${g.id}')">✏️ Edit</button>` : ''}
                     ${g.status === 'Active' ? `
-                      <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="handleReleaseGuarantee('${g.id}')">🔓 Release</button>
+                      ${!State.isReadOnly() && State.hasPermission('awards', 'edit') ? `<button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="handleReleaseGuarantee('${g.id}')">🔓 Release</button>` : ''}
                     ` : `<span style="font-size:0.75rem; color:var(--text-muted);">Released</span>`}
                   </div>
                 </td>
@@ -1577,7 +1987,7 @@ async function renderPurchaseOrdersHTML() {
       </div>
       <div class="kpi-card" style="border-left: 4px solid #10b981;">
         <div class="kpi-title">Total PO Value Under Execution</div>
-        <div class="kpi-value">PKR ${totalPOValue.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalPOValue, 'PKR')}</div>
         <div class="kpi-subtext">Committed contract volume</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #3b82f6;">
@@ -1595,7 +2005,7 @@ async function renderPurchaseOrdersHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">📦 Customer Purchase Orders (1 Award ➔ N POs Engine)</div>
-        <button class="primary-btn" onclick="openNewPOModal()">+ Create Purchase Order</button>
+        ${!State.isReadOnly() && State.hasPermission('purchase-orders', 'add') ? `<button class="primary-btn" onclick="openNewPOModal()">+ Create Purchase Order</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -1644,10 +2054,10 @@ async function renderPurchaseOrdersHTML() {
                     <span style="font-size:0.75rem; color:var(--text-muted);">${po.department_name || ''}</span>
                   </td>
                   <td>
-                    <strong style="color:#0284c7; font-size:0.95rem;">PKR ${parseFloat(po.net_amount || po.total_amount || 0).toLocaleString()}</strong>
+                    <strong style="color:#0284c7; font-size:0.95rem;">${formatCurrency(po.net_amount || po.total_amount || 0, 'PKR')}</strong>
                     <div style="font-size:0.72rem; color:#64748b; margin-top:2px;">
-                      Subtotal: PKR ${parseFloat(po.subtotal || (parseFloat(po.net_amount || po.total_amount || 0) / 1.18)).toLocaleString()}<br>
-                      <span style="color:#059669; font-weight:600;">+ 18% GST: PKR ${parseFloat(po.gst_amount || po.tax_amount || (parseFloat(po.net_amount || po.total_amount || 0) - parseFloat(po.subtotal || 0))).toLocaleString()}</span>
+                      Subtotal: ${formatCurrency(po.subtotal || (parseFloat(po.net_amount || po.total_amount || 0) / 1.18), 'PKR')}<br>
+                      <span style="color:#059669; font-weight:600;">+ 18% GST: ${formatCurrency(po.gst_amount || po.tax_amount || (parseFloat(po.net_amount || po.total_amount || 0) - parseFloat(po.subtotal || 0)), 'PKR')}</span>
                     </div>
                   </td>
                   <td>
@@ -1662,10 +2072,15 @@ async function renderPurchaseOrdersHTML() {
                   </td>
                   <td>
                     <div class="action-buttons-group">
-                      <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#059669;" onclick="promptCreateDCForPO('${po.id}', '${po.po_number}')" title="Generate Delivery Challan for this PO">
-                        🚚 Dispatch DC
+                      <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem; background:#0284c7; color:white; font-weight:700;" onclick="open3WayMatchModal('${po.id}', '')" title="Audit 3-Way Match: PO vs DC/GRN vs Invoices">
+                        🔍 3-Way Match
                       </button>
-                      <button class="edit-btn" onclick="openEditEntityModal('purchase-order', '${po.id}')">✏️ Edit</button>
+                      ${!State.isReadOnly() && State.hasPermission('delivery-challans', 'add') ? `
+                        <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#059669;" onclick="promptCreateDCForPO('${po.id}', '${po.po_number}')" title="Generate Delivery Challan for this PO">
+                          🚚 Dispatch DC
+                        </button>
+                      ` : ''}
+                      ${!State.isReadOnly() && State.hasPermission('purchase-orders', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('purchase-order', '${po.id}')">✏️ Edit</button>` : ''}
                     </div>
                   </td>
                 </tr>
@@ -1705,12 +2120,12 @@ async function renderDeliveryChallansHTML() {
       </div>
       <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
         <div class="kpi-title">Contractor Freight Paid</div>
-        <div class="kpi-value">PKR ${totalFreightPaid.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalFreightPaid, 'PKR')}</div>
         <div class="kpi-subtext">Borne logistics expense</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
         <div class="kpi-title">Customs & Handling Paid</div>
-        <div class="kpi-value">PKR ${totalCustomsPaid.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalCustomsPaid, 'PKR')}</div>
         <div class="kpi-subtext">Port clearance expense</div>
       </div>
     </div>
@@ -1718,7 +2133,7 @@ async function renderDeliveryChallansHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🚚 Supply Delivery Challans (Warehouse & Drop-Shipments)</div>
-        <button class="primary-btn" onclick="openNewDCModal()">+ Dispatch New Delivery Challan</button>
+        ${!State.isReadOnly() && State.hasPermission('delivery-challans', 'add') ? `<button class="primary-btn" onclick="openNewDCModal()">+ Dispatch New Delivery Challan</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -1776,9 +2191,9 @@ async function renderDeliveryChallansHTML() {
                   </td>
                   <td>
                     <span style="font-size:0.82rem; font-weight:700; color:#b45309;">
-                      PKR ${parseFloat(dc.freight_cost_contractor || dc.delivery_cost || 0).toLocaleString()}
+                      ${formatCurrency(dc.freight_cost_contractor || dc.delivery_cost || 0, 'PKR')}
                     </span>
-                    ${dc.customs_handling_cost && parseFloat(dc.customs_handling_cost) > 0 ? `<br><span style="font-size:0.72rem; color:var(--text-muted);">+ PKR ${parseFloat(dc.customs_handling_cost).toLocaleString()} Customs</span>` : ''}
+                    ${dc.customs_handling_cost && parseFloat(dc.customs_handling_cost) > 0 ? `<br><span style="font-size:0.72rem; color:var(--text-muted);">+ ${formatCurrency(dc.customs_handling_cost, 'PKR')} Customs</span>` : ''}
                   </td>
                   <td>
                     <span style="font-size:0.82rem;">
@@ -1796,15 +2211,17 @@ async function renderDeliveryChallansHTML() {
                       <button type="button" class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#0f172a; color:white;" onclick="printDeliveryChallan('${dc.id}')" title="Print Official A4 Letterhead Delivery Challan">
                         🖨️ Print DC
                       </button>
-                      <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669;" onclick="promptGenerateInvoiceFromDC('${dc.id}', '${dc.dc_number}', '${dc.customer_name}')" title="Generate commercial invoice for this DC">
-                        🧾 Invoice
-                      </button>
-                      ${!isDelivered ? `
+                      ${!State.isReadOnly() && State.hasPermission('invoices', 'add') ? `
+                        <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669;" onclick="promptGenerateInvoiceFromDC('${dc.id}', '${dc.dc_number}', '${dc.customer_name}')" title="Generate commercial invoice for this DC">
+                          🧾 Invoice
+                        </button>
+                      ` : ''}
+                      ${!isDelivered && !State.isReadOnly() && State.hasPermission('delivery-challans', 'edit') ? `
                         <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="promptRecordCustomerGRN('${dc.id}', '${dc.dc_number}')" title="Record Signed GRN">
                           📋 GRN
                         </button>
                       ` : ''}
-                      <button class="edit-btn" onclick="openEditEntityModal('delivery-challan', '${dc.id}')">✏️ Edit</button>
+                      ${!State.isReadOnly() && State.hasPermission('delivery-challans', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('delivery-challan', '${dc.id}')">✏️ Edit</button>` : ''}
                     </div>
                   </td>
                 </tr>
@@ -1835,17 +2252,17 @@ async function renderInvoicesHTML() {
     <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
         <div class="kpi-title">Total Invoiced (Billed)</div>
-        <div class="kpi-value">PKR ${totalBilled.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalBilled, 'PKR')}</div>
         <div class="kpi-subtext">${invoices.length} Invoices Generated</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #10b981;">
         <div class="kpi-title">Total Payments Collected</div>
-        <div class="kpi-value">PKR ${totalPaid.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalPaid, 'PKR')}</div>
         <div class="kpi-subtext">Realized Cash Inflow</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #ef4444;">
         <div class="kpi-title">Outstanding Receivables</div>
-        <div class="kpi-value">PKR ${totalReceivable.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalReceivable, 'PKR')}</div>
         <div class="kpi-subtext">Pending Customer Dues</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
@@ -1907,31 +2324,31 @@ async function renderInvoicesHTML() {
                     <span style="font-size:0.72rem; color:#475569;">📍 ${p.delivery_location || 'Site'}</span>
                   </td>
                   <td>
-                    <strong style="color:#0284c7; font-size:0.95rem;">PKR ${poVal.toLocaleString()}</strong>
+                    <strong style="color:#0284c7; font-size:0.95rem;">${formatCurrency(poVal, 'PKR')}</strong>
                     <div style="font-size:0.72rem; color:#64748b; margin-top:2px;">
-                      Subtotal: PKR ${(parseFloat(p.subtotal || (poVal / 1.18))).toLocaleString()}<br>
-                      <span style="color:#059669; font-weight:600;">+ 18% GST: PKR ${(parseFloat(p.gst_amount || p.tax_amount || (poVal - parseFloat(p.subtotal || (poVal / 1.18))))).toLocaleString()}</span>
+                      Subtotal: ${formatCurrency(p.subtotal || (poVal / 1.18), 'PKR')}<br>
+                      <span style="color:#059669; font-weight:600;">+ 18% GST: ${formatCurrency(p.gst_amount || p.tax_amount || (poVal - parseFloat(p.subtotal || (poVal / 1.18))), 'PKR')}</span>
                     </div>
                   </td>
                   <td>
-                    <strong>PKR ${poInvoicedTotal.toLocaleString()}</strong>
+                    <strong>${formatCurrency(poInvoicedTotal, 'PKR')}</strong>
                     <div style="font-size:0.72rem; color:#64748b;">${billedPct}% of PO Billed (${poInvs.length} Invs)</div>
                   </td>
                   <td>
-                    <strong style="color:#059669;">PKR ${poPaidTotal.toLocaleString()}</strong>
+                    <strong style="color:#059669;">${formatCurrency(poPaidTotal, 'PKR')}</strong>
                     <div style="font-size:0.72rem; color:#64748b;">${paidPct}% Collected</div>
                   </td>
                   <td>
-                    <strong style="color:${poOutstanding > 0 ? '#dc2626' : '#64748b'};">PKR ${poOutstanding.toLocaleString()}</strong>
+                    <strong style="color:${poOutstanding > 0 ? '#dc2626' : '#64748b'};">${formatCurrency(poOutstanding, 'PKR')}</strong>
                   </td>
                   <td>
-                    <span style="color:#b45309; font-weight:600;">PKR ${poDirectCost.toLocaleString()}</span>
+                    <span style="color:#b45309; font-weight:600;">${formatCurrency(poDirectCost, 'PKR')}</span>
                   </td>
                   <td>
                     <strong style="color:${poNetProfit >= 0 ? '#059669' : '#dc2626'}; font-size:0.9rem;">
-                      PKR ${poNetProfit.toLocaleString()}
+                      ${formatCurrency(poNetProfit, 'PKR')}
                     </strong>
-                    <span class="badge ${poNetProfit >= 0 ? 'badge-won' : 'badge-withdraw'}" style="font-size:0.7rem; margin-left:4px;">${poMarginPct}%</span>
+                    <span class="badge ${poNetProfit >= 0 ? 'badge-won' : 'badge-withdraw'}" style="font-size:0.7rem; margin-left:4px;">${State.canSeeBiddingPrices() ? `${poMarginPct}%` : '🔒'}</span>
                   </td>
                 </tr>
               `;
@@ -1945,7 +2362,7 @@ async function renderInvoicesHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🧾 Commercial Invoices & FBR Tax Registry</div>
-        <button class="primary-btn" onclick="openModal('modal-add-payment')">💵 Record Cheque Payment</button>
+        ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="primary-btn" onclick="openModal('modal-add-payment')">💵 Record Cheque Payment</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -1973,29 +2390,36 @@ async function renderInvoicesHTML() {
                 </td>
                 <td>${inv.customer_name}</td>
                 <td>${inv.invoice_date}</td>
-                <td><strong>PKR ${parseFloat(inv.total_amount).toLocaleString()}</strong></td>
-                <td style="color:#059669; font-weight:600;">PKR ${parseFloat(inv.paid_amount || 0).toLocaleString()}</td>
-                <td style="color:#dc2626; font-weight:700;">PKR ${parseFloat(inv.outstanding_amount !== undefined ? inv.outstanding_amount : (parseFloat(inv.total_amount || 0) - parseFloat(inv.paid_amount || 0))).toLocaleString()}</td>
+                <td><strong>${formatCurrency(inv.total_amount, 'PKR')}</strong></td>
+                <td style="color:#059669; font-weight:600;">${formatCurrency(inv.paid_amount || 0, 'PKR')}</td>
+                <td style="color:#dc2626; font-weight:700;">${formatCurrency(inv.outstanding_amount !== undefined ? inv.outstanding_amount : (parseFloat(inv.total_amount || 0) - parseFloat(inv.paid_amount || 0)), 'PKR')}</td>
                 <td>
-                  <select style="font-size:0.75rem; padding:2px 4px; border-radius:4px; border:1px solid var(--border);" onchange="handleInvoiceStatusChange('${inv.id}', this.value)">
-                    <option value="Submitted" ${inv.status === 'Submitted' ? 'selected' : ''}>Submitted</option>
-                    <option value="Reinvoicing" ${inv.status === 'Reinvoicing' ? 'selected' : ''}>Reinvoicing</option>
-                    <option value="Pending" ${inv.status === 'Pending' ? 'selected' : ''}>Pending</option>
-                    <option value="Hold" ${inv.status === 'Hold' ? 'selected' : ''}>Hold</option>
-                    <option value="Paid" ${inv.status === 'Paid' ? 'selected' : ''}>Paid</option>
-                  </select>
+                  ${!State.isReadOnly() && State.hasPermission('invoices', 'edit') ? `
+                    <select style="font-size:0.75rem; padding:2px 4px; border-radius:4px; border:1px solid var(--border);" onchange="handleInvoiceStatusChange('${inv.id}', this.value)">
+                      <option value="Submitted" ${inv.status === 'Submitted' ? 'selected' : ''}>Submitted</option>
+                      <option value="Reinvoicing" ${inv.status === 'Reinvoicing' ? 'selected' : ''}>Reinvoicing</option>
+                      <option value="Pending" ${inv.status === 'Pending' ? 'selected' : ''}>Pending</option>
+                      <option value="Hold" ${inv.status === 'Hold' ? 'selected' : ''}>Hold</option>
+                      <option value="Paid" ${inv.status === 'Paid' ? 'selected' : ''}>Paid</option>
+                    </select>
+                  ` : `<span class="badge badge-active">${inv.status || 'Submitted'}</span>`}
                 </td>
                 <td>
                   ${inv.fbr_status === 'FBR Validated' ? `
                     <span class="badge badge-fbr">✓ Validated</span>
                   ` : `
-                    <button class="secondary-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="handleFBRSubmit('${inv.id}')">Submit FBR</button>
+                    ${!State.isReadOnly() && State.hasPermission('invoices', 'edit') ? `<button class="secondary-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="handleFBRSubmit('${inv.id}')">Submit FBR</button>` : `<span style="font-size:0.75rem; color:var(--text-muted);">Unvalidated</span>`}
                   `}
                 </td>
                 <td>
                   <div class="action-buttons-group">
-                    <button class="edit-btn" onclick="openEditEntityModal('invoice', '${inv.id}')">✏️ Edit</button>
-                    <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="promptRecordPaymentForInvoice('${inv.id}', '${inv.invoice_number}', '${inv.outstanding_amount !== undefined ? inv.outstanding_amount : (parseFloat(inv.total_amount || 0) - parseFloat(inv.paid_amount || 0))}')">💵 Pay</button>
+                    <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; background:#0284c7; color:white; font-weight:700;" onclick="open3WayMatchModal('${inv.purchase_order_id || ''}', '${inv.id}')" title="Audit 3-Way Match for this Invoice">
+                      🔍 3-Way Match
+                    </button>
+                    ${!State.isReadOnly() && State.hasPermission('invoices', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('invoice', '${inv.id}')">✏️ Edit</button>` : ''}
+                    ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `
+                      <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="promptRecordPaymentForInvoice('${inv.id}', '${inv.invoice_number}', '${inv.outstanding_amount !== undefined ? inv.outstanding_amount : (parseFloat(inv.total_amount || 0) - parseFloat(inv.paid_amount || 0))}')">💵 Pay</button>
+                    ` : ''}
                   </div>
                 </td>
               </tr>
@@ -2018,7 +2442,7 @@ async function renderPaymentsHTML() {
       <p style="color:var(--text-muted); font-size:0.9rem;">
         Cheque details (Check No, Check From, Invoice Number) are tracked and automatically deducted from customer balance.
       </p>
-      <button class="primary-btn" onclick="openModal('modal-add-payment')">+ Record Cheque Receipt</button>
+      ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="primary-btn" onclick="openModal('modal-add-payment')">+ Record Cheque Receipt</button>` : ''}
     </div>
 
     <div class="card">
@@ -2049,10 +2473,10 @@ async function renderPaymentsHTML() {
                 <td><strong style="color:var(--primary);">${p.check_no || 'Direct Transfer'}</strong></td>
                 <td>${p.check_from || p.customer_name}</td>
                 <td>${p.bank_account || 'Primary Bank Account'}</td>
-                <td><strong style="color:#059669; font-size:0.95rem;">PKR ${parseFloat(p.amount).toLocaleString()}</strong></td>
+                <td><strong style="color:#059669; font-size:0.95rem;">${formatCurrency(p.amount, 'PKR')}</strong></td>
                 <td>${p.payment_date}</td>
                 <td>
-                  <button class="edit-btn" onclick="openEditEntityModal('payment', '${p.id}')">✏️ Edit</button>
+                  ${!State.isReadOnly() && State.hasPermission('payments', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('payment', '${p.id}')">✏️ Edit</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -2094,7 +2518,7 @@ async function renderInventoryHTML() {
     <div class="card" style="margin-bottom:24px;">
       <div class="card-header">
         <div class="card-title">🏬 Warehouse Locations</div>
-        <button class="secondary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openNewWarehouseModal()">+ Add Warehouse</button>
+        ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `<button class="secondary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openNewWarehouseModal()">+ Add Warehouse</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -2117,7 +2541,7 @@ async function renderInventoryHTML() {
                 <td>${w.contact_phone || '042-3581920'}</td>
                 <td><span class="badge badge-ready">${w.total_tx_count || 0} Movements</span></td>
                 <td>
-                  <button class="edit-btn" onclick="openEditEntityModal('warehouse', '${w.id}')">✏️ Edit</button>
+                  ${!State.isReadOnly() && State.hasPermission('inventory', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('warehouse', '${w.id}')">✏️ Edit</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -2152,10 +2576,10 @@ async function renderInventoryHTML() {
                 <td>${pr.supplier_name}</td>
                 <td>${pr.origin_country || 'Pakistan'}</td>
                 <td>${pr.currency || 'PKR'}</td>
-                <td><strong>PKR ${parseFloat(pr.total_landed_cost).toLocaleString()}</strong></td>
+                <td><strong>${formatCurrency(pr.total_landed_cost, 'PKR')}</strong></td>
                 <td><span class="badge badge-won">${pr.status}</span></td>
                 <td>
-                  <button class="edit-btn" onclick="openEditEntityModal('procurement', '${pr.id}')">✏️ Edit</button>
+                  ${!State.isReadOnly() && State.hasPermission('inventory', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('procurement', '${pr.id}')">✏️ Edit</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -2187,22 +2611,22 @@ async function renderExpensesHTML() {
     <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
         <div class="kpi-title">Total Expenditures</div>
-        <div class="kpi-value">PKR ${totalAll.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalAll, 'PKR')}</div>
         <div class="kpi-subtext">${expenses.length} Logged Transactions</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #0284c7;">
         <div class="kpi-title">🎯 Tier 1: Tender & Bidding Direct</div>
-        <div class="kpi-value">PKR ${totalTier1.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalTier1, 'PKR')}</div>
         <div class="kpi-subtext">Gifting, Samples, Testing, Bidding Travel</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
         <div class="kpi-title">🚚 Tier 2: PO Logistics & Freight</div>
-        <div class="kpi-value">PKR ${totalTier2.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalTier2, 'PKR')}</div>
         <div class="kpi-subtext">3PL Freight, Customs, Port Demurrage</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #64748b;">
         <div class="kpi-title">🏢 Tier 3: General Overheads</div>
-        <div class="kpi-value">PKR ${totalTier3.toLocaleString()}</div>
+        <div class="kpi-value">${formatCurrency(totalTier3, 'PKR')}</div>
         <div class="kpi-subtext">Salaries, Rent, Utilities, Admin</div>
       </div>
     </div>
@@ -2210,7 +2634,7 @@ async function renderExpensesHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">💳 3-Tier Company & Project Expenditure Ledger</div>
-        <button class="primary-btn" onclick="openExpenseModal()">+ Record Expenditure</button>
+        ${!State.isReadOnly() && State.hasPermission('expenses', 'add') ? `<button class="primary-btn" onclick="openExpenseModal()">+ Record Expenditure</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -2219,7 +2643,7 @@ async function renderExpensesHTML() {
               <th>Tier & Classification</th>
               <th>Expense Title / Details</th>
               <th>Category</th>
-              <th>Amount (PKR)</th>
+              <th>Amount</th>
               <th>Date</th>
               <th>Paid To</th>
               <th>Attributed Project / PO</th>
@@ -2265,14 +2689,14 @@ async function renderExpensesHTML() {
                     <span class="badge badge-sec-attached" style="font-size:0.72rem;">${e.category}</span>
                   </td>
                   <td>
-                    <strong style="color:#b45309; font-size:0.92rem;">PKR ${parseFloat(e.amount).toLocaleString()}</strong>
+                    <strong style="color:#b45309; font-size:0.92rem;">${formatCurrency(e.amount, 'PKR')}</strong>
                   </td>
                   <td>${e.expense_date || 'Today'}</td>
                   <td><strong>${e.paid_to || 'Vendor'}</strong></td>
                   <td>${projectRef}</td>
                   <td><span class="pill-source" style="font-size:0.72rem;">${e.payment_mode || 'Online'}</span></td>
                   <td>
-                    <button class="edit-btn" onclick="openEditEntityModal('expense', '${e.id}')">✏️ Edit</button>
+                    ${!State.isReadOnly() && State.hasPermission('expenses', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('expense', '${e.id}')">✏️ Edit</button>` : ''}
                   </td>
                 </tr>
               `;
@@ -2334,17 +2758,17 @@ async function renderReportsHTML() {
       <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
         <div class="kpi-card" style="border-left: 4px solid var(--primary);">
           <div class="kpi-title">Total Contracts Value</div>
-          <div class="kpi-value">PKR ${totalContractVal.toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(totalContractVal, 'PKR')}</div>
           <div class="kpi-subtext">Executed Project Volume</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #10b981;">
           <div class="kpi-title">Net Realized Profit</div>
-          <div class="kpi-value">PKR ${totalNetProfit.toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(totalNetProfit, 'PKR')}</div>
           <div class="kpi-subtext">After all direct & logistics expenses</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
           <div class="kpi-title">Average Net Margin</div>
-          <div class="kpi-value">${profitability.length > 0 ? (profitability.reduce((s, p) => s + parseFloat(p.profit_margin_pct || 0), 0) / profitability.length).toFixed(1) : 0}%</div>
+          <div class="kpi-value">${State.canSeeBiddingPrices() ? (profitability.length > 0 ? (profitability.reduce((s, p) => s + parseFloat(p.profit_margin_pct || 0), 0) / profitability.length).toFixed(1) : 0) + '%' : '🔒'}</div>
           <div class="kpi-subtext">Gross to Net margin retention</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
@@ -2378,12 +2802,12 @@ async function renderReportsHTML() {
                 <tr>
                   <td><strong>${p.contract_number}</strong></td>
                   <td>${p.customer_name}</td>
-                  <td><strong>PKR ${parseFloat(p.contract_value).toLocaleString()}</strong></td>
-                  <td>PKR ${parseFloat(p.invoiced_amount).toLocaleString()}</td>
-                  <td style="color:#059669; font-weight:600;">PKR ${parseFloat(p.received_payment).toLocaleString()}</td>
-                  <td style="color:#dc2626;">PKR ${parseFloat(p.allocated_expenses).toLocaleString()}</td>
-                  <td><strong style="color:#059669; font-size:0.95rem;">PKR ${parseFloat(p.net_profit).toLocaleString()}</strong></td>
-                  <td><span class="badge badge-won">${p.profit_margin_pct}%</span></td>
+                  <td><strong>${formatCurrency(p.contract_value, 'PKR')}</strong></td>
+                  <td>${formatCurrency(p.invoiced_amount, 'PKR')}</td>
+                  <td style="color:#059669; font-weight:600;">${formatCurrency(p.received_payment, 'PKR')}</td>
+                  <td style="color:#dc2626;">${formatCurrency(p.allocated_expenses, 'PKR')}</td>
+                  <td><strong style="color:#059669; font-size:0.95rem;">${formatCurrency(p.net_profit, 'PKR')}</strong></td>
+                  <td><span class="badge badge-won">${State.canSeeBiddingPrices() ? `${p.profit_margin_pct}%` : '🔒'}</span></td>
                   <td><span class="badge badge-active">${p.contract_status}</span></td>
                 </tr>
               `).join('')}
@@ -2398,22 +2822,22 @@ async function renderReportsHTML() {
       <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
         <div class="kpi-card" style="border-left: 4px solid #ef4444;">
           <div class="kpi-title">Total Outstanding Dues</div>
-          <div class="kpi-value">PKR ${totalReceivables.toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(totalReceivables, 'PKR')}</div>
           <div class="kpi-subtext">${pendingBills.length} Pending Invoices</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #10b981;">
           <div class="kpi-title">Current (0–30 Days)</div>
-          <div class="kpi-value">PKR ${pendingBills.filter(b => (b.days_outstanding || 0) <= 30).reduce((s, b) => s + parseFloat(b.outstanding_amount || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(pendingBills.filter(b => (b.days_outstanding || 0) <= 30).reduce((s, b) => s + parseFloat(b.outstanding_amount || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Within standard credit term</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
           <div class="kpi-title">Overdue (31–60 Days)</div>
-          <div class="kpi-value">PKR ${pendingBills.filter(b => (b.days_outstanding || 0) > 30 && (b.days_outstanding || 0) <= 60).reduce((s, b) => s + parseFloat(b.outstanding_amount || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(pendingBills.filter(b => (b.days_outstanding || 0) > 30 && (b.days_outstanding || 0) <= 60).reduce((s, b) => s + parseFloat(b.outstanding_amount || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Follow-up reminder stage</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #b91c1c;">
           <div class="kpi-title">Critical (60+ Days)</div>
-          <div class="kpi-value">PKR ${pendingBills.filter(b => (b.days_outstanding || 0) > 60).reduce((s, b) => s + parseFloat(b.outstanding_amount || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(pendingBills.filter(b => (b.days_outstanding || 0) > 60).reduce((s, b) => s + parseFloat(b.outstanding_amount || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Escalation required</div>
         </div>
       </div>
@@ -2454,12 +2878,14 @@ async function renderReportsHTML() {
                       <span style="font-size:0.72rem; color:var(--text-muted);">${b.customer_org_type || 'Government Department'}</span>
                     </td>
                     <td>${b.invoice_date}</td>
-                    <td>PKR ${parseFloat(b.total_amount).toLocaleString()}</td>
-                    <td><strong style="color:#dc2626; font-size:0.95rem;">PKR ${parseFloat(b.outstanding_amount).toLocaleString()}</strong></td>
+                    <td>${formatCurrency(b.total_amount, 'PKR')}</td>
+                    <td><strong style="color:#dc2626; font-size:0.95rem;">${formatCurrency(b.outstanding_amount, 'PKR')}</strong></td>
                     <td>${agingBadge}</td>
                     <td><span class="badge badge-fbr">✓ Validated</span></td>
                     <td>
-                      <button class="primary-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="promptRecordPaymentForInvoice('${b.id || ''}', '${b.invoice_number}', '${b.outstanding_amount}')">💵 Pay</button>
+                      ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `
+                        <button class="primary-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="promptRecordPaymentForInvoice('${b.id || ''}', '${b.invoice_number}', '${b.outstanding_amount}')">💵 Pay</button>
+                      ` : ''}
                     </td>
                   </tr>
                 `;
@@ -2475,17 +2901,17 @@ async function renderReportsHTML() {
       <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
         <div class="kpi-card" style="border-left: 4px solid #3b82f6;">
           <div class="kpi-title">Bank Credit Guarantee Limit</div>
-          <div class="kpi-value">PKR 100,000,000</div>
+          <div class="kpi-value">${formatCurrency(100000000, 'PKR')}</div>
           <div class="kpi-subtext">Approved Corporate Facility</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #ef4444;">
           <div class="kpi-title">Active Blocked Securities</div>
-          <div class="kpi-value">PKR ${totalActiveSecurities.toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(totalActiveSecurities, 'PKR')}</div>
           <div class="kpi-subtext">Under Active Bidding & PBG</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #10b981;">
           <div class="kpi-title">Available Bank Credit Line</div>
-          <div class="kpi-value">PKR ${(100000000 - totalActiveSecurities).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(100000000 - totalActiveSecurities, 'PKR')}</div>
           <div class="kpi-subtext">Ready for new tender CDRs</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
@@ -2506,7 +2932,7 @@ async function renderReportsHTML() {
                 <th>Security / CDR #</th>
                 <th>Instrument Type</th>
                 <th>Issuing Bank</th>
-                <th>Amount (PKR)</th>
+                <th>Amount</th>
                 <th>Tender Ref</th>
                 <th>Expiry Date</th>
                 <th>Status</th>
@@ -2518,7 +2944,7 @@ async function renderReportsHTML() {
                   <td><strong>${s.security_number}</strong></td>
                   <td><span class="pill-source">${s.security_type || 'CDR / Bank Guarantee'}</span></td>
                   <td>${s.bank_name}</td>
-                  <td><strong>PKR ${parseFloat(s.amount).toLocaleString()}</strong></td>
+                  <td><strong>${formatCurrency(s.amount, 'PKR')}</strong></td>
                   <td>${s.opportunity_number || 'Tender Bidding'}</td>
                   <td>${s.expiry_date}</td>
                   <td>
@@ -2552,7 +2978,7 @@ async function renderReportsHTML() {
         </div>
         <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
           <div class="kpi-title">Average Landed Cost</div>
-          <div class="kpi-value">PKR ${procurements.length > 0 ? (procurements.reduce((s, p) => s + parseFloat(p.total_landed_cost || 0), 0) / procurements.length).toLocaleString() : '0'}</div>
+          <div class="kpi-value">${formatCurrency(procurements.length > 0 ? (procurements.reduce((s, p) => s + parseFloat(p.total_landed_cost || 0), 0) / procurements.length) : 0, 'PKR')}</div>
           <div class="kpi-subtext">Including customs & freight</div>
         </div>
       </div>
@@ -2607,12 +3033,12 @@ async function renderReportsHTML() {
         </div>
         <div class="kpi-card" style="border-left: 4px solid #10b981;">
           <div class="kpi-title">Total Won Volume</div>
-          <div class="kpi-value">PKR ${opps.filter(o => o.status === 'won').reduce((s, o) => s + parseFloat(o.estimated_value || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(opps.filter(o => o.status === 'won').reduce((s, o) => s + parseFloat(o.estimated_value || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Contracted Project Value</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #dc2626;">
           <div class="kpi-title">Lost Tenders Volume</div>
-          <div class="kpi-value">PKR ${opps.filter(o => o.status === 'loose').reduce((s, o) => s + parseFloat(o.estimated_value || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(opps.filter(o => o.status === 'loose').reduce((s, o) => s + parseFloat(o.estimated_value || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Competitor Capture</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
@@ -2633,8 +3059,8 @@ async function renderReportsHTML() {
                 <th>Tender Reference</th>
                 <th>Outcome / Stage</th>
                 <th>Winning Competitor</th>
-                <th>Winning Bid (PKR)</th>
-                <th>Our Bid (PKR)</th>
+                <th>Winning Bid</th>
+                <th>Our Bid</th>
                 <th>Price Gap / Variance</th>
                 <th>Grievance Status</th>
                 <th>Evaluation Date</th>
@@ -2648,9 +3074,9 @@ async function renderReportsHTML() {
                   <td><strong>${ev.opportunity_id || 'Tender Ref'}</strong></td>
                   <td><span class="badge badge-withdraw">${ev.disqualification_stage || ev.loss_reason || 'Lost'}</span></td>
                   <td><strong>${ev.competitor_name || 'L1 Competitor'}</strong></td>
-                  <td>PKR ${parseFloat(ev.competitor_bid_amount || 0).toLocaleString()}</td>
-                  <td>PKR ${parseFloat(ev.our_bid_amount || 0).toLocaleString()}</td>
-                  <td><strong style="color:#dc2626;">PKR ${parseFloat(ev.variance_amount || 0).toLocaleString()}</strong></td>
+                  <td>${formatCurrency(ev.competitor_bid_amount || 0, 'PKR')}</td>
+                  <td>${formatCurrency(ev.our_bid_amount || 0, 'PKR')}</td>
+                  <td><strong style="color:#dc2626;">${formatCurrency(ev.variance_amount || 0, 'PKR')}</strong></td>
                   <td>
                     ${ev.grievance_filed ? `<span class="badge badge-hold">⚖️ ${ev.grievance_status || 'Under Review'}</span>` : '<span style="color:#64748b;">None</span>'}
                   </td>
@@ -2668,22 +3094,22 @@ async function renderReportsHTML() {
       <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
         <div class="kpi-card" style="border-left: 4px solid var(--primary);">
           <div class="kpi-title">Total Company Expenses</div>
-          <div class="kpi-value">PKR ${expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">${expenses.length} Logged Items</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #0284c7;">
           <div class="kpi-title">🎯 Tier 1: Tender Pre-Bid Direct</div>
-          <div class="kpi-value">PKR ${expenses.filter(e => e.expense_tier === 'Tier 1 - Tender Direct' || e.opportunity_id).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(expenses.filter(e => e.expense_tier === 'Tier 1 - Tender Direct' || e.opportunity_id).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Gifting, Samples, Lab Testing, Travel</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
           <div class="kpi-title">🚚 Tier 2: PO Logistics & Freight</div>
-          <div class="kpi-value">PKR ${expenses.filter(e => e.expense_tier === 'Tier 2 - PO Execution' || e.purchase_order_id || e.delivery_challan_id).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(expenses.filter(e => e.expense_tier === 'Tier 2 - PO Execution' || e.purchase_order_id || e.delivery_challan_id).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">3PL Freight, Customs, Port Demurrage</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid #64748b;">
           <div class="kpi-title">🏢 Tier 3: General Overheads</div>
-          <div class="kpi-value">PKR ${expenses.filter(e => e.expense_tier === 'Tier 3 - General Overheads' || (!e.opportunity_id && !e.purchase_order_id && !e.delivery_challan_id)).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0).toLocaleString()}</div>
+          <div class="kpi-value">${formatCurrency(expenses.filter(e => e.expense_tier === 'Tier 3 - General Overheads' || (!e.opportunity_id && !e.purchase_order_id && !e.delivery_challan_id)).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), 'PKR')}</div>
           <div class="kpi-subtext">Salaries, Rent, Utilities, Admin</div>
         </div>
       </div>
@@ -2699,7 +3125,7 @@ async function renderReportsHTML() {
                 <th>Tier & Stage</th>
                 <th>Expense Category</th>
                 <th>Expense Title</th>
-                <th>Amount (PKR)</th>
+                <th>Amount</th>
                 <th>Paid To / Vendor</th>
                 <th>Attributed Project / PO</th>
                 <th>Date</th>
@@ -2711,10 +3137,10 @@ async function renderReportsHTML() {
                   <td><span class="badge badge-sec-attached">${e.expense_tier || e.expense_type || 'Direct'}</span></td>
                   <td><strong>${e.category}</strong></td>
                   <td>${e.expense_name}</td>
-                  <td><strong style="color:#b45309;">PKR ${parseFloat(e.amount).toLocaleString()}</strong></td>
+                  <td><strong style="color:#b45309;">${formatCurrency(e.amount, 'PKR')}</strong></td>
                   <td>${e.paid_to || 'Vendor'}</td>
                   <td>${e.opportunity_number || e.po_number || 'General Overhead'}</td>
-                  <td>${e.expense_date}</td>
+                  <td>${e.expense_date || 'Today'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -3055,7 +3481,7 @@ async function renderProductsHTML() {
               <th>SKU / Item Code</th>
               <th>Item Name & Specifications</th>
               <th>Type & UOM</th>
-              <th>Country & HS Code</th>
+              <th>Batch & Shelf Life Expiry</th>
               <th>Landed Cost Price</th>
               <th>Benchmark Selling Rate</th>
               <th>Current Stock</th>
@@ -3080,6 +3506,21 @@ async function renderProductsHTML() {
               const lossAmt = costPrice - sellingPrice;
               const lossPct = costPrice > 0 ? ((lossAmt / costPrice) * 100).toFixed(1) : '0';
 
+              // Shelf Life Expiry Status
+              let expiryPill = '';
+              if (p.expiry_date) {
+                const expDate = new Date(p.expiry_date);
+                const now = new Date();
+                const daysLeft = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysLeft < 0) {
+                  expiryPill = `<span class="badge badge-withdraw" style="font-size:0.7rem; background:#fee2e2; color:#b91c1c;">🔴 Expired (${p.expiry_date})</span>`;
+                } else if (daysLeft <= 60) {
+                  expiryPill = `<span class="badge badge-hold" style="font-size:0.7rem; background:#fef3c7; color:#92400e;">🟡 Expiring in ${daysLeft}d</span>`;
+                } else {
+                  expiryPill = `<span class="badge badge-won" style="font-size:0.7rem;">🟢 Fresh (Exp: ${p.expiry_date})</span>`;
+                }
+              }
+
               return `
                 <tr class="${isLoss ? 'loss-row' : ''}">
                   <td><strong><code>${p.sku || 'SKU'}</code></strong></td>
@@ -3092,18 +3533,18 @@ async function renderProductsHTML() {
                     <span style="font-size:0.8rem; font-weight:600;">${p.unit || 'PCS'}</span>
                   </td>
                   <td>
-                    <span style="font-size:0.82rem;">
-                      ${p.country_of_origin || 'Pakistan'}<br>
-                      ${p.hs_code ? `<code>HS: ${p.hs_code}</code>` : ''}
+                    <span style="font-size:0.8rem; font-weight:600; color:#1e293b;">
+                      ${p.batch_number || p.batch_no ? `<code>Batch: ${p.batch_number || p.batch_no}</code><br>` : '<span style="color:#94a3b8; font-size:0.75rem;">Standard Lot</span><br>'}
                     </span>
+                    ${expiryPill || '<span style="font-size:0.75rem; color:#64748b;">No Expiry</span>'}
                   </td>
                   <td>
-                    <span style="font-weight:600;">PKR ${costPrice.toLocaleString()}</span><br>
+                    <span style="font-weight:600;">${formatCurrency(costPrice, 'PKR')}</span><br>
                     ${p.cost_price_foreign && p.currency && p.currency !== 'PKR' ? `<span style="font-size:0.72rem; color:var(--text-muted);">${p.currency} ${parseFloat(p.cost_price_foreign).toLocaleString()}</span>` : ''}
                   </td>
                   <td>
-                    <strong class="${isLoss ? 'loss-text' : ''}">PKR ${sellingPrice.toLocaleString()}</strong>
-                    ${isLoss ? `<br><span class="badge badge-loss" title="Loss detected: Selling Price is lower than Landed Cost Price!">⚠️ Loss: -PKR ${lossAmt.toLocaleString()} (-${lossPct}%)</span>` : ''}
+                    <strong class="${isLoss ? 'loss-text' : ''}">${formatCurrency(sellingPrice, 'PKR')}</strong>
+                    ${isLoss ? `<br><span class="badge badge-loss" title="Loss detected: Selling Price is lower than Landed Cost Price!">⚠️ Loss: -${formatCurrency(lossAmt, 'PKR')} (-${lossPct}%)</span>` : ''}
                   </td>
                   <td>
                     <span class="badge ${isLowStock ? 'badge-withdraw' : 'badge-won'}">
@@ -3183,7 +3624,7 @@ async function renderBusinessProfilesHTML() {
                   ${idx < 2 ? `<span class="badge badge-won">Free Tier Included</span>` : `<span class="badge badge-hold">Paid Add-on (PKR 2,500/mo)</span>`}
                 </td>
                 <td>
-                  <button class="edit-btn" onclick="openEditEntityModal('business-profile', '${p.id}')">✏️ Edit</button>
+                  <button class="edit-btn" onclick="openEditCompanyModal('${p.id}')">✏️ Edit</button>
                 </td>
               </tr>
             `).join('')}
@@ -3250,6 +3691,7 @@ async function renderUsersHTML() {
                 <th>Tenant Organization</th>
                 <th>Subdomain</th>
                 <th>Plan Tier</th>
+                <th>Trial Period</th>
                 <th>Companies</th>
                 <th>Users</th>
                 <th>Status</th>
@@ -3261,12 +3703,13 @@ async function renderUsersHTML() {
                 <tr>
                   <td><strong>${t.company_name || t.name}</strong></td>
                   <td><span class="pill-source">${t.subdomain || 'app'}.mashrue.com</span></td>
-                  <td><span class="badge badge-won">${t.subscription_plan || 'Standard'}</span></td>
-                  <td>${t.company_count || 1} / 2 Free</td>
-                  <td>${t.user_count || 1} Active</td>
+                  <td><span class="badge badge-won">${t.subscription_plan || 'Advance'}</span></td>
+                  <td><span class="badge badge-ready" style="font-size:0.75rem;">⏱️ ${t.trial_period || '15 Days'}</span></td>
+                  <td>${t.company_count || 1} / ${t.free_business_profile_limit || 2} Free</td>
+                  <td>${t.user_count || 1} / ${t.free_employee_limit || 2} Free</td>
                   <td><span class="badge badge-sec-attached">${t.status || 'Active'}</span></td>
                   <td>
-                    <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="alert('Manage Tenant: ${t.company_name}')">Manage</button>
+                    <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="alert('Manage Tenant: ${t.company_name || t.name}')">Manage</button>
                   </td>
                 </tr>
               `).join('')}
@@ -3298,16 +3741,25 @@ async function renderUsersHTML() {
                 <tr>
                   <td><strong>${u.full_name || u.username}</strong></td>
                   <td><code>${u.username}</code></td>
-                  <td>${u.email}</td>
+                  <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
                   <td>
-                    <span class="badge ${u.role === 'SuperAdmin' ? 'badge-sec-missing' : u.role === 'ClientAdmin' ? 'badge-won' : 'badge-sec-attached'}">
-                      ${u.role}
+                    <span class="badge ${u.role === 'SuperAdmin' ? 'badge-sec-missing' : u.role === 'ClientAdmin' ? 'badge-won' : u.role === 'ReadOnly' ? 'badge-ready' : 'badge-sec-attached'}">
+                      ${u.role === 'ReadOnly' ? '👁️ Read-Only' : u.role}
                     </span>
                   </td>
                   <td>${u.tenant_name || u.tenant?.name || 'System / Platform'}</td>
                   <td><span class="badge ${u.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${u.status || 'Active'}</span></td>
                   <td>
-                    <button class="edit-btn" onclick="openResetPasswordModal('${u.id}', '${u.username}')">🔑 Reset Pass</button>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                      <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Rights & Permissions">✏️ Edit</button>
+                      <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${u.username}')">🔑 Pass</button>
+                      ${u.email ? `
+                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; background:#0284c7; color:#fff; border-color:#0284c7;" onclick="handleResendInviteEmail('${u.id}', '${u.full_name || u.username}', '${u.email}')" title="Resend Activation / Welcome Email via Resend.com">📧 Resend Email</button>
+                      ` : ''}
+                      ${(u.username !== 'naeem4it' && u.email !== 'naeem@mashrue.com') ? `
+                        <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
+                      ` : ''}
+                    </div>
                   </td>
                 </tr>
               `).join('')}
@@ -3347,7 +3799,7 @@ async function renderUsersHTML() {
               <th>Employee Name</th>
               <th>Username</th>
               <th>Email</th>
-              <th>Role</th>
+              <th>Role / Rights</th>
               <th>Bidding Prices</th>
               <th>Company Access</th>
               <th>Status</th>
@@ -3367,12 +3819,18 @@ async function renderUsersHTML() {
                 ? u.business_access.map(b => b.name).join(', ')
                 : 'All Assigned Companies';
 
+              const roleBadge = (u.role === 'ClientAdmin' || u.role === 'CompanyAdmin')
+                ? '<span class="badge badge-won">👑 Tenant Admin</span>'
+                : (u.role === 'ReadOnly'
+                  ? '<span class="badge" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe;">👁️ Read-Only</span>'
+                  : '<span class="badge badge-ready">⚙️ Configurable</span>');
+
               return `
                 <tr>
                   <td><strong>${u.full_name}</strong></td>
                   <td><code>${u.username || '—'}</code></td>
-                  <td>${u.email}</td>
-                  <td><span class="badge ${u.role === 'ClientAdmin' || u.role === 'CompanyAdmin' ? 'badge-won' : 'badge-ready'}">${u.role === 'ClientAdmin' ? 'Tenant Admin' : 'Employee'}</span></td>
+                  <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
+                  <td>${roleBadge}</td>
                   <td>
                     <span class="badge ${u.can_see_bidding_prices !== false ? 'badge-won' : 'badge-hold'}">
                       ${u.can_see_bidding_prices !== false ? '🔓 Visible' : '🔒 Masked (Hidden)'}
@@ -3382,7 +3840,14 @@ async function renderUsersHTML() {
                   <td><span class="badge badge-active">${u.status || 'Active'}</span></td>
                   <td>
                     <div class="action-buttons-group">
-                      <button class="edit-btn" onclick="openResetPasswordModal('${u.id}', '${u.full_name}')" title="Reset Password">🔑 Reset Pass</button>
+                      <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>
+                      <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${u.full_name}')" title="Reset Password">🔑 Pass</button>
+                      ${u.email ? `
+                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; background:#0284c7; color:#fff; border-color:#0284c7;" onclick="handleResendInviteEmail('${u.id}', '${u.full_name}', '${u.email}')" title="Resend Activation / Welcome Email via Resend.com">📧 Resend Email</button>
+                      ` : ''}
+                      ${(u.id !== State.currentUser?.id && u.role !== 'SuperAdmin') ? `
+                        <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
+                      ` : ''}
                     </div>
                   </td>
                 </tr>
@@ -3746,6 +4211,20 @@ async function saveFbrCompanySettings() {
 let _selectedCostingOpportunity = null;
 
 async function renderCostingCalculatorHTML() {
+  if (!State.canSeeBiddingPrices()) {
+    return `
+      <div class="card" style="text-align: center; padding: 60px 24px; max-width: 580px; margin: 40px auto; border-top: 4px solid #f59e0b; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08);">
+        <div style="font-size: 3.5rem; margin-bottom: 12px;">🔒</div>
+        <h3 style="font-size: 1.3rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Commercial Pricing Restricted</h3>
+        <p style="font-size: 0.9rem; color: #64748b; line-height: 1.6; margin-bottom: 24px;">
+          Your account is configured with <strong>Price Visibility Masked</strong>.<br>
+          Commercial pricing, supplier rates, costing markups, and bid estimation calculators are hidden from your role.
+        </p>
+        <button class="primary-btn" onclick="switchView('opportunities')" style="margin: 0 auto; padding: 10px 20px;">📑 Go to Tenders Pipeline</button>
+      </div>
+    `;
+  }
+
   const customers = await API.getCustomers();
   const tenders = await API.getOpportunities(State.currentBusinessProfileId);
 
@@ -4301,7 +4780,7 @@ function openQuickAddModal(entityType, targetSelectId) {
     case 'company':
     case 'businessProfile':
       modalId = 'modal-add-company';
-      openModal('modal-add-company');
+      openNewCompanyModal();
       break;
     default:
       console.warn('Unknown quick add entity type:', entityType);
@@ -4314,6 +4793,7 @@ function openQuickAddModal(entityType, targetSelectId) {
     modalEl.classList.add('open');
   }
 }
+window.openQuickAddModal = openQuickAddModal;
 
 async function handleQuickAddCompletion(entityType, createdItem) {
   if (!createdItem) return;
@@ -4321,15 +4801,19 @@ async function handleQuickAddCompletion(entityType, createdItem) {
   const targetSelectId = _quickAddContext?.targetSelectId;
   const targetSelect = targetSelectId ? document.getElementById(targetSelectId) : null;
 
-  // 1. Refresh all matching select dropdowns in DOM
+  // 1. Refresh all matching customer select dropdowns in DOM
   if (entityType === 'customer') {
     const customers = await API.getCustomers();
     State.customers = customers;
     document.querySelectorAll('select[id*="customer"]').forEach(sel => {
-      const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
+      const curVal = (sel.id === targetSelectId || sel.id === 'tender-customer') ? createdItem.id : sel.value;
       sel.innerHTML = `<option value="">-- Select Customer / Department --</option>` + customers.map(c => `<option value="${c.id}">${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
       if (curVal) sel.value = curVal;
     });
+    const tenderCustSelect = document.getElementById('tender-customer');
+    if (tenderCustSelect) {
+      tenderCustSelect.value = createdItem.id;
+    }
   } else if (entityType === 'supplier') {
     const suppliers = await API.getSuppliers();
     State.suppliers = suppliers;
@@ -4340,23 +4824,37 @@ async function handleQuickAddCompletion(entityType, createdItem) {
     });
   } else if (entityType === 'product' || entityType === 'item') {
     const products = await API.getProducts();
+    window._cachedProducts = products;
     State.products = products;
-    document.querySelectorAll('select[id*="item-select"], select[id*="product-select"], .tender-item-sku-select').forEach(sel => {
-      const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
-      sel.innerHTML = `<option value="">-- Custom Scope Item / Choose Item --</option>` + products.map(p => `
-        <option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-price="${p.selling_price || 0}">
-          ${p.sku ? '[' + p.sku + '] ' : ''}${p.name} (Stock: ${p.current_stock || 0} ${p.unit || 'PCS'})
+    
+    // Update all product select dropdowns across the application and in tender line items
+    document.querySelectorAll('select.tnd-item-product, select[id*="item-select"], select[id*="product-select"], .tender-item-sku-select').forEach(sel => {
+      const prevVal = sel.value;
+      sel.innerHTML = `<option value="">-- Custom Scope Item --</option>` + products.map(p => `
+        <option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}">
+          ${p.name} (Stock: ${p.current_stock || 0})
         </option>
       `).join('');
-      if (curVal) sel.value = curVal;
+      if (prevVal) sel.value = prevVal;
     });
 
-    const itemSelects = document.querySelectorAll('.tender-item-sku-select');
+    // Auto-select in the active/empty or last row of tender items
+    const itemSelects = document.querySelectorAll('.tnd-item-product');
     if (createdItem && createdItem.id && itemSelects.length > 0) {
-      const lastSelect = itemSelects[itemSelects.length - 1];
-      if (lastSelect && (!lastSelect.value || lastSelect.value === '')) {
-        lastSelect.value = createdItem.id;
-        if (typeof handleTenderProductSelected === 'function') handleTenderProductSelected(lastSelect);
+      let targetRowSelect = null;
+      itemSelects.forEach(s => {
+        if (!s.value || s.value === '') targetRowSelect = s;
+      });
+      if (!targetRowSelect) targetRowSelect = itemSelects[itemSelects.length - 1];
+      if (targetRowSelect) {
+        targetRowSelect.value = createdItem.id;
+        const row = targetRowSelect.closest('tr');
+        if (row) {
+          const rIndex = parseInt(row.getAttribute('data-index') || 0, 10);
+          if (typeof onTenderProductSelect === 'function') {
+            onTenderProductSelect(rIndex, createdItem.id);
+          }
+        }
       }
     }
   } else if (entityType === 'warehouse') {
@@ -4367,31 +4865,9 @@ async function handleQuickAddCompletion(entityType, createdItem) {
       sel.innerHTML = `<option value="">-- Select Warehouse --</option>` + warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city || 'Location'})</option>`).join('');
       if (curVal) sel.value = curVal;
     });
-  } else if (entityType === 'company' || entityType === 'businessProfile') {
-    const profiles = await API.getBusinessProfiles();
-    State.businessProfiles = profiles;
-    if (typeof populateBusinessSwitcher === 'function') populateBusinessSwitcher();
-    document.querySelectorAll('select[id*="business-profile"], select[id*="company"]').forEach(sel => {
-      const curVal = (sel.id === targetSelectId) ? createdItem.id : sel.value;
-      sel.innerHTML = `<option value="">-- Select Submitting Entity --</option>` + profiles.map(p => `<option value="${p.id}">${p.business_name || p.legal_name}</option>`).join('');
-      if (curVal) sel.value = curVal;
-    });
   }
-
-  // 2. Set newly created item value and trigger change event
-  if (targetSelect) {
-    targetSelect.value = createdItem.id;
-    targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // Apply pulse highlight animation
-    targetSelect.classList.remove('quick-add-highlight');
-    void targetSelect.offsetWidth;
-    targetSelect.classList.add('quick-add-highlight');
-    setTimeout(() => targetSelect.classList.remove('quick-add-highlight'), 2200);
-  }
-
-  _quickAddContext = null;
 }
+window.handleQuickAddCompletion = handleQuickAddCompletion;
 
 function openModal(id) {
   if (id === 'modal-add-expense') {
@@ -4401,10 +4877,32 @@ function openModal(id) {
   const el = document.getElementById(id);
   if (el) {
     el.classList.add('open');
-    el.scrollTop = 0;
-    const cards = el.querySelectorAll('.modal-card, .modal-body, .modal-content, .table-responsive');
-    cards.forEach(c => { c.scrollTop = 0; });
+    const resetScroll = () => {
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+      const scrollables = el.querySelectorAll('.modal-card, .modal-body, .modal-content, .table-responsive, form, .modal-scroll-area');
+      scrollables.forEach(c => {
+        c.scrollTop = 0;
+        c.scrollLeft = 0;
+      });
+    };
+    resetScroll();
+    requestAnimationFrame(resetScroll);
+    setTimeout(resetScroll, 40);
   }
+}
+
+function openQuotaUpgradeModal(type = 'tender') {
+  const titleEl = document.getElementById('quota-upgrade-title');
+  const descEl = document.getElementById('quota-upgrade-desc');
+  if (type === 'company' || type === 'entity') {
+    if (titleEl) titleEl.innerText = '🏢 Business Entity Limit Reached';
+    if (descEl) descEl.innerHTML = 'You have reached the free limit of <strong>2 Business Profiles</strong>. Additional company entities can be added for PKR 2,500/month or with an Advance Plan upgrade.';
+  } else {
+    if (titleEl) titleEl.innerText = '⚡ Monthly Limit Reached';
+    if (descEl) descEl.innerHTML = 'You have reached the limit of <strong>10 Tenders / Quotes</strong> included in your <strong>Basic Plan</strong> this month.';
+  }
+  openModal('modal-quota-upgrade');
 }
 
 function closeModal(id) {
@@ -4420,11 +4918,93 @@ function navigateToView(view) {
   if (item) item.click();
 }
 
+function promptAddNewTenderSource() {
+  const newSource = prompt('Enter New Custom Tender Source or Procurement Portal Name:\n(e.g., WAPDA e-Portal, K-Electric Procurement, NHA e-Bidding, Civil Aviation Authority)');
+  if (!newSource || !newSource.trim()) return;
+  const cleanSource = newSource.trim();
+  const select = document.getElementById('tender-source');
+  if (select) {
+    let existingOpt = Array.from(select.options).find(opt => opt.value.toLowerCase() === cleanSource.toLowerCase());
+    if (!existingOpt) {
+      existingOpt = document.createElement('option');
+      existingOpt.value = cleanSource;
+      existingOpt.innerText = `🌐 ${cleanSource}`;
+      select.insertBefore(existingOpt, select.querySelector('option[value="OTHER"]') || select.firstChild);
+    }
+    select.value = cleanSource;
+    handleTenderSourceChange(cleanSource);
+    showToast(`✓ Added "${cleanSource}" as active Tender Source`, 'success');
+  }
+}
+
+function calculateTenderBidSecurityFromPct() {
+  const estVal = parseCurrency(document.getElementById('tender-est-value')?.value || '0');
+  const pctSelect = document.getElementById('tender-sec-pct-select');
+  const customWrapper = document.getElementById('tender-sec-pct-custom-wrapper');
+  const customInput = document.getElementById('tender-sec-pct-custom');
+  const calcDisplay = document.getElementById('tender-sec-amount-calc');
+
+  let pct = 2;
+  if (pctSelect && pctSelect.value === 'custom') {
+    if (customWrapper) customWrapper.style.display = 'inline-flex';
+    pct = parseFloat(customInput?.value || 2);
+  } else if (pctSelect && pctSelect.value) {
+    if (customWrapper) customWrapper.style.display = 'none';
+    pct = parseFloat(pctSelect.value);
+  }
+
+  const calcAmount = (estVal * pct) / 100;
+  if (calcDisplay) {
+    calcDisplay.innerText = `${pct}% = PKR ${Math.round(calcAmount).toLocaleString()}`;
+  }
+  return calcAmount;
+}
+
+function applyTenderBidSecurityPct(val) {
+  calculateTenderBidSecurityFromPct();
+}
+
+function applyBidSecurityModalPct(pct) {
+  const oppId = document.getElementById('sec-opportunity-id')?.value;
+  let estVal = 0;
+  if (oppId && window._cachedOpportunities) {
+    const opp = window._cachedOpportunities.find(o => String(o.id) === String(oppId));
+    if (opp) estVal = parseFloat(opp.estimated_value || 0);
+  }
+  if (!estVal) {
+    const amtField = document.getElementById('sec-amount');
+    estVal = parseCurrency(amtField?.value || 0);
+  }
+  if (estVal > 0) {
+    const calc = Math.round((estVal * pct) / 100);
+    const amtField = document.getElementById('sec-amount');
+    if (amtField) {
+      amtField.value = calc.toLocaleString();
+      formatCurrencyInput(amtField);
+    }
+    const hint = document.getElementById('sec-calc-basis-hint');
+    if (hint) hint.innerHTML = `Calculated <strong>${pct}%</strong> of PKR ${estVal.toLocaleString()} = <strong>PKR ${calc.toLocaleString()}</strong>`;
+    showToast(`✓ Bid Security set to ${pct}% (PKR ${calc.toLocaleString()})`, 'info');
+  } else {
+    showToast('Please select a tender first to auto-calculate %', 'warning');
+  }
+}
+
 let _tenderLineItems = [];
 
 async function openNewTenderModal() {
   const form = document.getElementById('form-add-tender');
   if (form) form.reset();
+
+  const editIdEl = document.getElementById('tender-edit-id');
+  if (editIdEl) editIdEl.value = '';
+
+  const modal = document.getElementById('modal-add-tender');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = '📑 Register New Tender / Opportunity';
+  }
+
   const otherContainer = document.getElementById('tender-source-other-container');
   if (otherContainer) otherContainer.style.display = 'none';
 
@@ -4439,7 +5019,7 @@ async function openNewTenderModal() {
   if (custSelect) {
     custSelect.innerHTML = customers.length === 0 
       ? '<option value="">-- No Customers Registered --</option>' 
-      : customers.map(c => `<option value="${c.id}">${c.business_name} (${c.org_type || 'Customer'})</option>`).join('');
+      : customers.map(c => `<option value="${c.id}">${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
   }
   if (profSelect) {
     profSelect.innerHTML = profiles.length === 0 
@@ -4451,21 +5031,124 @@ async function openNewTenderModal() {
     updateTenderCurrencyLabels('PKR');
   }
 
-  // Clear and add initial default item row
   _tenderLineItems = [];
   const tbody = document.getElementById('tender-items-tbody');
   if (tbody) tbody.innerHTML = '';
   addTenderItemRow();
 
-  // Initialize date inputs with DD/MM/YYYY
+  const exemptEl = document.getElementById('tender-gst-exempt');
+  const inclusiveEl = document.getElementById('tender-gst-inclusive');
+  const rateEl = document.getElementById('tender-gst-rate');
+  if (exemptEl) exemptEl.checked = false;
+  if (inclusiveEl) inclusiveEl.checked = false;
+  if (rateEl) rateEl.value = '18';
+
+  recalculateTenderItemsSum();
+  calculateTenderBidSecurityFromPct();
   initCustomDateTimePickers();
 
   openModal('modal-add-tender');
 }
 
-function updateTenderCurrencyLabels(curr) {
-  document.querySelectorAll('.currency-label').forEach(el => el.innerText = curr);
-  document.querySelectorAll('.sec-currency-label').forEach(el => el.innerText = curr);
+async function openEditTenderModal(id) {
+  const opps = await API.getOpportunities('all');
+  const o = opps.find(item => String(item.id) === String(id));
+  if (!o) {
+    alert('Tender not found.');
+    return;
+  }
+
+  const customers = await API.getCustomers();
+  const profiles = await API.getBusinessProfiles();
+  window._cachedProducts = await API.getProducts();
+
+  const form = document.getElementById('form-add-tender');
+  if (form) form.reset();
+
+  let editIdEl = document.getElementById('tender-edit-id');
+  if (!editIdEl) {
+    editIdEl = document.createElement('input');
+    editIdEl.type = 'hidden';
+    editIdEl.id = 'tender-edit-id';
+    if (form) form.appendChild(editIdEl);
+  }
+  editIdEl.value = o.id;
+
+  const modal = document.getElementById('modal-add-tender');
+  if (modal) {
+    const title = modal.querySelector('h2');
+    if (title) title.innerHTML = `✏️ Edit Tender: ${o.opportunity_number || ''} - ${o.tender_name || o.title}`;
+  }
+
+  document.getElementById('tender-name').value = o.tender_name || o.title || '';
+  
+  const srcSelect = document.getElementById('tender-source');
+  const otherContainer = document.getElementById('tender-source-other-container');
+  const otherInput = document.getElementById('tender-source-other');
+  
+  const standardSources = ['PPRA (Federal)', 'PPRA (Punjab)', 'DGP', 'RFQ', 'LPQ', 'OTHER', 'DIRECT SALES'];
+  if (standardSources.includes(o.tender_source)) {
+    if (srcSelect) srcSelect.value = o.tender_source;
+    if (otherContainer) otherContainer.style.display = (o.tender_source === 'OTHER') ? 'block' : 'none';
+  } else {
+    if (srcSelect) srcSelect.value = 'OTHER';
+    if (otherContainer) otherContainer.style.display = 'block';
+    if (otherInput) otherInput.value = o.tender_source || '';
+  }
+
+  document.getElementById('tender-opp-no').value = o.opportunity_number || '';
+  document.getElementById('tender-ext-no').value = o.external_tender_number || '';
+  
+  const currSelect = document.getElementById('tender-currency');
+  if (currSelect) {
+    currSelect.value = o.currency || 'PKR';
+    updateTenderCurrencyLabels(o.currency || 'PKR');
+  }
+
+  const custSelect = document.getElementById('tender-customer');
+  if (custSelect) {
+    custSelect.innerHTML = customers.map(c => `<option value="${c.id}" ${String(c.id) === String(o.customer_id) ? 'selected' : ''}>${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
+  }
+
+  const profSelect = document.getElementById('tender-business-profile');
+  if (profSelect) {
+    profSelect.innerHTML = profiles.map(p => `<option value="${p.id}" ${String(p.id) === String(o.business_profile_id) ? 'selected' : ''}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
+  }
+
+  document.getElementById('tender-est-value').value = o.estimated_value ? Number(o.estimated_value).toLocaleString() : '0';
+  document.getElementById('tender-closing-date').value = formatDateDDMMYYYY(o.closing_date);
+  document.getElementById('tender-opening-date').value = formatDateDDMMYYYY(o.opening_date);
+  document.getElementById('tender-description').value = o.description || '';
+
+  const exemptEl = document.getElementById('tender-gst-exempt');
+  const inclusiveEl = document.getElementById('tender-gst-inclusive');
+  const rateEl = document.getElementById('tender-gst-rate');
+  if (exemptEl) exemptEl.checked = Boolean(o.is_gst_exempt);
+  if (inclusiveEl) inclusiveEl.checked = Boolean(o.is_gst_inclusive);
+  if (rateEl) rateEl.value = o.gst_rate_pct !== undefined ? o.gst_rate_pct : 18;
+
+  _tenderLineItems = [];
+  const tbody = document.getElementById('tender-items-tbody');
+  if (tbody) tbody.innerHTML = '';
+  
+  if (o.items && Array.isArray(o.items) && o.items.length > 0) {
+    o.items.forEach(itm => {
+      addTenderItemRow(itm);
+    });
+  } else {
+    addTenderItemRow({
+      item_description: o.tender_name || o.title || 'Scope Item',
+      quantity: 1,
+      unit: 'LOT',
+      estimated_unit_price: o.estimated_value || 0
+    });
+  }
+
+  recalculateTenderItemsSum();
+  calculateTenderBidSecurityFromPct();
+  initCustomDateTimePickers();
+
+  openModal('modal-add-tender');
 }
 
 function addTenderItemRow(initialData = null) {
@@ -4480,11 +5163,11 @@ function addTenderItemRow(initialData = null) {
       <td>
         <select class="form-select tnd-item-product" style="font-size:0.78rem; padding:4px 6px;" onchange="onTenderProductSelect(${rowIndex}, this.value)">
           <option value="">-- Custom Scope Item --</option>
-          ${products.map(p => `<option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${p.current_stock || 0})</option>`).join('')}
+          ${products.map(p => `<option value="${p.id}" ${(initialData && (initialData.product_service_id === p.id || initialData.product_id === p.id)) ? 'selected' : ''} data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${p.current_stock || 0})</option>`).join('')}
         </select>
       </td>
       <td>
-        <input type="text" class="form-input tnd-item-desc" required placeholder="Item Scope / Technical Description" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_description || ''}" oninput="recalculateTenderItemsSum()">
+        <input type="text" class="form-input tnd-item-desc" required placeholder="Item Scope / Technical Description" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_description || initialData?.item_name || ''}" oninput="recalculateTenderItemsSum()">
       </td>
       <td>
         <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="font-size:0.78rem; padding:4px 6px;" oninput="recalculateTenderItemsSum()">
@@ -4493,195 +5176,162 @@ function addTenderItemRow(initialData = null) {
         <input list="uom-datalist" type="text" class="form-input tnd-item-unit" value="${initialData?.unit || 'PCS'}" style="font-size:0.78rem; padding:4px 6px;" placeholder="e.g. PCS, ROLL">
       </td>
       <td>
-        <input type="text" class="form-input tnd-item-price" placeholder="0" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.estimated_unit_price ? Number(initialData.estimated_unit_price).toLocaleString() : '0'}" oninput="formatCurrencyInput(this); recalculateTenderItemsSum();">
+        <input type="text" class="form-input tnd-item-price" placeholder="0" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.estimated_unit_price ? Number(initialData.estimated_unit_price).toLocaleString() : (initialData?.unit_price ? Number(initialData.unit_price).toLocaleString() : '0')}" oninput="formatCurrencyInput(this); recalculateTenderItemsSum();">
       </td>
       <td>
-        <strong class="tnd-item-total" style="font-size:0.8rem; color:#0f172a; display:block; padding:4px 0;">0</strong>
+        <strong class="tnd-item-total" style="font-size:0.8rem; color:#0f172a; display:block; padding:4px 0;">${initialData?.estimated_total_price ? Number(initialData.estimated_total_price).toLocaleString() : '0'}</strong>
       </td>
       <td style="text-align:center;">
         <button type="button" class="danger-btn" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteTenderItemRow(${rowIndex})" title="Remove item">&times;</button>
       </td>
     </tr>
   `;
+
   tbody.insertAdjacentHTML('beforeend', rowHtml);
-  _tenderLineItems.push({ index: rowIndex });
-  recalculateTenderItemsSum();
-}
-
-function deleteTenderItemRow(index) {
-  const row = document.getElementById(`tnd-row-${index}`);
-  if (row) row.remove();
-  recalculateTenderItemsSum();
-}
-
-function handleTenderGSTToggles(trigger) {
-  const isExempt = document.getElementById('tender-gst-exempt')?.checked;
-  const incEl = document.getElementById('tender-gst-inclusive');
-  const rateWrap = document.getElementById('tender-gst-rate-wrapper');
-
-  if (trigger === 'exempt') {
-    if (isExempt) {
-      if (incEl) {
-        incEl.checked = false;
-        incEl.disabled = true;
-      }
-      if (rateWrap) rateWrap.style.opacity = '0.35';
-    } else {
-      if (incEl) incEl.disabled = false;
-      if (rateWrap) rateWrap.style.opacity = '1';
-    }
-  } else if (trigger === 'inclusive') {
-    const isInc = incEl?.checked;
-    if (isInc) {
-      const exEl = document.getElementById('tender-gst-exempt');
-      if (exEl) exEl.checked = false;
-    }
-  }
+  _tenderLineItems.push({
+    index: rowIndex,
+    product_service_id: initialData?.product_service_id || null,
+    item_description: initialData?.item_description || '',
+    quantity: initialData?.quantity || 1,
+    unit: initialData?.unit || 'PCS',
+    estimated_unit_price: initialData?.estimated_unit_price || 0,
+    estimated_total_price: initialData?.estimated_total_price || 0
+  });
 
   recalculateTenderItemsSum();
 }
 
-function onTenderProductSelect(index, productId) {
-  const row = document.getElementById(`tnd-row-${index}`);
+function onTenderProductSelect(rowIndex, productId) {
+  const row = document.getElementById(`tnd-row-${rowIndex}`);
   if (!row) return;
-  const select = row.querySelector('.tnd-item-product');
-  const opt = select.options[select.selectedIndex];
-  if (!opt || !opt.value) return;
 
-  const name = opt.dataset.name;
-  const desc = opt.dataset.desc;
-  const unit = opt.dataset.unit;
-  const selling = parseFloat(opt.dataset.selling || 0);
-  const cost = parseFloat(opt.dataset.cost || 0);
+  const products = window._cachedProducts || [];
+  const prod = products.find(p => p.id === productId);
 
-  const descEl = row.querySelector('.tnd-item-desc');
-  const unitEl = row.querySelector('.tnd-item-unit');
-  const priceEl = row.querySelector('.tnd-item-price');
+  const descInput = row.querySelector('.tnd-item-desc');
+  const unitInput = row.querySelector('.tnd-item-unit');
+  const priceInput = row.querySelector('.tnd-item-price');
 
-  if (descEl) descEl.value = desc || name;
-  if (unitEl) unitEl.value = unit || 'PCS';
-  if (priceEl) {
-    priceEl.value = selling.toLocaleString();
-    priceEl.dataset.costPrice = cost;
+  if (prod) {
+    if (descInput) descInput.value = `${prod.name}${prod.specifications ? ' - ' + prod.specifications : (prod.description ? ' - ' + prod.description : '')}`;
+    if (unitInput) unitInput.value = prod.unit || 'PCS';
+    if (priceInput) {
+      priceInput.value = prod.selling_price ? Number(prod.selling_price).toLocaleString() : '0';
+      formatCurrencyInput(priceInput);
+    }
   }
+
+  recalculateTenderItemsSum();
+}
+
+function deleteTenderItemRow(rowIndex) {
+  const row = document.getElementById(`tnd-row-${rowIndex}`);
+  if (row) row.remove();
+
+  const remainingRows = document.querySelectorAll('#tender-items-tbody tr');
+  if (remainingRows.length === 0) {
+    addTenderItemRow();
+  } else {
+    recalculateTenderItemsSum();
+  }
+}
+
+function handleTenderGSTToggles(type) {
+  const exempt = document.getElementById('tender-gst-exempt');
+  const inclusive = document.getElementById('tender-gst-inclusive');
+  const rateWrapper = document.getElementById('tender-gst-rate-wrapper');
+
+  if (type === 'exempt' && exempt?.checked) {
+    if (inclusive) inclusive.checked = false;
+    if (rateWrapper) rateWrapper.style.opacity = '0.4';
+  } else if (type === 'inclusive' && inclusive?.checked) {
+    if (exempt) exempt.checked = false;
+    if (rateWrapper) rateWrapper.style.opacity = '1';
+  } else {
+    if (rateWrapper) rateWrapper.style.opacity = '1';
+  }
+
   recalculateTenderItemsSum();
 }
 
 function recalculateTenderItemsSum() {
-  let subtotalSum = 0;
-  let totalCostSum = 0;
-  let totalLossSum = 0;
-  let hasNegativeMargin = false;
   const rows = document.querySelectorAll('#tender-items-tbody tr');
+  let subtotal = 0;
+  let hasLossAlert = false;
 
   rows.forEach(row => {
-    const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
+    const qtyInput = row.querySelector('.tnd-item-qty');
     const priceInput = row.querySelector('.tnd-item-price');
-    const priceStr = priceInput?.value || '0';
-    const price = parseCurrency(priceStr);
-    const costPrice = parseFloat(priceInput?.dataset.costPrice || 0);
-    const lineTotal = qty * price;
-    const lineCost = qty * costPrice;
-    subtotalSum += lineTotal;
-    if (costPrice > 0) totalCostSum += lineCost;
-
-    const isRowLoss = (costPrice > 0 && price > 0 && price < costPrice);
     const totalEl = row.querySelector('.tnd-item-total');
+    const prodSelect = row.querySelector('.tnd-item-product');
 
-    if (isRowLoss) {
-      hasNegativeMargin = true;
-      const rowLoss = (costPrice - price) * qty;
-      totalLossSum += rowLoss;
+    const qty = parseFloat(qtyInput?.value || 0);
+    const unitPrice = parseCurrency(priceInput?.value || '0');
+    const lineTotal = qty * unitPrice;
 
-      row.classList.add('loss-row');
-      if (priceInput) {
-        priceInput.classList.add('loss-text');
-        priceInput.style.borderColor = '#ef4444';
-        priceInput.style.backgroundColor = '#fef2f2';
+    if (totalEl) totalEl.innerText = lineTotal.toLocaleString();
+    subtotal += lineTotal;
+
+    if (prodSelect && prodSelect.value) {
+      const opt = prodSelect.selectedOptions[0];
+      const costPrice = parseFloat(opt?.getAttribute('data-cost') || 0);
+      if (costPrice > 0 && unitPrice > 0 && unitPrice < costPrice) {
+        hasLossAlert = true;
       }
-      if (totalEl) {
-        totalEl.innerHTML = `<span class="loss-text">${lineTotal.toLocaleString()}</span><br><span class="badge badge-loss" style="font-size:0.68rem; margin-top:2px;">⚠️ Loss: -PKR ${rowLoss.toLocaleString()}</span>`;
-      }
-    } else {
-      row.classList.remove('loss-row');
-      if (priceInput) {
-        priceInput.classList.remove('loss-text');
-        priceInput.style.borderColor = '';
-        priceInput.style.backgroundColor = '';
-      }
-      if (totalEl) totalEl.innerText = lineTotal.toLocaleString();
     }
   });
 
-  // GST Calculation Engine
-  const isExempt = document.getElementById('tender-gst-exempt')?.checked;
-  const isInclusive = document.getElementById('tender-gst-inclusive')?.checked;
-  const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
+  const isExempt = document.getElementById('tender-gst-exempt')?.checked || false;
+  const isInclusive = document.getElementById('tender-gst-inclusive')?.checked || false;
+  const gstRateInput = document.getElementById('tender-gst-rate');
+  const gstRate = parseFloat(gstRateInput?.value || 18);
 
   let gstAmount = 0;
-  let grandTotal = subtotalSum;
+  let grandTotal = subtotal;
 
   if (isExempt) {
     gstAmount = 0;
-    grandTotal = subtotalSum;
+    grandTotal = subtotal;
   } else if (isInclusive) {
-    // Price includes GST
-    gstAmount = subtotalSum > 0 ? Math.round(subtotalSum - (subtotalSum / (1 + (gstRate / 100)))) : 0;
-    grandTotal = subtotalSum;
+    gstAmount = subtotal - (subtotal / (1 + (gstRate / 100)));
+    grandTotal = subtotal;
   } else {
-    // Standard GST added on top
-    gstAmount = Math.round((subtotalSum * gstRate) / 100);
-    grandTotal = subtotalSum + gstAmount;
+    gstAmount = (subtotal * gstRate) / 100;
+    grandTotal = subtotal + gstAmount;
   }
 
-  const subtotalEl = document.getElementById('tender-items-subtotal-disp');
-  const gstRateEl = document.getElementById('tender-gst-rate-disp');
-  const gstAmtEl = document.getElementById('tender-gst-amount-disp');
-  const grandTotalEl = document.getElementById('tender-grand-total-disp');
-  const estValEl = document.getElementById('tender-est-value');
+  const subtotalDisp = document.getElementById('tender-items-subtotal-disp');
+  const gstRateDisp = document.getElementById('tender-gst-rate-disp');
+  const gstAmountDisp = document.getElementById('tender-gst-amount-disp');
+  const grandTotalDisp = document.getElementById('tender-grand-total-disp');
 
-  if (subtotalEl) subtotalEl.innerText = 'PKR ' + subtotalSum.toLocaleString();
-  if (gstRateEl) gstRateEl.innerText = isExempt ? '0% (Exempt)' : (isInclusive ? `${gstRate}% (Inc)` : `${gstRate}%`);
-  if (gstAmtEl) gstAmtEl.innerText = 'PKR ' + gstAmount.toLocaleString();
-  if (grandTotalEl) grandTotalEl.innerText = 'PKR ' + grandTotal.toLocaleString();
-  if (estValEl && rows.length > 0 && grandTotal > 0) {
-    estValEl.value = grandTotal.toLocaleString();
+  if (subtotalDisp) subtotalDisp.innerText = Math.round(subtotal).toLocaleString();
+  if (gstRateDisp) gstRateDisp.innerText = isExempt ? 'Exempt' : `${gstRate}%`;
+  if (gstAmountDisp) gstAmountDisp.innerText = Math.round(gstAmount).toLocaleString();
+  if (grandTotalDisp) grandTotalDisp.innerText = Math.round(grandTotal).toLocaleString();
+
+  const estValInput = document.getElementById('tender-est-value');
+  if (estValInput && subtotal > 0) {
+    estValInput.value = Math.round(grandTotal).toLocaleString();
   }
 
-  const warnEl = document.getElementById('tender-price-warning');
-  const warnMsgEl = document.getElementById('tender-price-warning-msg');
-  if (warnEl) {
-    if (hasNegativeMargin) {
-      warnEl.className = 'loss-alert-box';
-      if (warnMsgEl) {
-        warnMsgEl.innerHTML = `<strong>Loss / Negative Margin Alert:</strong> One or more line items have a Selling Price lower than Landed Cost! Total Loss on Scope: <span class="loss-text">-PKR ${totalLossSum.toLocaleString()}</span>.`;
-      }
-      warnEl.style.display = 'flex';
-    } else {
-      warnEl.style.display = 'none';
-    }
+  const warningEl = document.getElementById('tender-price-warning');
+  if (warningEl) {
+    warningEl.style.display = hasLossAlert ? 'block' : 'none';
   }
+
+  calculateTenderBidSecurityFromPct();
 }
 
-function initCustomDateTimePickers() {
-  const closingEl = document.getElementById('tender-closing-date');
-  const openingEl = document.getElementById('tender-opening-date');
-  const secExpiryEl = document.getElementById('sec-expiry-date');
-
-  const now = new Date();
-  const defClosing = new Date(now.getTime() + 20 * 86400000);
-  if (closingEl && !closingEl.value) {
-    closingEl.value = formatDateTimeDDMMYYYY(defClosing);
-  }
-  if (openingEl && !openingEl.value) {
-    openingEl.value = formatDateTimeDDMMYYYY(new Date(now.getTime() + 21 * 86400000));
-  }
-  if (secExpiryEl && !secExpiryEl.value) {
-    secExpiryEl.value = formatDateDDMMYYYY(new Date(now.getTime() + 90 * 86400000));
+function handleTenderSourceChange(val) {
+  const container = document.getElementById('tender-source-other-container');
+  if (container) {
+    container.style.display = (val === 'OTHER' || val.startsWith('OTHER')) ? 'block' : 'none';
   }
 }
 
 async function submitNewTenderForm() {
+  const editId = document.getElementById('tender-edit-id')?.value;
   const tenderName = document.getElementById('tender-name')?.value?.trim();
   let source = document.getElementById('tender-source')?.value || 'PPRA (Federal)';
   const customSource = document.getElementById('tender-source-other')?.value?.trim();
@@ -4710,17 +5360,17 @@ async function submitNewTenderForm() {
   }
 
   try {
-    // Pre-flight duplicate check
     const existingOpps = await API.getOpportunities(bizId || 'all');
     const isDup = existingOpps.some(o => 
       o.tender_name?.toLowerCase().trim() === tenderName.toLowerCase() && 
-      (!custId || String(o.customer_id) === String(custId))
+      (!custId || String(o.customer_id) === String(custId)) &&
+      String(o.id) !== String(editId || '')
     );
     if (isDup) {
       alert(`⚠️ Duplicate Tender Error:\nA tender named "${tenderName}" is already registered for this customer.`);
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<span>💾 Save & Attach Bid Security</span>';
+        submitBtn.innerHTML = '<span>💾 Save Tender Record</span>';
       }
       return;
     }
@@ -4752,7 +5402,7 @@ async function submitNewTenderForm() {
     const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
     const itemsSubtotal = items.reduce((acc, itm) => acc + (itm.estimated_total_price || 0), 0);
 
-    const res = await API.createOpportunity({
+    const payload = {
       tender_name: tenderName,
       title: tenderName,
       opportunity_number: oppNo || undefined,
@@ -4770,32 +5420,41 @@ async function submitNewTenderForm() {
       is_gst_inclusive: isInclusive,
       gst_rate_pct: isExempt ? 0 : gstRate,
       subtotal: itemsSubtotal
-    });
+    };
 
-    if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
-      alert(`⚠️ ${res.message}`);
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '<span>💾 Save & Attach Bid Security</span>';
+    if (editId) {
+      await API.updateOpportunity(editId, payload);
+      closeModal('modal-add-tender');
+      showToast('✓ Tender Record and scope items updated successfully!', 'success');
+      await renderActiveView();
+    } else {
+      const res = await API.createOpportunity(payload);
+
+      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
+        alert(`⚠️ ${res.message}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Tender Record</span>';
+        }
+        return;
       }
-      return;
+
+      closeModal('modal-add-tender');
+      showToast('✓ Tender Record saved successfully!', 'success');
+
+      const createdId = res.data?.id || ('tnd-' + Date.now());
+      const createdNo = res.data?.opportunity_number || oppNo || 'TND-2026';
+      
+      // Prompt mandatory Bid Security modal
+      promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
+      await renderActiveView();
     }
-
-    closeModal('modal-add-tender');
-    showToast('✓ Tender Record saved successfully!', 'success');
-
-    const createdId = res.data?.id || ('tnd-' + Date.now());
-    const createdNo = res.data?.opportunity_number || oppNo || 'TND-2026';
-    
-    // Immediately prompt mandatory Bid Security modal
-    promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
-    await renderActiveView();
   } catch (err) {
     alert(`Error saving tender: ${err.message}`);
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = '<span>💾 Save & Attach Bid Security</span>';
+      submitBtn.innerHTML = '<span>💾 Save Tender Record</span>';
     }
   }
 }
@@ -6277,11 +6936,8 @@ async function submitNewCustomerForm() {
     }
 
     closeModal('modal-add-customer');
-    if (_quickAddContext && _quickAddContext.entityType === 'customer') {
-      await handleQuickAddCompletion('customer', created);
-    } else {
-      await renderActiveView();
-    }
+    await handleQuickAddCompletion('customer', created);
+    await renderActiveView();
   } catch (err) {
     alert(`Error saving customer: ${err.message}`);
   } finally {
@@ -6461,11 +7117,8 @@ async function submitNewSupplierForm() {
     }
 
     closeModal('modal-add-supplier');
-    if (_quickAddContext && _quickAddContext.entityType === 'supplier') {
-      await handleQuickAddCompletion('supplier', created);
-    } else {
-      await renderActiveView();
-    }
+    await handleQuickAddCompletion('supplier', created);
+    await renderActiveView();
   } catch (err) {
     alert(`Error saving supplier: ${err.message}`);
   } finally {
@@ -6515,6 +7168,62 @@ function checkProductSellingPriceMargin() {
   }
 }
 
+const PAKISTAN_CUSTOMS_HS_CATALOG = [
+  { keyword: 'syringe', code: '9018.3100', desc: 'Syringes, with or without needles (Medical Devices)' },
+  { keyword: 'needle', code: '9018.3900', desc: 'Needles, catheters, cannulae (Medical)' },
+  { keyword: 'catheter', code: '9018.3900', desc: 'Needles, catheters, cannulae (Medical)' },
+  { keyword: 'cannula', code: '9018.3900', desc: 'Needles, catheters, cannulae (Medical)' },
+  { keyword: 'glove', code: '4015.1900', desc: 'Surgical & examination gloves of rubber' },
+  { keyword: 'paper', code: '4802.5600', desc: 'Paper sheets/rims, 40-150g/m2 (A4/Legal)' },
+  { keyword: 'rim', code: '4802.5600', desc: 'Paper sheets/rims, 40-150g/m2 (A4/Legal)' },
+  { keyword: 'transformer', code: '8504.2200', desc: 'Liquid dielectric transformers 650kVA-10MVA' },
+  { keyword: 'laptop', code: '8471.3000', desc: 'Portable automatic data processing machines' },
+  { keyword: 'computer', code: '8471.5000', desc: 'Digital processing units / Desktop / Servers' },
+  { keyword: 'server', code: '8471.5000', desc: 'Digital processing units / Desktop / Servers' },
+  { keyword: 'monitor', code: '8528.5200', desc: 'Computer monitors & display units' },
+  { keyword: 'cable', code: '8544.4990', desc: 'Electric conductors & cables <= 1000V' },
+  { keyword: 'wire', code: '8544.4990', desc: 'Electric conductors & cables <= 1000V' },
+  { keyword: 'breaker', code: '8536.2000', desc: 'Automatic circuit breakers <= 1000V' },
+  { keyword: 'switchgear', code: '8536.2000', desc: 'Electrical switchgear and protection' },
+  { keyword: 'motor', code: '8501.5200', desc: 'AC Motors multi-phase 750W-75kW' },
+  { keyword: 'pump', code: '8413.7090', desc: 'Centrifugal and liquid pumps' },
+  { keyword: 'medicine', code: '3004.9099', desc: 'Medicaments & pharmaceuticals' },
+  { keyword: 'tablet', code: '3004.9099', desc: 'Medicaments & pharmaceutical formulations' },
+  { keyword: 'disinfectant', code: '3808.9400', desc: 'Disinfectants & antiseptic chemical solutions' },
+  { keyword: 'mask', code: '6307.9090', desc: 'Face masks, protective PPE articles' },
+  { keyword: 'ppe', code: '6307.9090', desc: 'Protective gear, overalls & PPE articles' }
+];
+
+function autoSuggestHsCode() {
+  const prodName = (document.getElementById('prod-name')?.value || '').toLowerCase().trim();
+  const prodSpec = (document.getElementById('prod-spec')?.value || '').toLowerCase().trim();
+  const fullText = `${prodName} ${prodSpec}`;
+
+  if (!fullText.trim()) {
+    showToast('Please enter Product Name first to auto-lookup HS Code', 'info');
+    return;
+  }
+
+  const match = PAKISTAN_CUSTOMS_HS_CATALOG.find(item => fullText.includes(item.keyword));
+  if (match) {
+    const hsInput = document.getElementById('prod-hs-code');
+    if (hsInput) {
+      hsInput.value = match.code;
+      showToast(`✓ HS Code ${match.code} matched for "${match.keyword}" (${match.desc})`, 'success');
+    }
+  } else {
+    showToast('No exact keyword match in quick catalog. Pick standard 8-digit HS Code from dropdown.', 'info');
+  }
+}
+
+function onHsCodeInput(val) {
+  if (val && val.includes(' - ')) {
+    const code = val.split(' - ')[0].trim();
+    const hsInput = document.getElementById('prod-hs-code');
+    if (hsInput) hsInput.value = code;
+  }
+}
+
 async function openNewProductModal() {
   const form = document.getElementById('form-add-product');
   if (form) form.reset();
@@ -6530,7 +7239,9 @@ async function openNewProductModal() {
   const editEl = document.getElementById('prod-edit-id');
   if (editEl) editEl.value = '';
   const skuEl = document.getElementById('prod-sku');
-  if (skuEl) skuEl.value = 'SKU-' + Math.floor(1000 + Math.random() * 9000);
+  const now = new Date();
+  const yyyymm = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0');
+  if (skuEl) skuEl.value = `SKU-${yyyymm}-${Math.floor(1000 + Math.random() * 9000)}`;
   const nameEl = document.getElementById('prod-name');
   if (nameEl) nameEl.value = '';
   const specEl = document.getElementById('prod-spec');
@@ -6685,11 +7396,8 @@ async function submitNewProductForm() {
     }
 
     closeModal('modal-add-product');
-    if (_quickAddContext && (_quickAddContext.entityType === 'product' || _quickAddContext.entityType === 'item')) {
-      await handleQuickAddCompletion('product', created);
-    } else {
-      await renderActiveView();
-    }
+    await handleQuickAddCompletion('product', created);
+    await renderActiveView();
   } catch (err) {
     alert(`Error saving product: ${err.message}`);
   } finally {
@@ -7047,7 +7755,107 @@ async function submitGeneralExpenseForm() {
   await renderActiveView();
 }
 
+function syncCompanyAbbrevAndPrefix(nameInputId, abbrevInputId, prefixInputId, triggerSource = 'name') {
+  const nameEl = document.getElementById(nameInputId);
+  const abbrevEl = document.getElementById(abbrevInputId);
+  const prefixEl = document.getElementById(prefixInputId);
+  if (!prefixEl) return;
+
+  if (triggerSource === 'name' && nameEl) {
+    const raw = nameEl.value.trim();
+    if (!raw) {
+      if (abbrevEl && (!abbrevEl.dataset.custom || abbrevEl.dataset.custom === 'false')) abbrevEl.value = '';
+      prefixEl.value = '';
+      return;
+    }
+    // Clean company name and extract acronym
+    const words = raw.split(/\s+/).filter(w => {
+      const clean = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return !['pvt', 'ltd', 'limited', 'private', '(pvt)', '(pvt.)', '(ltd)', '(limited)'].includes(clean);
+    });
+
+    let generatedAbbrev = '';
+    if (words.length >= 2) {
+      generatedAbbrev = words.map(w => w.charAt(0)).join('').toUpperCase().slice(0, 5);
+    } else if (words.length === 1) {
+      generatedAbbrev = words[0].replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+    } else {
+      generatedAbbrev = raw.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+    }
+
+    if (abbrevEl && (!abbrevEl.dataset.custom || abbrevEl.dataset.custom === 'false')) {
+      abbrevEl.value = generatedAbbrev;
+    }
+    const finalCode = (abbrevEl && abbrevEl.value.trim()) ? abbrevEl.value.trim().toUpperCase() : generatedAbbrev;
+    if (finalCode) {
+      prefixEl.value = `INV-${finalCode}`;
+    }
+  } else if (triggerSource === 'abbrev' && abbrevEl) {
+    abbrevEl.dataset.custom = 'true';
+    const code = abbrevEl.value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    abbrevEl.value = code;
+    if (code) {
+      prefixEl.value = `INV-${code}`;
+    } else if (nameEl && nameEl.value.trim()) {
+      abbrevEl.dataset.custom = 'false';
+      syncCompanyAbbrevAndPrefix(nameInputId, abbrevInputId, prefixInputId, 'name');
+    } else {
+      prefixEl.value = '';
+    }
+  }
+}
+window.syncCompanyAbbrevAndPrefix = syncCompanyAbbrevAndPrefix;
+
+function openNewCompanyModal() {
+  const form = document.getElementById('form-add-company');
+  if (form) form.reset();
+  const editEl = document.getElementById('comp-edit-id');
+  if (editEl) editEl.value = '';
+  const abbrevEl = document.getElementById('comp-abbrev');
+  if (abbrevEl) abbrevEl.dataset.custom = 'false';
+  const prefixEl = document.getElementById('comp-inv-prefix');
+  if (prefixEl) prefixEl.value = '';
+  const titleEl = document.getElementById('modal-add-company-title');
+  if (titleEl) titleEl.innerText = '🏢 Configure Company / Business Profile';
+  const currentCount = State.businessProfiles?.length || 0;
+  const freeLimit = State.currentUser?.tenant?.freeCompanyLimit || 2;
+  const limitAlert = document.getElementById('company-limit-alert');
+  if (limitAlert) {
+    limitAlert.style.display = (currentCount >= freeLimit) ? 'block' : 'none';
+  }
+  openModal('modal-add-company');
+}
+
+async function openEditCompanyModal(id) {
+  const profiles = State.businessProfiles || (await API.getBusinessProfiles());
+  const p = profiles.find(item => String(item.id) === String(id));
+  if (!p) return;
+
+  const form = document.getElementById('form-add-company');
+  if (form) form.reset();
+
+  const editEl = document.getElementById('comp-edit-id');
+  if (editEl) editEl.value = p.id;
+  const titleEl = document.getElementById('modal-add-company-title');
+  if (titleEl) titleEl.innerText = `✏️ Edit Business Profile: ${p.business_name}`;
+  const limitAlert = document.getElementById('company-limit-alert');
+  if (limitAlert) limitAlert.style.display = 'none';
+
+  document.getElementById('comp-name').value = p.business_name || '';
+  document.getElementById('comp-abbrev').value = p.abbreviation || '';
+  document.getElementById('comp-legal').value = p.legal_name || '';
+  document.getElementById('comp-ntn').value = p.ntn || '';
+  document.getElementById('comp-strn').value = p.strn || '';
+  document.getElementById('comp-city').value = p.city || 'Lahore';
+  document.getElementById('comp-email').value = p.email || '';
+  document.getElementById('comp-inv-prefix').value = p.invoice_prefix || 'INV';
+  document.getElementById('comp-fbr').value = p.fbr_enabled ? 'true' : 'false';
+
+  openModal('modal-add-company');
+}
+
 async function submitNewCompanyForm() {
+  const editId = document.getElementById('comp-edit-id')?.value?.trim();
   const name = document.getElementById('comp-name')?.value?.trim();
   const legal = document.getElementById('comp-legal')?.value?.trim();
   const abbrev = document.getElementById('comp-abbrev')?.value?.trim();
@@ -7092,6 +7900,16 @@ async function submitNewCompanyForm() {
   };
 
   try {
+    if (editId) {
+      await API.updateEntity('business-profile', editId, payload);
+      closeModal('modal-add-company');
+      showToast(`✓ Business profile "${name}" updated successfully!`, 'success');
+      State.businessProfiles = await API.getBusinessProfiles();
+      populateBusinessSwitcher();
+      await renderActiveView();
+      return;
+    }
+
     const res = await API.createBusinessProfile(payload);
     
     if (res && res.requires_payment_confirmation) {
@@ -7154,6 +7972,7 @@ async function submitOnboardCompanyForm() {
     return;
   }
 
+  const calculatedPrefix = invPrefix || (abbrev ? `INV-${abbrev.toUpperCase()}` : 'INV');
   const payload = {
     business_name: name,
     legal_name: legal,
@@ -7162,7 +7981,7 @@ async function submitOnboardCompanyForm() {
     strn: strn,
     email: email,
     city: city || 'Lahore',
-    invoice_prefix: invPrefix || 'INV',
+    invoice_prefix: calculatedPrefix,
     fbr_enabled: fbrCheckbox ? fbrCheckbox.checked : false
   };
 
@@ -7416,11 +8235,11 @@ const ENTITY_SCHEMAS = {
 async function openEditEntityModal(entityType, id) {
   const schema = ENTITY_SCHEMAS[entityType];
   if (!schema) {
-    alert(`Edit configuration for ${entityType} is not available.`);
+    showToast(`Edit configuration for ${entityType} is not available.`, 'error');
     return;
   }
 
-  // Fetch or find record
+  // Fetch or find record from API or local State fallback
   let record = null;
   try {
     const list = await schema.fetchFn();
@@ -7432,16 +8251,33 @@ async function openEditEntityModal(entityType, id) {
   }
 
   if (!record) {
-    // Fallback search in userList or mock if not found in list
-    if (entityType === 'user') {
-      const mockUsers = [
-        { id: 'u1', full_name: 'Company Administrator', email: 'admin@company.pk', role: 'CompanyAdmin', status: 'Active' },
-        { id: 'u2', full_name: 'Bid Manager', email: 'manager@company.pk', role: 'BidManager', status: 'Active' }
-      ];
-      record = mockUsers.find(u => String(u.id) === String(id)) || mockUsers[0];
-    } else {
-      record = { id: id };
+    const pluralKeyMap = {
+      opportunity: 'opportunities',
+      'bid-security': 'bid_securities',
+      award: 'awards',
+      guarantee: 'guarantees',
+      'purchase-order': 'purchase_orders',
+      'delivery-challan': 'delivery_challans',
+      invoice: 'invoices',
+      payment: 'payments',
+      warehouse: 'warehouses',
+      procurement: 'procurements',
+      expense: 'expenses',
+      customer: 'customers',
+      supplier: 'suppliers',
+      product: 'products',
+      'business-profile': 'businessProfiles',
+      user: 'users'
+    };
+    const key = pluralKeyMap[entityType];
+    if (key && State.getTenantEntityList) {
+      const localList = State.getTenantEntityList(key);
+      record = localList.find(item => String(item.id) === String(id));
     }
+  }
+
+  if (!record) {
+    record = { id: id };
   }
 
   // Set modal title & hidden inputs
@@ -7450,7 +8286,7 @@ async function openEditEntityModal(entityType, id) {
   const idInput = document.getElementById('edit-entity-id');
   const container = document.getElementById('edit-fields-container');
 
-  if (titleEl) titleEl.textContent = `✏️ Edit ${schema.title}`;
+  if (titleEl) titleEl.innerHTML = `✏️ Edit ${schema.title}`;
   if (typeInput) typeInput.value = entityType;
   if (idInput) idInput.value = id;
 
@@ -7496,14 +8332,14 @@ async function openEditEntityModal(entityType, id) {
       return `
         <div class="form-group" style="${colStyle}">
           <label class="form-label">${f.label}</label>
-          <textarea class="form-control" id="${fieldId}" name="${f.name}" rows="3" ${f.required ? 'required' : ''}>${val}</textarea>
+          <textarea class="form-textarea" id="${fieldId}" name="${f.name}" rows="3" ${f.required ? 'required' : ''}>${val}</textarea>
         </div>
       `;
     } else {
       return `
         <div class="form-group" style="${colStyle}">
           <label class="form-label">${f.label}</label>
-          <input type="${f.type || 'text'}" class="form-control" id="${fieldId}" name="${f.name}" value="${val}" ${f.required ? 'required' : ''} ${f.type === 'number' ? 'step="any"' : ''}>
+          <input type="${f.type || 'text'}" class="form-input" id="${fieldId}" name="${f.name}" value="${val}" ${f.required ? 'required' : ''} ${f.type === 'number' ? 'step="any"' : ''}>
         </div>
       `;
     }
@@ -7524,7 +8360,7 @@ async function submitUniversalEdit() {
   const schema = ENTITY_SCHEMAS[entityType];
 
   if (!schema || !id) {
-    alert('Missing entity information for update.');
+    showToast('Missing entity information for update.', 'error');
     return;
   }
 
@@ -7534,7 +8370,7 @@ async function submitUniversalEdit() {
     const el = document.getElementById(`edit-field-${f.name}`);
     if (el) {
       if (f.required && !el.value.trim()) {
-        alert(`${f.label.replace('*', '').trim()} is required.`);
+        showToast(`${f.label.replace('*', '').trim()} is required.`, 'warning');
         el.focus();
         return;
       }
@@ -7549,65 +8385,17 @@ async function submitUniversalEdit() {
   try {
     const res = await API.updateEntity(entityType, id, payload);
     closeModal('modal-universal-edit');
-    alert(`✓ ${schema.title} updated successfully!`);
+    showToast(`✓ ${schema.title} updated successfully!`, 'success');
     await renderActiveView();
   } catch (err) {
     console.error('Update error:', err);
-    alert(`Failed to update record: ${err.message}`);
+    showToast(`Failed to update record: ${err.message}`, 'error');
   }
 }
 
 // --------------------------------------------------------------------------
-// COMPANY ONBOARDING & PAID LIMIT ACTION HANDLERS
+// PAID LIMIT ACTION HANDLERS
 // --------------------------------------------------------------------------
-
-async function submitOnboardCompanyForm() {
-  const name = document.getElementById('onboard-comp-name')?.value;
-  const legal = document.getElementById('onboard-comp-legal')?.value;
-  const ntn = document.getElementById('onboard-comp-ntn')?.value;
-  const strn = document.getElementById('onboard-comp-strn')?.value;
-  const city = document.getElementById('onboard-comp-city')?.value;
-  const prefix = document.getElementById('onboard-comp-prefix')?.value;
-  const email = document.getElementById('onboard-comp-email')?.value;
-  const fbrEnabled = document.getElementById('onboard-comp-fbr')?.checked;
-
-  if (!name || !legal) {
-    alert('Business Display Name and Legal Name are mandatory.');
-    return;
-  }
-
-  const payload = {
-    business_name: name,
-    legal_name: legal,
-    ntn,
-    strn,
-    city: city || 'Lahore',
-    invoice_prefix: prefix || 'INV',
-    email,
-    fbr_enabled: Boolean(fbrEnabled)
-  };
-
-  try {
-    const res = await API.createBusinessProfile(payload);
-    if (res && res.success) {
-      closeModal('modal-onboard-company');
-      State.businessProfiles = await API.getBusinessProfiles();
-      populateBusinessSwitcher();
-      
-      if (fbrEnabled) {
-        alert('🎉 First Company created! Redirecting to FBR Digital Invoicing Configuration...');
-        switchView('settings');
-      } else {
-        alert('🎉 Welcome! Your first company has been set up successfully.');
-        switchView('dashboard');
-      }
-    } else {
-      alert(res.message || 'Failed to create company.');
-    }
-  } catch (err) {
-    alert(`Error: ${err.message}`);
-  }
-}
 
 async function confirmAndCreatePaidCompany() {
   if (!pendingPaidCompanyPayload) return;
@@ -7641,15 +8429,83 @@ async function confirmAndCreatePaidCompany() {
 // RBAC USER & EMPLOYEE ACTION HANDLERS
 // --------------------------------------------------------------------------
 
+function applyRbacPreset(presetType) {
+  const toggles = document.querySelectorAll('.perm-toggle');
+  toggles.forEach(t => {
+    const act = t.dataset.action;
+    if (presetType === 'full') {
+      t.checked = true;
+    } else if (presetType === 'readonly') {
+      t.checked = (act === 'view');
+    } else if (presetType === 'revoke') {
+      t.checked = false;
+    }
+  });
+}
+
 function openCreateUserModal(defaultRole = 'ClientEmployee') {
   const titleEl = document.getElementById('modal-create-user-title');
   const roleSelect = document.getElementById('newuser-role');
-  const matrixContainer = document.getElementById('rbac-matrix-container');
+  const passInput = document.getElementById('newuser-password');
+  const passLabel = document.getElementById('label-newuser-password');
+  const passGuide = document.getElementById('box-newuser-password-guide');
+  const saveBtn = document.getElementById('btn-save-user');
   const companyContainer = document.getElementById('newuser-company-checkboxes');
 
-  if (roleSelect) roleSelect.value = defaultRole;
+  document.getElementById('newuser-id').value = '';
+  document.getElementById('newuser-fullname').value = '';
+  document.getElementById('newuser-username').value = '';
+  document.getElementById('newuser-email').value = '';
+  document.getElementById('newuser-can-see-prices').checked = true;
+
+  if (passInput) {
+    passInput.value = 'Password123!';
+    passInput.required = true;
+  }
+  if (passLabel) passLabel.innerText = 'Initial Password *';
+  if (passGuide) passGuide.style.display = 'block';
+  if (saveBtn) saveBtn.innerText = '💾 Save User / Employee';
+  if (roleSelect) {
+    if (State.isSuperAdmin && State.isSuperAdmin()) {
+      roleSelect.innerHTML = `
+        <option value="ClientEmployee">Client Employee (Custom Configurable Access)</option>
+        <option value="ReadOnly">Read Only (View Permitted Screens - No Create / Edit / Delete)</option>
+        <option value="CompanyAdmin">Company Admin (Single Company Administrator)</option>
+        <option value="ClientAdmin">Client Admin (Full Tenant Admin)</option>
+        <option value="SuperAdmin">Super Admin (System Owner)</option>
+      `;
+    } else {
+      roleSelect.innerHTML = `
+        <option value="ClientEmployee" selected>Client Employee (Custom Configurable Access)</option>
+        <option value="ReadOnly">Read Only (View Permitted Screens - No Create / Edit / Delete)</option>
+        <option value="CompanyAdmin">Company Admin (Single Company Administrator)</option>
+        <option value="ClientAdmin">Client Admin (Full Tenant Admin)</option>
+      `;
+    }
+    const safeRole = (defaultRole === 'SuperAdmin' && !State.isSuperAdmin()) ? 'ClientEmployee' : defaultRole;
+    roleSelect.value = safeRole;
+
+    const updateEmailRequirement = (r) => {
+      const emailInput = document.getElementById('newuser-email');
+      const emailLabel = document.querySelector('label[for="newuser-email"]') || emailInput?.previousElementSibling;
+      const isAdminRole = (r === 'ClientAdmin' || r === 'CompanyAdmin' || r === 'SuperAdmin');
+      if (emailInput) {
+        emailInput.required = isAdminRole;
+        emailInput.placeholder = isAdminRole ? 'admin@company.pk * (Required)' : 'employee@company.pk (Optional)';
+      }
+      if (emailLabel) {
+        emailLabel.innerText = isAdminRole ? 'Official Email Address *' : 'Email Address (Optional)';
+      }
+    };
+
+    updateEmailRequirement(safeRole);
+    roleSelect.onchange = (e) => {
+      handleUserRoleChange(e.target.value);
+      updateEmailRequirement(e.target.value);
+    };
+  }
   if (titleEl) {
-    titleEl.innerText = defaultRole === 'SuperAdmin' ? '👑 Add Super Admin User' : '👤 Add New Employee User';
+    titleEl.innerText = defaultRole === 'SuperAdmin' && State.isSuperAdmin() ? '👑 Add Super Admin User' : '👤 Add New User / Employee';
   }
 
   // Populate company checkboxes
@@ -7666,7 +8522,100 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
     }
   }
 
+  // Apply default full access
+  applyRbacPreset(defaultRole === 'ReadOnly' ? 'readonly' : 'full');
   handleUserRoleSelection(defaultRole);
+  openModal('modal-create-user');
+}
+
+function openEditUserModal(userId) {
+  const users = State.getStoredUsers ? State.getStoredUsers() : [];
+  const u = users.find(user => user.id === userId) || { id: userId };
+
+  const titleEl = document.getElementById('modal-create-user-title');
+  const roleSelect = document.getElementById('newuser-role');
+  const passInput = document.getElementById('newuser-password');
+  const passLabel = document.getElementById('label-newuser-password');
+  const passGuide = document.getElementById('box-newuser-password-guide');
+  const saveBtn = document.getElementById('btn-save-user');
+  const companyContainer = document.getElementById('newuser-company-checkboxes');
+
+  document.getElementById('newuser-id').value = u.id || userId;
+  document.getElementById('newuser-fullname').value = u.full_name || '';
+  document.getElementById('newuser-username').value = u.username || '';
+  document.getElementById('newuser-email').value = u.email || '';
+  document.getElementById('newuser-can-see-prices').checked = (u.can_see_bidding_prices !== false);
+
+  if (passInput) {
+    passInput.value = '';
+    passInput.required = false;
+  }
+  if (passLabel) passLabel.innerText = 'New Password (Leave blank to keep unchanged)';
+  if (passGuide) passGuide.style.display = 'block';
+  if (saveBtn) saveBtn.innerText = '💾 Update User Rights & Permissions';
+  
+  if (roleSelect) {
+    if (State.isSuperAdmin && State.isSuperAdmin()) {
+      roleSelect.innerHTML = `
+        <option value="ClientEmployee">Client Employee (Custom Configurable Access)</option>
+        <option value="ReadOnly">Read Only (View Permitted Screens - No Create / Edit / Delete)</option>
+        <option value="CompanyAdmin">Company Admin (Single Company Administrator)</option>
+        <option value="ClientAdmin">Client Admin (Full Tenant Admin)</option>
+        <option value="SuperAdmin">Super Admin (System Owner)</option>
+      `;
+    } else {
+      roleSelect.innerHTML = `
+        <option value="ClientEmployee">Client Employee (Custom Configurable Access)</option>
+        <option value="ReadOnly">Read Only (View Permitted Screens - No Create / Edit / Delete)</option>
+        <option value="CompanyAdmin">Company Admin (Single Company Administrator)</option>
+        <option value="ClientAdmin">Client Admin (Full Tenant Admin)</option>
+      `;
+    }
+    const targetRole = u.role || 'ClientEmployee';
+    roleSelect.value = (targetRole === 'SuperAdmin' && !State.isSuperAdmin()) ? 'ClientEmployee' : targetRole;
+  }
+  if (titleEl) {
+    titleEl.innerText = `✏️ Edit Rights & Permissions: ${u.full_name || u.username || 'User'}`;
+  }
+
+  // Populate company checkboxes
+  if (companyContainer) {
+    if (State.businessProfiles && State.businessProfiles.length > 0) {
+      const assignedIds = Array.isArray(u.business_access) 
+        ? u.business_access.map(b => typeof b === 'object' ? b.id : b)
+        : (Array.isArray(u.business_profile_ids) ? u.business_profile_ids : []);
+
+      companyContainer.innerHTML = State.businessProfiles.map(p => {
+        const isAssigned = (assignedIds.length === 0 || assignedIds.includes(p.id));
+        return `
+          <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer;">
+            <input type="checkbox" class="user-company-checkbox permissions-checkbox" value="${p.id}" ${isAssigned ? 'checked' : ''}>
+            <span>🏢 ${p.business_name}</span>
+          </label>
+        `;
+      }).join('');
+    } else {
+      companyContainer.innerHTML = '<span style="font-size:0.8rem; color:#64748b;">All configured companies accessible.</span>';
+    }
+  }
+
+  // Populate matrix checkboxes from user permissions
+  const toggles = document.querySelectorAll('.perm-toggle');
+  toggles.forEach(t => {
+    const mod = t.dataset.module;
+    const act = t.dataset.action;
+    if (u.permissions && u.permissions[mod] && u.permissions[mod][act] !== undefined) {
+      t.checked = Boolean(u.permissions[mod][act]);
+    } else {
+      if (u.role === 'ReadOnly') {
+        t.checked = (act === 'view');
+      } else {
+        t.checked = (act === 'view' || act === 'add');
+      }
+    }
+  });
+
+  handleUserRoleSelection(u.role || 'ClientEmployee');
   openModal('modal-create-user');
 }
 
@@ -7676,12 +8625,16 @@ function handleUserRoleSelection(role) {
 
   if (role === 'SuperAdmin' || role === 'ClientAdmin') {
     matrixContainer.style.display = 'none'; // Admins have full access
+  } else if (role === 'ReadOnly') {
+    matrixContainer.style.display = 'block';
+    applyRbacPreset('readonly');
   } else {
-    matrixContainer.style.display = 'block'; // Employees have granular access
+    matrixContainer.style.display = 'block'; // Employees have granular configurable access
   }
 }
 
 async function submitCreateUserForm() {
+  const userId = document.getElementById('newuser-id')?.value?.trim();
   const fullname = document.getElementById('newuser-fullname')?.value?.trim();
   const username = document.getElementById('newuser-username')?.value?.trim();
   const email = document.getElementById('newuser-email')?.value?.trim();
@@ -7689,48 +8642,47 @@ async function submitCreateUserForm() {
   const role = document.getElementById('newuser-role')?.value || 'ClientEmployee';
   const canSeePrices = document.getElementById('newuser-can-see-prices')?.checked;
 
-  if (!fullname || !email || !password) {
-    alert('Full name, email, and password are required.');
+  if (!State.isSuperAdmin() && (role === 'SuperAdmin' || role === 'LimitedSuperAdmin')) {
+    alert('⚠️ Permission Denied: Client Administrators cannot assign or create Super Admin accounts.');
     return;
   }
 
-  const passCheck = validatePasswordStrength(password);
-  if (!passCheck.valid) {
-    alert(`⚠️ Password Requirement:\n${passCheck.message}`);
+  if (!fullname) {
+    alert('Full name is required.');
     return;
+  }
+
+  if (!userId && !password) {
+    alert('Password is required for new user accounts.');
+    return;
+  }
+
+  if (password) {
+    const passCheck = validatePasswordStrength(password);
+    if (!passCheck.valid) {
+      alert(`⚠️ Password Requirement:\n${passCheck.message}`);
+      return;
+    }
   }
 
   const submitBtn = document.querySelector('#form-create-user button[type="submit"]');
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span>⏳ Creating User Account...</span>';
+    submitBtn.innerHTML = '<span>⏳ Saving User Permissions...</span>';
   }
 
   try {
-    const effectiveUsername = (username || email.split('@')[0]).toLowerCase();
-    const effectiveEmail = email.toLowerCase();
-    const existingUsers = State.getStoredUsers ? State.getStoredUsers() : [];
-    const isDup = existingUsers.some(u => 
-      (u.username && u.username.toLowerCase() === effectiveUsername) ||
-      (u.email && u.email.toLowerCase() === effectiveEmail)
-    );
-    if (isDup) {
-      alert(`⚠️ Duplicate User Error:\nA user with username "${effectiveUsername}" or email "${effectiveEmail}" is already registered.`);
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '<span>💾 Create User Account</span>';
-      }
-      return;
-    }
+    const effectiveUsername = (username || (email ? email.split('@')[0] : fullname.toLowerCase().replace(/[^a-z0-9]/g, '')) || `user_${Date.now()}`).toLowerCase();
+    const effectiveEmail = email ? email.trim().toLowerCase() : null;
 
-    // Gather granular permissions
+    // Gather granular screen permissions
     const permissions = {};
     const toggles = document.querySelectorAll('.perm-toggle');
     toggles.forEach(t => {
       const mod = t.dataset.module;
       const act = t.dataset.action;
       if (!permissions[mod]) permissions[mod] = {};
-      permissions[mod][act] = t.checked;
+      permissions[mod][act] = (role === 'ReadOnly' && (act === 'add' || act === 'edit')) ? false : t.checked;
     });
 
     // Gather selected company IDs
@@ -7739,41 +8691,66 @@ async function submitCreateUserForm() {
 
     const payload = {
       full_name: fullname,
-      username: username || email.split('@')[0],
-      email,
-      password,
+      username: effectiveUsername,
+      email: effectiveEmail,
       role,
       can_see_bidding_prices: canSeePrices,
       permissions,
       business_profile_ids: businessProfileIds
     };
+    if (password) payload.password = password;
 
-    const res = await fetch(`${API_BASE}/users`, {
-      method: 'POST',
-      headers: API.getHeaders(),
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-
-    if (res.status === 402 || data.requires_payment_confirmation) {
-      pendingPaidEmployeePayload = payload;
-      openModal('modal-paid-employee-warning');
-      return;
-    }
-
-    if (data.success) {
+    if (userId) {
+      // Edit mode: Update existing user
+      const res = await API.updateUser(userId, payload);
       closeModal('modal-create-user');
-      alert(`✓ ${role} '${fullname}' registered successfully!`);
+      alert(`✓ User rights and permissions for '${fullname}' updated successfully!`);
       await renderActiveView();
+      renderDynamicSidebarNavigation();
     } else {
-      alert(`Error: ${data.message}`);
+      // Create mode: Check duplicates & register
+      const existingUsers = State.getStoredUsers ? State.getStoredUsers() : [];
+      const isDup = existingUsers.some(u => 
+        (effectiveUsername && u.username && u.username.toLowerCase() === effectiveUsername) ||
+        (effectiveEmail && u.email && u.email.toLowerCase() === effectiveEmail)
+      );
+      if (isDup) {
+        alert(`⚠️ Duplicate User Error:\nA user with username "${effectiveUsername}" ${effectiveEmail ? `or email "${effectiveEmail}"` : ''} is already registered.`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save User / Employee</span>';
+        }
+        return;
+      }
+
+      const res = await fetch(`${API_BASE}/users`, {
+        method: 'POST',
+        headers: API.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (res.status === 402 || data.requires_payment_confirmation) {
+        pendingPaidEmployeePayload = payload;
+        openModal('modal-paid-employee-warning');
+        return;
+      }
+
+      if (data.success) {
+        closeModal('modal-create-user');
+        alert(`✓ ${role} '${fullname}' registered successfully with customized permissions!`);
+        await renderActiveView();
+        renderDynamicSidebarNavigation();
+      } else {
+        alert(`Error: ${data.message}`);
+      }
     }
   } catch (err) {
-    alert(`Failed to create user: ${err.message}`);
+    alert(`Failed to save user permissions: ${err.message}`);
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = '<span>💾 Create User Account</span>';
+      submitBtn.innerHTML = '<span>💾 Save User / Employee</span>';
     }
   }
 }
@@ -7841,17 +8818,65 @@ async function submitResetPasswordForm() {
   }
 }
 
+async function deleteUserAction(userId, userName) {
+  if (!userId) return;
+  if (!confirm(`Are you sure you want to permanently delete user "${userName || userId}"? This action cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    const res = await API.deleteUser(userId);
+    if (res && res.success) {
+      alert(`✓ ${res.message || 'User deleted successfully.'}`);
+      await renderActiveView();
+    } else {
+      alert(res.message || 'Failed to delete user.');
+    }
+  } catch (err) {
+    alert(`Error deleting user: ${err.message}`);
+  }
+}
+window.deleteUserAction = deleteUserAction;
+
+async function handleResendInviteEmail(userId, userName, userEmail) {
+  if (!userId) return;
+  if (!confirm(`Resend activation / welcome email to ${userEmail || userName} via Resend.com?`)) {
+    return;
+  }
+
+  showToast('⏳ Dispatching activation email via Resend.com...', 'info', 2500);
+
+  try {
+    const res = await API.resendInviteEmail(userId, userEmail);
+    if (res && res.success) {
+      alert(`✓ ${res.message || 'Activation email sent successfully!'}`);
+      showToast('✓ Email sent successfully via Resend!', 'success');
+    } else {
+      alert(`⚠️ ${res.message || 'Failed to dispatch email.'}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+window.handleResendInviteEmail = handleResendInviteEmail;
+
 async function submitCreateTenantForm() {
   const nameInput = document.getElementById('tenant-company-name');
   const slugInput = document.getElementById('tenant-subdomain');
   const planInput = document.getElementById('tenant-plan');
+  const trialInput = document.getElementById('tenant-trial-period');
+  const freeCompaniesInput = document.getElementById('tenant-free-companies');
+  const freeUsersInput = document.getElementById('tenant-free-users');
   const adminNameInput = document.getElementById('tenant-admin-name');
   const adminEmailInput = document.getElementById('tenant-admin-email');
   const adminPasswordInput = document.getElementById('tenant-admin-password');
 
   const name = nameInput?.value?.trim();
   const slug = slugInput?.value?.trim();
-  const plan = planInput?.value || 'Standard';
+  const plan = planInput?.value || 'Advance';
+  const trialPeriod = trialInput?.value || '15 Days';
+  const freeCompanies = parseInt(freeCompaniesInput?.value || '2', 10);
+  const freeUsers = parseInt(freeUsersInput?.value || '2', 10);
   const adminName = adminNameInput?.value?.trim();
   const adminEmail = adminEmailInput?.value?.trim();
   const adminPassword = adminPasswordInput?.value;
@@ -7871,6 +8896,9 @@ async function submitCreateTenantForm() {
     company_name: name,
     subdomain: slug,
     subscription_plan: plan,
+    trial_period: trialPeriod,
+    free_business_profile_limit: freeCompanies,
+    free_employee_limit: freeUsers,
     admin_name: adminName,
     admin_email: adminEmail,
     admin_password: adminPassword
@@ -7886,7 +8914,7 @@ async function submitCreateTenantForm() {
       if (adminEmailInput) adminEmailInput.value = '';
       if (adminPasswordInput) adminPasswordInput.value = '';
 
-      alert(`✓ Tenant '${name}' provisioned successfully with Client Admin '${adminEmail}'!`);
+      alert(res.message || `✓ Tenant '${name}' provisioned successfully with Client Admin '${adminEmail}'!`);
       await renderActiveView();
     } else {
       alert(res.message || 'Failed to provision tenant.');
@@ -7946,11 +8974,11 @@ async function renderSuperAdminSubscriptionsHTML() {
           <thead>
             <tr>
               <th>Tenant Organization</th>
-              <th>Plan Tier</th>
+              <th>Plan Tier & Cycle</th>
               <th>Status / Trial Timer</th>
-              <th>Monthly Fee (Agreed)</th>
+              <th>Quotas (Tenders & CDRs)</th>
+              <th>Agreed Fee</th>
               <th>Companies & Seats</th>
-              <th>Active Modules</th>
               <th>Renewal Date</th>
               <th>Super Admin Actions</th>
             </tr>
@@ -7967,13 +8995,22 @@ async function renderSuperAdminSubscriptionsHTML() {
                 statusBadge = '<span class="badge badge-won">✓ Paid (Active)</span>';
               }
 
-              const planBadge = sub.plan_type === 'Advance' 
-                ? '<span class="badge badge-won">Advance Plan</span>' 
-                : sub.plan_type === 'Basic' 
-                  ? '<span class="badge badge-ready">Basic Plan</span>' 
+              const cycleLabel = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
+              const planBadge = (sub.plan_type === 'Advance') 
+                ? `<span class="badge badge-won">Advance (${cycleLabel})</span>` 
+                : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic')
+                  ? '<span class="badge badge-ready">Starter Plan</span>' 
                   : '<span class="badge" style="background:#f3e8ff; color:#7e22ce;">Custom Plan</span>';
 
-              const activeModCount = sub.plan_type === 'Advance' ? 8 : sub.plan_type === 'Basic' ? 3 : (sub.active_modules?.length || 0);
+              const tenderQuotaDisplay = sub.is_trial 
+                ? `${o.tenderCount} / 5 Tenders` 
+                : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic')
+                  ? `${o.tenderCount} / 5 Bids (per-bid extra)`
+                  : `${o.tenderCount} / ∞ (Unlimited)`;
+
+              const bidSecQuotaDisplay = sub.is_trial 
+                ? `${o.bidSecurityCount} / 3 Bid Sec` 
+                : `${o.bidSecurityCount} / ∞ (Unlimited)`;
 
               return `
                 <tr>
@@ -7984,17 +9021,18 @@ async function renderSuperAdminSubscriptionsHTML() {
                   <td>${planBadge}</td>
                   <td>${statusBadge}</td>
                   <td>
+                    <span style="font-size:0.78rem; font-weight:600; color:#1e293b;">📑 ${tenderQuotaDisplay}</span><br>
+                    <span style="font-size:0.75rem; color:#64748b;">🏦 ${bidSecQuotaDisplay}</span>
+                  </td>
+                  <td>
                     <strong>PKR ${o.totalMonthly.toLocaleString()}</strong><br>
-                    <span style="font-size:0.72rem; color:var(--text-muted);">Base: PKR ${(sub.custom_base_price || 0).toLocaleString()}</span>
+                    <span style="font-size:0.72rem; color:var(--text-muted);">Base: PKR ${(sub.custom_base_price || (sub.plan_type === 'Starter' ? 14000 : 35000)).toLocaleString()}</span>
                   </td>
                   <td>
                     <span style="font-size:0.8rem;">
-                      🏢 ${o.companyCount} Co ${o.paidCompanies > 0 ? `(${o.paidCompanies} paid)` : ''}<br>
-                      👥 ${o.userCount} Users ${o.paidUsers > 0 ? `(${o.paidUsers} paid)` : ''}
+                      🏢 ${o.companyCount} / ${o.freeCompaniesLimit} Inc. ${o.paidCompanies > 0 ? `(+${o.paidCompanies} paid)` : ''}<br>
+                      👥 ${o.userCount} / ${o.freeUsersLimit} Inc. ${o.paidUsers > 0 ? `(+${o.paidUsers} paid)` : ''}
                     </span>
-                  </td>
-                  <td>
-                    <span class="badge badge-sec-attached">${activeModCount} / 8 Modules</span>
                   </td>
                   <td>
                     <span style="font-size:0.82rem; font-weight:600;">${sub.current_period_end || 'N/A'}</span>
@@ -8034,19 +9072,24 @@ async function renderMySubscriptionHTML() {
   if (sub.status === 'Suspended') {
     statusBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171; font-size:0.85rem; padding:6px 12px;">⛔ Account Suspended (Pending Payment)</span>';
   } else if (sub.is_trial && sub.status === 'Trial') {
-    statusBadge = `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:0.85rem; padding:6px 12px;">⏳ Free Trial: ${data.trialDaysRemaining} Days Remaining</span>`;
+    statusBadge = `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:0.85rem; padding:6px 12px;">⏳ 15-Day Free Trial: ${data.trialDaysRemaining} Days Remaining</span>`;
   } else {
     statusBadge = '<span class="badge badge-won" style="font-size:0.85rem; padding:6px 12px;">✓ Active Subscription (Paid)</span>';
   }
 
-  const isBasic = sub.plan_type === 'Basic';
-  const tenderQuotaMax = isBasic ? 10 : 'Unlimited';
-  const tendersUsed = quota.tenders_created || 0;
-  const tenderPct = isBasic ? Math.min(100, (tendersUsed / 10) * 100) : 100;
+  const isStarter = sub.plan_type === 'Starter' || sub.plan_type === 'Basic';
+  const isTrial = sub.is_trial || sub.status === 'Trial';
 
-  const quoteQuotaMax = isBasic ? 10 : 'Unlimited';
-  const quotesUsed = quota.quotes_created || 0;
-  const quotePct = isBasic ? Math.min(100, (quotesUsed / 10) * 100) : 100;
+  const tenderQuotaMax = isTrial ? 5 : (isStarter ? 5 : 'Unlimited');
+  const tendersUsed = quota.tenders_created || 0;
+  const tenderPct = (isTrial || isStarter) ? Math.min(100, (tendersUsed / 5) * 100) : 100;
+
+  const allSecurities = State.getTenantEntityList ? State.getTenantEntityList('bidSecurities') : [];
+  const secUsed = allSecurities.filter(b => b.tenant_id === (sub.tenant_id || State.currentUser?.tenant_id)).length || (quota.bid_securities_created || 0);
+  const secQuotaMax = isTrial ? 3 : 'Unlimited';
+  const secPct = isTrial ? Math.min(100, (secUsed / 3) * 100) : 100;
+
+  const cycleName = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
 
   return `
     <!-- Top Plan Overview Banner -->
@@ -8055,59 +9098,72 @@ async function renderMySubscriptionHTML() {
         <div>
           <div style="font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Current Subscription Plan</div>
           <h2 style="font-size: 1.8rem; font-weight: 800; color: #38bdf8; margin: 4px 0 8px;">${sub.plan_type} Tier</h2>
-          <div style="display: flex; gap: 10px; align-items: center;">
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             ${statusBadge}
-            <span style="font-size: 0.85rem; color: #cbd5e1;">Billing Cycle: <strong>Monthly</strong> | Renewal: <strong>${sub.current_period_end || 'N/A'}</strong></span>
+            <span style="font-size: 0.85rem; color: #cbd5e1;">Billing Cycle: <strong>${cycleName}</strong> | Expiry / Renewal: <strong>${sub.current_period_end || 'N/A'}</strong></span>
           </div>
         </div>
         <div style="text-align: right; background: rgba(255,255,255,0.06); padding: 16px 20px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.1);">
-          <div style="font-size: 0.8rem; color: #94a3b8;">Total Agreed Monthly Fee:</div>
-          <div style="font-size: 1.6rem; font-weight: 800; color: #4ade80;">PKR ${data.totalMonthly.toLocaleString()} <span style="font-size:0.8rem; color:#94a3b8;">/ mo</span></div>
-          <button class="primary-btn" style="margin-top: 8px; font-size: 0.82rem; padding: 6px 14px;" onclick="openModal('modal-quota-upgrade')">🚀 Request Plan Upgrade</button>
+          <div style="font-size: 0.8rem; color: #94a3b8;">Contracted Plan Rate:</div>
+          <div style="font-size: 1.6rem; font-weight: 800; color: #4ade80;">PKR ${(sub.custom_base_price || (isStarter ? 14000 : 35000)).toLocaleString()} <span style="font-size:0.8rem; color:#94a3b8;">/ period</span></div>
+          <button class="primary-btn" style="margin-top: 8px; font-size: 0.82rem; padding: 6px 14px;" onclick="openModal('modal-quota-upgrade')">🚀 Upgrade to Advance Plan</button>
         </div>
       </div>
     </div>
 
     <!-- Usage & Quota Meters Grid -->
-    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px;">
       <!-- Tender Quota Meter -->
       <div class="card" style="margin-bottom: 0;">
         <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px; display: flex; justify-content: space-between;">
           <span>📑 Commercial Tenders</span>
-          <span style="color: var(--primary);">${tendersUsed} / ${tenderQuotaMax}</span>
+          <span style="color: var(--primary); font-weight: 800;">${tendersUsed} / ${tenderQuotaMax}</span>
         </div>
-        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">Monthly creation quota</div>
+        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">${isTrial ? '15-Day Free Trial Limit' : isStarter ? 'Starter Bids Included' : 'Unlimited Active'}</div>
         <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-          <div style="width: ${tenderPct}%; height: 100%; background: ${isBasic && tendersUsed >= 10 ? '#ef4444' : '#0284c7'};"></div>
+          <div style="width: ${tenderPct}%; height: 100%; background: ${(isTrial || isStarter) && tendersUsed >= 5 ? '#ef4444' : '#0284c7'};"></div>
         </div>
-        ${isBasic && tendersUsed >= 10 ? '<div style="font-size:0.75rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Monthly limit reached</div>' : ''}
+        ${(isTrial || isStarter) && tendersUsed >= 5 ? '<div style="font-size:0.74rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Limit reached (Upgrade to Advance)</div>' : ''}
+      </div>
+
+      <!-- Bid Security Quota Meter -->
+      <div class="card" style="margin-bottom: 0;">
+        <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px; display: flex; justify-content: space-between;">
+          <span>🏦 Bid Securities & CDRs</span>
+          <span style="color: #0891b2; font-weight: 800;">${secUsed} / ${secQuotaMax}</span>
+        </div>
+        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">${isTrial ? '15-Day Free Trial Limit' : 'Unlimited Registry'}</div>
+        <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+          <div style="width: ${secPct}%; height: 100%; background: ${isTrial && secUsed >= 3 ? '#ef4444' : '#0891b2'};"></div>
+        </div>
+        ${isTrial && secUsed >= 3 ? '<div style="font-size:0.74rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Trial limit reached (3 Items)</div>' : ''}
       </div>
 
       <!-- Multi-Company Quota -->
       <div class="card" style="margin-bottom: 0;">
         <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px; display: flex; justify-content: space-between;">
           <span>🏢 Company Profiles</span>
-          <span style="color: #059669;">${data.companyCount} Active</span>
+          <span style="color: #059669; font-weight: 800;">${data.companyCount} / ${data.freeCompaniesLimit}</span>
         </div>
         <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">
-          ${sub.plan_type === 'Advance' ? '2 Free Included' : '1 Free Included'} ${data.paidCompanies > 0 ? `(+PKR ${(data.paidCompanies * (sub.custom_extra_company_price || 2500)).toLocaleString()}/mo)` : ''}
+          Included free in plan ${data.paidCompanies > 0 ? `(+${data.paidCompanies} extra)` : ''}
         </div>
         <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-          <div style="width: ${Math.min(100, (data.companyCount / (sub.plan_type === 'Advance' ? 2 : 1)) * 100)}%; height: 100%; background: #059669;"></div>
+          <div style="width: ${Math.min(100, (data.companyCount / (data.freeCompaniesLimit || 1)) * 100)}%; height: 100%; background: #059669;"></div>
         </div>
       </div>
 
       <!-- Employee Seats -->
       <div class="card" style="margin-bottom: 0;">
         <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px; display: flex; justify-content: space-between;">
-          <span>👥 Employee Seats</span>
-          <span style="color: #8b5cf6;">${data.userCount} Users</span>
+          <span>👥 User Seats</span>
+          <span style="color: #8b5cf6; font-weight: 800;">${data.userCount} / ${data.freeUsersLimit}</span>
         </div>
         <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">
-          ${sub.plan_type === 'Advance' ? '2 Free Seats Included' : '1 Admin Included'} ${data.paidUsers > 0 ? `(+PKR ${(data.paidUsers * (sub.custom_extra_seat_price || 1500)).toLocaleString()}/mo)` : ''}
+          Included user seats ${data.paidUsers > 0 ? `(+${data.paidUsers} extra)` : ''}
         </div>
         <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-          <div style="width: ${Math.min(100, (data.userCount / (sub.plan_type === 'Advance' ? 3 : 1)) * 100)}%; height: 100%; background: #8b5cf6;"></div>
+          <div style="width: ${Math.min(100, (data.userCount / (data.freeUsersLimit || 1)) * 100)}%; height: 100%; background: #8b5cf6;"></div>
         </div>
       </div>
     </div>
@@ -8156,7 +9212,7 @@ async function renderMySubscriptionHTML() {
             ${data.payments.length === 0 ? `
               <tr>
                 <td colspan="7" style="text-align:center; padding:30px; color:#64748b;">
-                  No subscription payment receipts logged yet. Free trial or initial period active.
+                  No subscription payment receipts logged yet. Free 15-day trial or active billing period in progress.
                 </td>
               </tr>
             ` : data.payments.map(p => `
@@ -8180,6 +9236,41 @@ async function renderMySubscriptionHTML() {
 // --------------------------------------------------------------------------
 // 21. SUBSCRIPTION MODAL CONTROLLERS & FORM HANDLERS
 // --------------------------------------------------------------------------
+function openPublicPricingModal() {
+  openModal('modal-public-pricing');
+}
+window.openPublicPricingModal = openPublicPricingModal;
+
+function switchPublicPricingFreq(freq, btn) {
+  const container = document.getElementById('public-pricing-frequency-tabs');
+  if (container) {
+    container.querySelectorAll('.freq-tab-btn').forEach(b => {
+      b.style.background = 'rgba(255,255,255,0.08)';
+      b.style.color = '#cbd5e1';
+      b.style.borderColor = 'rgba(255,255,255,0.15)';
+    });
+  }
+  if (btn) {
+    btn.style.background = '#2563eb';
+    btn.style.color = '#ffffff';
+    btn.style.borderColor = 'transparent';
+  }
+
+  const saveBadge = document.getElementById('public-pricing-advance-save-badge');
+  if (saveBadge) {
+    if (freq === 'quarterly') {
+      saveBadge.innerHTML = '✨ <strong>Save PKR 6,000</strong> on Quarterly billing';
+    } else if (freq === 'bi_annually') {
+      saveBadge.innerHTML = '✨ <strong>Save PKR 14,500</strong> on Bi-Annual billing';
+    } else if (freq === 'annually') {
+      saveBadge.innerHTML = '🔥 <strong>Save up to PKR 30,000</strong> on Annual billing';
+    } else {
+      saveBadge.innerHTML = '💡 Switch to Quarterly or Annual to save up to PKR 30,000';
+    }
+  }
+}
+window.switchPublicPricingFreq = switchPublicPricingFreq;
+
 function openConfigureSubscriptionModal(tenantId) {
   const sub = State.getTenantSubscription(tenantId);
   const tenant = State.getTenants().find(t => t.id === tenantId) || { company_name: 'Tenant' };
@@ -8188,22 +9279,50 @@ function openConfigureSubscriptionModal(tenantId) {
   document.getElementById('sub-tenant-name-display').innerText = tenant.company_name;
   
   // Set Plan Radio
+  const normalizedPlan = (sub.plan_type === 'Basic' || sub.plan_type === 'Starter') ? 'Starter' : sub.plan_type;
   const radios = document.getElementsByName('sub-plan-choice');
-  radios.forEach(r => { r.checked = (r.value === sub.plan_type); });
+  radios.forEach(r => { r.checked = (r.value === normalizedPlan); });
+
+  // Set Billing Cycle Radio for Advance Plan
+  const cycleRadios = document.getElementsByName('sub-billing-cycle');
+  const activeCycle = sub.billing_cycle || 'monthly';
+  cycleRadios.forEach(r => { r.checked = (r.value === activeCycle); });
+
+  // Set Included Quotas & Package Limits (Editable for Super Admin)
+  const incCoInput = document.getElementById('sub-included-companies');
+  if (incCoInput) {
+    incCoInput.value = sub.free_companies_limit !== undefined 
+      ? sub.free_companies_limit 
+      : (tenant.free_business_profile_limit || (normalizedPlan === 'Advance' ? 2 : 1));
+  }
+
+  const incUsersInput = document.getElementById('sub-included-users');
+  if (incUsersInput) {
+    incUsersInput.value = sub.free_users_limit !== undefined 
+      ? sub.free_users_limit 
+      : (tenant.free_employee_limit || (normalizedPlan === 'Advance' ? 3 : 1));
+  }
 
   // Set Custom Prices
-  document.getElementById('sub-custom-base-price').value = sub.custom_base_price !== undefined ? sub.custom_base_price : (sub.plan_type === 'Basic' ? 4000 : 14000);
+  document.getElementById('sub-custom-base-price').value = sub.custom_base_price !== undefined ? sub.custom_base_price : (normalizedPlan === 'Starter' ? 14000 : 35000);
   document.getElementById('sub-custom-extra-company').value = sub.custom_extra_company_price !== undefined ? sub.custom_extra_company_price : 2500;
   document.getElementById('sub-custom-extra-seat').value = sub.custom_extra_seat_price !== undefined ? sub.custom_extra_seat_price : 1500;
 
-  // Set Trial Duration
+  // Set Trial Duration & Expiry Date
   const trialSelect = document.getElementById('sub-trial-duration');
-  trialSelect.value = sub.trial_days ? String(sub.trial_days) : (sub.is_trial ? '30' : 'none');
+  if (trialSelect) {
+    const dVal = String(sub.trial_days || 15);
+    const hasOpt = Array.from(trialSelect.options).some(o => o.value === dVal);
+    trialSelect.value = sub.is_trial ? (hasOpt ? dVal : 'custom') : 'none';
+  }
   document.getElementById('sub-trial-end-date').value = sub.trial_end_date || new Date().toISOString().split('T')[0];
+
+  const noteInput = document.getElementById('sub-personal-reference-note');
+  if (noteInput) noteInput.value = sub.personal_reference_note || '';
 
   // Render Modular Checkboxes
   renderSubModulesChecklist(sub);
-  onPlanSelectionChanged(sub.plan_type);
+  onPlanSelectionChanged(normalizedPlan, false);
   recalcSubscriptionBillPreview();
 
   openModal('modal-configure-subscription');
@@ -8232,20 +9351,58 @@ function renderSubModulesChecklist(sub) {
   }).join('');
 }
 
-function onPlanSelectionChanged(planType) {
+function onPlanSelectionChanged(planType, resetLimits = true) {
   const modulesContainer = document.getElementById('sub-modules-selector-container');
+  const cycleContainer = document.getElementById('sub-billing-cycle-container');
   const basePriceInput = document.getElementById('sub-custom-base-price');
+  const incCoInput = document.getElementById('sub-included-companies');
+  const incUsersInput = document.getElementById('sub-included-users');
+
+  if (resetLimits) {
+    if (planType === 'Advance') {
+      if (incCoInput) incCoInput.value = 2;
+      if (incUsersInput) incUsersInput.value = 3;
+    } else if (planType === 'Starter' || planType === 'Basic') {
+      if (incCoInput) incCoInput.value = 1;
+      if (incUsersInput) incUsersInput.value = 1;
+    }
+  }
 
   if (planType === 'Custom') {
     if (modulesContainer) modulesContainer.style.display = 'block';
-    if (basePriceInput && (!basePriceInput.value || basePriceInput.value === '14000' || basePriceInput.value === '4000')) {
+    if (cycleContainer) cycleContainer.style.display = 'none';
+    if (basePriceInput && (!basePriceInput.value || basePriceInput.value === '35000' || basePriceInput.value === '14000')) {
       basePriceInput.value = 3000;
     }
+  } else if (planType === 'Starter' || planType === 'Basic') {
+    if (modulesContainer) modulesContainer.style.display = 'none';
+    if (cycleContainer) cycleContainer.style.display = 'none';
+    if (basePriceInput) basePriceInput.value = 14000;
   } else {
     if (modulesContainer) modulesContainer.style.display = 'none';
-    if (basePriceInput) {
-      basePriceInput.value = planType === 'Basic' ? 4000 : 14000;
-    }
+    if (cycleContainer) cycleContainer.style.display = 'block';
+    
+    // Check cycle radio
+    let selectedCycle = 'monthly';
+    const cycleRadios = document.getElementsByName('sub-billing-cycle');
+    cycleRadios.forEach(r => { if (r.checked) selectedCycle = r.value; });
+    onBillingCycleChanged(selectedCycle);
+  }
+  recalcSubscriptionBillPreview();
+}
+
+function onBillingCycleChanged(cycleKey) {
+  const basePriceInput = document.getElementById('sub-custom-base-price');
+  if (!basePriceInput) return;
+
+  if (cycleKey === 'quarterly') {
+    basePriceInput.value = 99000;
+  } else if (cycleKey === 'bi_annually') {
+    basePriceInput.value = 195500;
+  } else if (cycleKey === 'annually') {
+    basePriceInput.value = 390000;
+  } else {
+    basePriceInput.value = 35000;
   }
   recalcSubscriptionBillPreview();
 }
@@ -8267,6 +9424,8 @@ function recalcSubscriptionBillPreview() {
   radios.forEach(r => { if (r.checked) selectedPlan = r.value; });
 
   const basePrice = Number(document.getElementById('sub-custom-base-price')?.value || 0);
+  const incCo = Number(document.getElementById('sub-included-companies')?.value || (selectedPlan === 'Advance' ? 2 : 1));
+  const incUsers = Number(document.getElementById('sub-included-users')?.value || (selectedPlan === 'Advance' ? 3 : 1));
   let total = basePrice;
 
   if (selectedPlan === 'Custom') {
@@ -8281,8 +9440,8 @@ function recalcSubscriptionBillPreview() {
   const breakdownEl = document.getElementById('sub-billing-breakdown-text');
   const totalEl = document.getElementById('sub-calculated-total-display');
 
-  if (breakdownEl) breakdownEl.innerText = `${selectedPlan} Tier Base: PKR ${basePrice.toLocaleString()} + Add-ons`;
-  if (totalEl) totalEl.innerText = `PKR ${total.toLocaleString()} / mo`;
+  if (breakdownEl) breakdownEl.innerText = `${selectedPlan} Tier Base: PKR ${basePrice.toLocaleString()} (${incCo} Companies & ${incUsers} Seats Included)`;
+  if (totalEl) totalEl.innerText = `PKR ${total.toLocaleString()}`;
 }
 
 async function submitConfigureSubscriptionForm() {
@@ -8291,13 +9450,21 @@ async function submitConfigureSubscriptionForm() {
   let selectedPlan = 'Advance';
   radios.forEach(r => { if (r.checked) selectedPlan = r.value; });
 
-  const basePrice = Number(document.getElementById('sub-custom-base-price')?.value || 0);
+  let selectedCycle = 'monthly';
+  const cycleRadios = document.getElementsByName('sub-billing-cycle');
+  cycleRadios.forEach(r => { if (r.checked) selectedCycle = r.value; });
+
+  const incCo = parseInt(document.getElementById('sub-included-companies')?.value, 10) || (selectedPlan === 'Advance' ? 2 : 1);
+  const incUsers = parseInt(document.getElementById('sub-included-users')?.value, 10) || (selectedPlan === 'Advance' ? 3 : 1);
+
+  const basePrice = Number(document.getElementById('sub-custom-base-price')?.value || (selectedPlan === 'Starter' ? 14000 : 35000));
   const extraCoPrice = Number(document.getElementById('sub-custom-extra-company')?.value || 2500);
   const extraSeatPrice = Number(document.getElementById('sub-custom-extra-seat')?.value || 1500);
 
   const trialDuration = document.getElementById('sub-trial-duration')?.value;
   const isTrial = (trialDuration !== 'none');
   const trialEndDate = document.getElementById('sub-trial-end-date')?.value || new Date().toISOString().split('T')[0];
+  const refNote = document.getElementById('sub-personal-reference-note')?.value || '';
 
   const activeModules = [];
   const customModuleFees = {};
@@ -8309,7 +9476,7 @@ async function submitConfigureSubscriptionForm() {
       const feeInput = document.querySelector(`.sub-mod-fee-input[data-mod="${cb.value}"]`);
       customModuleFees[cb.value] = Number(feeInput?.value || 0);
     });
-  } else if (selectedPlan === 'Basic') {
+  } else if (selectedPlan === 'Starter' || selectedPlan === 'Basic') {
     activeModules.push('mod_tenders', 'mod_quotations', 'mod_fbr_invoicing');
   } else {
     activeModules.push('mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi');
@@ -8318,11 +9485,19 @@ async function submitConfigureSubscriptionForm() {
   const payload = {
     tenant_id: tenantId,
     plan_type: selectedPlan,
+    billing_cycle: selectedCycle,
     status: isTrial ? 'Trial' : 'Active',
     is_trial: isTrial,
     trial_days: isTrial ? (trialDuration === 'custom' ? 30 : parseInt(trialDuration, 10)) : 0,
     trial_end_date: trialEndDate,
     current_period_end: trialEndDate,
+    trial_tender_limit: 5,
+    trial_bid_security_limit: 3,
+    starter_tender_limit: 5,
+    personal_reference_note: refNote,
+    is_personal_reference_trial: (isTrial && ['30', '60', '90', 'custom'].includes(trialDuration)),
+    free_companies_limit: incCo,
+    free_users_limit: incUsers,
     custom_base_price: basePrice,
     custom_extra_company_price: extraCoPrice,
     custom_extra_seat_price: extraSeatPrice,
@@ -8334,7 +9509,7 @@ async function submitConfigureSubscriptionForm() {
     const res = await API.configureTenantSubscription(payload);
     if (res && res.success) {
       closeModal('modal-configure-subscription');
-      alert(`✓ ${res.message}`);
+      showToast(res.message || 'Subscription saved successfully.', 'success');
       await renderActiveView();
       renderDynamicSidebarNavigation();
     } else {
@@ -8352,9 +9527,9 @@ function openRecordPaymentModal(tenantId) {
   document.getElementById('pay-tenant-id').value = tenantId;
   document.getElementById('pay-tenant-name-display').innerText = tenant.company_name;
 
-  const base = sub.custom_base_price !== undefined ? sub.custom_base_price : (sub.plan_type === 'Basic' ? 4000 : 14000);
+  const base = sub.custom_base_price !== undefined ? sub.custom_base_price : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic' ? 14000 : 35000);
   document.getElementById('pay-amount-received').value = base;
-  document.getElementById('pay-monthly-fee-display').innerText = `Agreed Monthly Fee: PKR ${base.toLocaleString()}`;
+  document.getElementById('pay-monthly-fee-display').innerText = `Agreed Subscription Fee: PKR ${base.toLocaleString()}`;
   document.getElementById('pay-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('pay-reference-no').value = 'FT-' + Math.floor(100000 + Math.random() * 900000);
 
@@ -9180,4 +10355,429 @@ function openRevealingSoonModal(featureName = 'Upcoming Module') {
   openModal('modal-revealing-soon');
 }
 window.openRevealingSoonModal = openRevealingSoonModal;
+
+// ============================================================================
+// 7. TENDER ACTIVITY DIARY & CHRONOLOGICAL TIMELINE ENGINE
+// ============================================================================
+async function openTenderDiaryModal(opportunityId) {
+  const opps = await API.getOpportunities(State.currentBusinessProfileId);
+  const opp = (opps || []).find(o => String(o.id) === String(opportunityId)) || { id: opportunityId, tender_name: 'Tender' };
+
+  const titleEl = document.getElementById('tender-diary-title');
+  const subtitleEl = document.getElementById('tender-diary-subtitle');
+  const containerEl = document.getElementById('tender-diary-timeline-container');
+  const oppIdInput = document.getElementById('diary-opp-id');
+
+  if (oppIdInput) oppIdInput.value = opportunityId;
+  if (titleEl) titleEl.innerText = `📜 Tender Activity Diary: ${opp.tender_name || opp.title || 'Tender'}`;
+  if (subtitleEl) subtitleEl.innerText = `Tender Ref: ${opp.opportunity_number || 'N/A'} | Client: ${opp.customer_name || 'Government Client'} | Status: ${opp.status || 'Active'}`;
+
+  renderTenderDiaryTimeline(opportunityId, opp);
+  openModal('modal-tender-diary');
+}
+window.openTenderDiaryModal = openTenderDiaryModal;
+
+function renderTenderDiaryTimeline(oppId, oppData) {
+  const containerEl = document.getElementById('tender-diary-timeline-container');
+  if (!containerEl) return;
+
+  // 1. Gather system events from opportunity state
+  const events = [];
+
+  if (oppData) {
+    events.push({
+      date: oppData.created_at || oppData.submission_date || '2026-08-01',
+      title: '📑 Tender Registered in Mashrue',
+      category: 'Registration',
+      icon: '📑',
+      color: '#0284c7',
+      details: `Opportunity created with source "${oppData.tender_source || 'PPRA'}" and initial estimated value ${formatCurrency(oppData.estimated_value || 0, 'PKR')}.`,
+      user: oppData.created_by_name || 'Bid Manager'
+    });
+
+    if (oppData.closing_date) {
+      events.push({
+        date: oppData.closing_date,
+        title: '⏰ Bid Submission Deadline Gate',
+        category: 'Deadline',
+        icon: '⏰',
+        color: '#d97706',
+        details: `Official submission cutoff set to ${oppData.closing_date}. Compliance checklist verified.`,
+        user: 'System Workflow Gate'
+      });
+    }
+
+    if (oppData.status === 'Won' || oppData.status === 'won') {
+      events.push({
+        date: oppData.updated_at || '2026-08-20',
+        title: '🏆 Contract Awarded (Won Tender)',
+        category: 'Award',
+        icon: '🏆',
+        color: '#059669',
+        details: `Technical & financial bid won! LOA issuance enabled for child Purchase Orders and PBG.`,
+        user: 'Executive Committee'
+      });
+    }
+  }
+
+  // 2. Load custom diary notes from localStorage
+  const storageKey = `mashrue_tender_diary_${oppId}`;
+  let customNotes = [];
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) customNotes = JSON.parse(raw);
+  } catch (e) {
+    customNotes = [];
+  }
+
+  customNotes.forEach(n => {
+    events.push({
+      date: n.date || new Date().toISOString().slice(0, 10),
+      time: n.time || '',
+      title: n.category || 'Diary Memo',
+      category: n.category || 'Memo',
+      icon: getCategoryIcon(n.category),
+      color: getCategoryColor(n.category),
+      details: n.note,
+      user: n.author || State.currentUser?.full_name || 'User',
+      isCustom: true,
+      id: n.id
+    });
+  });
+
+  // Sort events chronologically (latest on top)
+  events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (events.length === 0) {
+    containerEl.innerHTML = `
+      <div style="text-align:center; padding:30px; color:#64748b;">
+        📜 No diary events logged yet. Use the box above to log your first pre-bid meeting or query note.
+      </div>
+    `;
+    return;
+  }
+
+  containerEl.innerHTML = `
+    <div style="position: relative; padding-left: 28px; border-left: 3px solid #e2e8f0; margin-left: 14px;">
+      ${events.map(ev => `
+        <div style="position: relative; margin-bottom: 22px;">
+          <!-- Node dot icon -->
+          <div style="position: absolute; left: -42px; top: 0; width: 28px; height: 28px; border-radius: 50%; background: ${ev.color}; color: white; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+            ${ev.icon}
+          </div>
+
+          <!-- Card Content -->
+          <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="color: #0f172a; font-size: 0.92rem;">${ev.title}</strong>
+                <span class="badge" style="background: ${ev.color}15; color: ${ev.color}; font-size: 0.72rem; font-weight: 700;">${ev.category}</span>
+              </div>
+              <span style="font-size: 0.76rem; color: #64748b; font-weight: 600;">
+                📅 ${ev.date} ${ev.time ? `• ${ev.time}` : ''}
+              </span>
+            </div>
+            <p style="font-size: 0.84rem; color: #334155; margin: 4px 0 6px 0; line-height: 1.45;">
+              ${ev.details}
+            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74rem; color: #94a3b8;">
+              <span>👤 Logged by: <strong>${ev.user}</strong></span>
+              ${ev.isCustom ? `
+                <button type="button" style="background: none; border: none; color: #dc2626; cursor: pointer; font-size: 0.74rem;" onclick="deleteTenderDiaryEntry('${oppId}', '${ev.id}')">🗑️ Remove Memo</button>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function getCategoryIcon(cat) {
+  switch (cat) {
+    case 'Client Meeting': return '🤝';
+    case 'Pre-Bid Query': return '❓';
+    case 'Sample Submission': return '🧪';
+    case 'Site Visit': return '📍';
+    case 'Competitor Intel': return '🕵️';
+    case 'Internal Review': return '🏢';
+    default: return '📝';
+  }
+}
+
+function getCategoryColor(cat) {
+  switch (cat) {
+    case 'Client Meeting': return '#0284c7';
+    case 'Pre-Bid Query': return '#8b5cf6';
+    case 'Sample Submission': return '#10b981';
+    case 'Site Visit': return '#f59e0b';
+    case 'Competitor Intel': return '#dc2626';
+    case 'Internal Review': return '#64748b';
+    default: return '#0284c7';
+  }
+}
+
+function submitTenderDiaryEntry() {
+  const oppId = document.getElementById('diary-opp-id')?.value;
+  const noteInput = document.getElementById('diary-note-input');
+  const catSelect = document.getElementById('diary-category-select');
+
+  if (!oppId || !noteInput || !noteInput.value.trim()) {
+    showToast('Please enter note text before logging memo', 'warning');
+    return;
+  }
+
+  const storageKey = `mashrue_tender_diary_${oppId}`;
+  let notes = [];
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) notes = JSON.parse(raw);
+  } catch (e) {
+    notes = [];
+  }
+
+  const now = new Date();
+  const newEntry = {
+    id: 'memo-' + Date.now(),
+    date: now.toISOString().slice(0, 10),
+    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    category: catSelect ? catSelect.value : 'Client Meeting',
+    note: noteInput.value.trim(),
+    author: State.currentUser?.full_name || State.currentUser?.username || 'Employee'
+  };
+
+  notes.unshift(newEntry);
+  localStorage.setItem(storageKey, JSON.stringify(notes));
+
+  noteInput.value = '';
+  showToast('✓ Tender diary memo logged successfully!', 'success');
+
+  // Re-render timeline
+  openTenderDiaryModal(oppId);
+}
+window.submitTenderDiaryEntry = submitTenderDiaryEntry;
+
+function deleteTenderDiaryEntry(oppId, memoId) {
+  const storageKey = `mashrue_tender_diary_${oppId}`;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      let notes = JSON.parse(raw);
+      notes = notes.filter(n => n.id !== memoId);
+      localStorage.setItem(storageKey, JSON.stringify(notes));
+      showToast('Diary memo removed', 'info');
+      openTenderDiaryModal(oppId);
+    }
+  } catch (e) {}
+}
+window.deleteTenderDiaryEntry = deleteTenderDiaryEntry;
+
+// ============================================================================
+// 8. AUTOMATED 3-WAY MATCH VERIFICATION ENGINE (PO ➔ DC/GRN ➔ INVOICE)
+// ============================================================================
+async function open3WayMatchModal(poId = '', invoiceId = '') {
+  const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+  const dcs = await API.getDeliveryChallans(State.currentBusinessProfileId);
+  const invoices = await API.getInvoices(State.currentBusinessProfileId);
+
+  // Find target PO & matched records
+  let targetPO = (pos || []).find(p => String(p.id) === String(poId));
+  let targetInv = (invoices || []).find(i => String(i.id) === String(invoiceId));
+
+  if (!targetPO && targetInv) {
+    targetPO = (pos || []).find(p => String(p.id) === String(targetInv.purchase_order_id) || p.po_number === targetInv.po_number);
+  }
+  if (!targetPO && pos.length > 0) {
+    targetPO = pos[0];
+  }
+
+  if (!targetPO) {
+    showToast('No active Purchase Order found to execute 3-way match reconciliation', 'warning');
+    return;
+  }
+
+  const childDCs = (dcs || []).filter(d => String(d.purchase_order_id) === String(targetPO.id) || d.po_number === targetPO.po_number);
+  const childInvs = (invoices || []).filter(i => String(i.purchase_order_id) === String(targetPO.id) || i.po_number === targetPO.po_number);
+
+  const bodyEl = document.getElementById('threeway-match-body');
+  const badgeEl = document.getElementById('threeway-match-summary-badge');
+  if (!bodyEl) return;
+
+  const poVal = parseFloat(targetPO.net_amount || targetPO.total_amount || 0);
+  const totalBilled = childInvs.reduce((sum, inv) => sum + (parseFloat(inv.total_amount) || 0), 0);
+  const totalFreightPaid = childDCs.reduce((sum, dc) => sum + (parseFloat(dc.freight_cost_contractor || dc.delivery_cost || 0)), 0);
+
+  // Reconcile items (from PO items array)
+  const poItems = (targetPO.items && targetPO.items.length > 0) ? targetPO.items : [
+    { description: targetPO.tender_name || 'Award Scope Equipment', quantity: 1, unit_price: poVal, uom: 'LOT' }
+  ];
+
+  let hasQuantityDiscrepancy = false;
+  let hasPriceDiscrepancy = false;
+
+  const itemRows = poItems.map((item, idx) => {
+    const orderedQty = parseFloat(item.quantity || 1);
+    const poRate = parseFloat(item.unit_price || (poVal / orderedQty));
+
+    // Calculate delivered quantity across DCs
+    let deliveredQty = 0;
+    let grnVerifiedCount = 0;
+    childDCs.forEach(dc => {
+      if (dc.items && dc.items.length > 0) {
+        const matchingLine = dc.items.find(i => i.item_id === item.id || i.description === item.description);
+        if (matchingLine) deliveredQty += parseFloat(matchingLine.dispatched_qty || matchingLine.quantity || 0);
+      } else {
+        deliveredQty += (orderedQty / Math.max(1, childDCs.length));
+      }
+      if (dc.status === 'GRN Received' || dc.status === 'Delivered') grnVerifiedCount++;
+    });
+
+    // Calculate billed quantity across Invoices
+    let billedQty = 0;
+    let billedRate = poRate;
+    childInvs.forEach(inv => {
+      if (inv.items && inv.items.length > 0) {
+        const matchingLine = inv.items.find(i => i.item_id === item.id || i.description === item.description);
+        if (matchingLine) {
+          billedQty += parseFloat(matchingLine.quantity || 0);
+          billedRate = parseFloat(matchingLine.unit_price || billedRate);
+        }
+      } else {
+        billedQty += (orderedQty / Math.max(1, childInvs.length));
+      }
+    });
+
+    const isQtyMatch = (deliveredQty >= orderedQty) && (billedQty <= deliveredQty);
+    const isPriceMatch = (Math.abs(billedRate - poRate) < 1);
+
+    if (!isQtyMatch) hasQuantityDiscrepancy = true;
+    if (!isPriceMatch) hasPriceDiscrepancy = true;
+
+    let lineAuditBadge = `<span class="badge badge-won" style="font-size:0.75rem;">✓ 100% 3-Way Matched</span>`;
+    if (!isPriceMatch) {
+      lineAuditBadge = `<span class="badge badge-withdraw" style="font-size:0.75rem; background:#fee2e2; color:#b91c1c;">⚠️ Price Mismatch</span>`;
+    } else if (deliveredQty < orderedQty) {
+      lineAuditBadge = `<span class="badge badge-hold" style="font-size:0.75rem; background:#fef3c7; color:#92400e;">⏳ Partial Delivery (${deliveredQty}/${orderedQty})</span>`;
+    } else if (billedQty > deliveredQty) {
+      lineAuditBadge = `<span class="badge badge-loss" style="font-size:0.75rem;">⚠️ Overbilled (> Delivered)</span>`;
+    }
+
+    return `
+      <tr>
+        <td>
+          <strong>${item.description || item.name || `Line Item #${idx + 1}`}</strong><br>
+          <span style="font-size:0.72rem; color:var(--text-muted);">${item.uom || 'PCS'}</span>
+        </td>
+        <td>
+          <strong>${orderedQty.toLocaleString()}</strong><br>
+          <span style="font-size:0.75rem; color:#0284c7;">@ ${formatCurrency(poRate, 'PKR')}</span>
+        </td>
+        <td>
+          <strong style="color:${deliveredQty >= orderedQty ? '#059669' : '#d97706'};">${deliveredQty.toLocaleString()}</strong><br>
+          <span style="font-size:0.72rem; color:var(--text-muted);">${childDCs.length} DC(s) • ${grnVerifiedCount} GRNs</span>
+        </td>
+        <td>
+          <strong style="color:${billedQty <= deliveredQty ? '#059669' : '#dc2626'};">${billedQty.toLocaleString()}</strong><br>
+          <span style="font-size:0.75rem; color:#475569;">@ ${formatCurrency(billedRate, 'PKR')}</span>
+        </td>
+        <td>
+          ${lineAuditBadge}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const isFullMatch = !hasQuantityDiscrepancy && !hasPriceDiscrepancy;
+
+  bodyEl.innerHTML = `
+    <!-- Top PO Header Card -->
+    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <span class="pill-source" style="background:#e0f2fe; color:#0369a1; font-weight:700;">Purchase Order: ${targetPO.po_number}</span>
+          <h3 style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin: 6px 0 2px 0;">${targetPO.customer_name || 'Customer Account'}</h3>
+          <span style="font-size: 0.78rem; color: #64748b;">📍 Destination: ${targetPO.delivery_location || 'Customer Site'} | Award Ref: ${targetPO.award_number || 'Won LOA'}</span>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 0.76rem; color: #64748b; text-transform: uppercase; font-weight: 600;">PO Contract Value:</div>
+          <div style="font-size: 1.25rem; font-weight: 800; color: #0284c7;">${formatCurrency(poVal, 'PKR')}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-Way Milestone Funnel Summary -->
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px;">
+      <div style="background: #f8fafc; border: 2px solid #0284c7; border-radius: 8px; padding: 14px; text-align: center;">
+        <span style="font-size: 0.75rem; font-weight: 700; color: #0369a1; text-transform: uppercase;">1. PO Contract (Ordered)</span>
+        <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 4px 0;">${formatCurrency(poVal, 'PKR')}</div>
+        <span style="font-size: 0.75rem; color: #64748b;">${poItems.length} Authorized Line Item(s)</span>
+      </div>
+
+      <div style="background: #f0fdf4; border: 2px solid #10b981; border-radius: 8px; padding: 14px; text-align: center;">
+        <span style="font-size: 0.75rem; font-weight: 700; color: #166534; text-transform: uppercase;">2. Physical Delivery (DC / GRN)</span>
+        <div style="font-size: 1.15rem; font-weight: 800; color: #15803d; margin: 4px 0;">${childDCs.length} Challan(s) Dispatched</div>
+        <span style="font-size: 0.75rem; color: #64748b;">Freight Paid: ${formatCurrency(totalFreightPaid, 'PKR')}</span>
+      </div>
+
+      <div style="background: #eff6ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 14px; text-align: center;">
+        <span style="font-size: 0.75rem; font-weight: 700; color: #1e40af; text-transform: uppercase;">3. Commercial Invoices (Billed)</span>
+        <div style="font-size: 1.15rem; font-weight: 800; color: #2563eb; margin: 4px 0;">${formatCurrency(totalBilled, 'PKR')}</div>
+        <span style="font-size: 0.75rem; color: #64748b;">${childInvs.length} Invoices Generated</span>
+      </div>
+    </div>
+
+    <!-- Line Item Level 3-Way Reconciliation Table -->
+    <div class="card" style="margin-bottom: 0;">
+      <div class="card-header" style="background:#f8fafc;">
+        <div class="card-title" style="font-size:0.9rem;">📊 Line-by-Line 3-Way Matching Matrix</div>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table" style="font-size: 0.85rem;">
+          <thead>
+            <tr>
+              <th>Line Item & UOM</th>
+              <th>1. PO Ordered</th>
+              <th>2. DC Delivered & GRN</th>
+              <th>3. Commercial Billed</th>
+              <th>Audit Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemRows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  if (badgeEl) {
+    badgeEl.innerHTML = isFullMatch
+      ? `<span class="badge badge-won" style="font-size:0.85rem; padding:6px 14px;">✅ 100% 3-Way Matched & Verified (Audit Ready)</span>`
+      : `<span class="badge badge-hold" style="font-size:0.85rem; padding:6px 14px; background:#fef3c7; color:#92400e;">⚠️ Discrepancy / Partial Fulfillment Detected</span>`;
+  }
+
+  openModal('modal-3way-match');
+}
+window.open3WayMatchModal = open3WayMatchModal;
+
+// Global Modal & Controller Exposure
+window.openEditTenderModal = openEditTenderModal;
+window.openEditCustomerModal = openEditCustomerModal;
+window.openEditSupplierModal = openEditSupplierModal;
+window.openEditProductModal = openEditProductModal;
+window.openEditCompanyModal = openEditCompanyModal;
+window.openNewCompanyModal = openNewCompanyModal;
+window.openEditUserModal = openEditUserModal;
+window.openEditEntityModal = openEditEntityModal;
+window.submitUniversalEdit = submitUniversalEdit;
+window.submitNewCompanyForm = submitNewCompanyForm;
+window.submitNewCustomerForm = submitNewCustomerForm;
+window.submitNewSupplierForm = submitNewSupplierForm;
+window.submitNewProductForm = submitNewProductForm;
+window.submitNewTenderForm = submitNewTenderForm;
+window.submitCreateUserForm = submitCreateUserForm;
+window.submitOnboardCompanyForm = submitOnboardCompanyForm;
+window.syncCompanyAbbrevAndPrefix = syncCompanyAbbrevAndPrefix;
+
+
 

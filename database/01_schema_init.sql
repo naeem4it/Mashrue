@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     contact_person VARCHAR(100),
     phone VARCHAR(50),
     email VARCHAR(150),
-    abbreviation VARCHAR(50),            -- Company Abbreviation / Short Code (e.g. CGL, ABC)
+    abbreviation VARCHAR(50),            -- Company Abbreviation / Short Code (e.g. ABC, ENT)
     invoice_prefix VARCHAR(10) DEFAULT 'INV',
     quotation_prefix VARCHAR(10) DEFAULT 'QTN',
     dc_prefix VARCHAR(10) DEFAULT 'DC',

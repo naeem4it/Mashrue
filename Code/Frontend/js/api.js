@@ -128,6 +128,39 @@ const API = {
     return { success: true, message: 'Password updated successfully.' };
   },
 
+  async verifyResetToken(token) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/verify-reset-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      console.warn('verifyResetToken error:', e.message);
+      return { success: false, message: 'Could not connect to server to verify setup link.' };
+    }
+  },
+
+  async resetPasswordWithToken(token, newPassword) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/reset-password-with-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword })
+      });
+      const data = await res.json();
+      if (data && data.success && data.data && data.data.token) {
+        State.setSession(data.data.token, data.data.user);
+      }
+      return data;
+    } catch (e) {
+      console.warn('resetPasswordWithToken error:', e.message);
+      return { success: false, message: 'Unable to connect to server. Please try again.' };
+    }
+  },
+
   async getMe() {
     try {
       const res = await fetch(`${API_BASE}/auth/me`, {
@@ -197,11 +230,14 @@ const API = {
   },
 
   async createUser(payload) {
+    const cleanEmail = payload.email && typeof payload.email === 'string' && payload.email.trim().length > 0 ? payload.email.trim().toLowerCase() : null;
+    const cleanUsername = payload.username || (cleanEmail ? cleanEmail.split('@')[0] : (payload.full_name ? payload.full_name.toLowerCase().replace(/[^a-z0-9]/g, '') : `user_${Date.now()}`));
+
     const newUser = {
       id: 'u-' + Date.now(),
-      username: payload.username || payload.email.split('@')[0],
+      username: cleanUsername,
       full_name: payload.full_name,
-      email: payload.email,
+      email: cleanEmail,
       password: payload.password || 'Password123!',
       role: payload.role || 'ClientEmployee',
       tenant_name: State.currentUser?.tenant?.name || 'Primary Tenant',
@@ -223,21 +259,42 @@ const API = {
       });
       const json = await res.json();
       if (json && json.success) return json;
-    } catch (e) {}
+      if (json && !json.success) throw new Error(json.message || 'Failed to create user');
+    } catch (e) {
+      if (e.message && !e.message.includes('fetch')) throw e;
+    }
 
     return { success: true, message: `${payload.role} created successfully.`, data: newUser };
   },
 
   async updateUser(id, payload) {
+    const users = State.getStoredUsers();
+    const targetIdx = users.findIndex(u => u.id === id);
+    if (targetIdx >= 0) {
+      users[targetIdx] = { ...users[targetIdx], ...payload };
+      localStorage.setItem('mashrue_users_store', JSON.stringify(users));
+      if (State.currentUser && State.currentUser.id === id) {
+        State.currentUser = { ...State.currentUser, ...payload };
+        sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+      }
+    }
+
     try {
       const res = await fetch(`${API_BASE}/users/${id}`, {
         method: 'PUT',
         headers: this.getHeaders(),
         body: JSON.stringify(payload)
       });
-      return await res.json();
+      const data = await res.json();
+      if (data && data.success && data.data) {
+        if (State.currentUser && State.currentUser.id === id) {
+          State.currentUser = { ...State.currentUser, ...data.data };
+          sessionStorage.setItem('mashrue_user', JSON.stringify(State.currentUser));
+        }
+      }
+      return data;
     } catch (e) {
-      return { success: true, message: 'User updated' };
+      return { success: true, message: 'User rights updated in local session.', data: { id, ...payload } };
     }
   },
 
@@ -259,6 +316,41 @@ const API = {
       return await res.json();
     } catch (e) {
       return { success: true, message: `Password reset successfully. Temporary password is: ${newPassword}` };
+    }
+  },
+
+  async deleteUser(id) {
+    const users = State.getStoredUsers();
+    const filtered = users.filter(u => u.id !== id);
+    localStorage.setItem('mashrue_users_store', JSON.stringify(filtered));
+
+    try {
+      const res = await fetch(`${API_BASE}/users/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      return { success: true, message: 'User deleted successfully.' };
+    }
+  },
+
+  async resendInviteEmail(userId, email = null) {
+    try {
+      const res = await fetch(`${API_BASE}/users/${userId}/resend-invite`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ email })
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (parseErr) {
+        return { success: false, message: `Server HTTP ${res.status}: ${text.slice(0, 100)}` };
+      }
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to resend invite email.' };
     }
   },
 
@@ -600,23 +692,14 @@ const API = {
   async createOpportunity(payload) {
     const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
 
-    // 1. Suspension Check
-    if (State.isTenantSuspended(tid)) {
+    // 1. Quota & Suspension Check (15-Day Trial 5 Tenders, Starter 5 Bids, Suspended Check)
+    const check = State.checkTenantQuotaLimit('tender', tid);
+    if (!check.allowed) {
       return {
         success: false,
-        suspended: true,
-        message: 'Your organization workspace is suspended due to pending subscription payment. Please contact Super Admin.'
-      };
-    }
-
-    // 2. Basic Plan Quota Gatekeeper (10 Tenders / month)
-    const sub = State.getTenantSubscription(tid);
-    const quota = State.getTenantQuota(tid);
-    if (sub.plan_type === 'Basic' && (quota.tenders_created || 0) >= 10) {
-      return {
-        success: false,
-        quotaExceeded: true,
-        message: 'Monthly limit reached: The Basic Plan includes 10 tenders per month. Please upgrade to Advance Plan for unlimited tenders.'
+        suspended: check.suspended || false,
+        quotaExceeded: check.quotaExceeded || false,
+        message: check.message
       };
     }
 
@@ -717,6 +800,18 @@ const API = {
 
   async createBidSecurity(payload) {
     const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
+
+    // 1. Quota & Suspension Check (15-Day Trial 3 Bid Securities / CDRs)
+    const check = State.checkTenantQuotaLimit('bid_security', tid);
+    if (!check.allowed) {
+      return {
+        success: false,
+        suspended: check.suspended || false,
+        quotaExceeded: check.quotaExceeded || false,
+        message: check.message
+      };
+    }
+
     const newBS = {
       id: 'bs-' + Date.now(),
       tenant_id: tid,
@@ -725,6 +820,7 @@ const API = {
       created_at: new Date().toISOString()
     };
     State.saveTenantEntity('bidSecurities', newBS);
+    State.incrementTenantQuota('bid_security', tid);
 
     // Update opportunity's active_bid_securities_count
     if (payload.opportunity_id) {
@@ -1542,71 +1638,97 @@ const API = {
   // 17. Generic & Dedicated Entity Updates
   async updateEntity(entityType, id, payload) {
     let endpoint = '';
+    let pluralKey = '';
     switch (entityType) {
       case 'opportunity':
       case 'tender':
         endpoint = `${API_BASE}/opportunities/${id}`;
+        pluralKey = 'opportunities';
         break;
       case 'bid-security':
         endpoint = `${API_BASE}/bid-securities/${id}`;
+        pluralKey = 'bid_securities';
         break;
       case 'award':
         endpoint = `${API_BASE}/awards/${id}`;
+        pluralKey = 'awards';
         break;
       case 'guarantee':
         endpoint = `${API_BASE}/guarantees/${id}`;
+        pluralKey = 'guarantees';
         break;
       case 'purchase-order':
         endpoint = `${API_BASE}/purchase-orders/${id}`;
+        pluralKey = 'purchase_orders';
         break;
       case 'delivery-challan':
         endpoint = `${API_BASE}/delivery-challans/${id}`;
+        pluralKey = 'delivery_challans';
         break;
       case 'invoice':
         endpoint = `${API_BASE}/invoices/${id}`;
+        pluralKey = 'invoices';
         break;
       case 'payment':
         endpoint = `${API_BASE}/payments/${id}`;
+        pluralKey = 'payments';
         break;
       case 'warehouse':
         endpoint = `${API_BASE}/warehouses/${id}`;
+        pluralKey = 'warehouses';
         break;
       case 'procurement':
         endpoint = `${API_BASE}/procurements/${id}`;
+        pluralKey = 'procurements';
         break;
       case 'expense':
         endpoint = `${API_BASE}/expenses/${id}`;
+        pluralKey = 'expenses';
         break;
       case 'customer':
         endpoint = `${API_BASE}/masters/customers/${id}`;
+        pluralKey = 'customers';
         break;
       case 'supplier':
         endpoint = `${API_BASE}/masters/suppliers/${id}`;
+        pluralKey = 'suppliers';
         break;
       case 'product':
         endpoint = `${API_BASE}/masters/products/${id}`;
+        pluralKey = 'products';
         break;
       case 'business-profile':
         endpoint = `${API_BASE}/business-profiles/${id}`;
+        pluralKey = 'businessProfiles';
         break;
       case 'user':
         endpoint = `${API_BASE}/users/${id}`;
+        pluralKey = 'users';
         break;
       default:
         endpoint = `${API_BASE}/${entityType}/${id}`;
     }
 
+    if (pluralKey) {
+      const list = State.getTenantEntityList(pluralKey);
+      const item = list.find(x => String(x.id) === String(id));
+      if (item) {
+        Object.assign(item, payload);
+        State.saveTenantEntity(pluralKey, item);
+      }
+    }
+
     try {
       const res = await fetch(endpoint, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders(),
         body: JSON.stringify(payload)
       });
-      return await res.json();
-    } catch (e) {
-      // In-memory fallback updates for mock mode
-      return { success: true, message: 'Record updated in local session', data: { id, ...payload } };
-    }
+      const json = await res.json();
+      if (json && json.success) return json;
+    } catch (e) {}
+
+    return { success: true, message: 'Record updated successfully.', data: { id, ...payload } };
   },
 
   // --------------------------------------------------------------------------
@@ -1621,10 +1743,13 @@ const API = {
       const companies = State.getTenantCompanies(t.id);
       const users = State.getStoredUsers().filter(u => u.tenant_id === t.id || u.tenant_name === t.company_name);
       
-      const paidCompanies = Math.max(0, companies.length - (sub.plan_type === 'Advance' ? 2 : 1));
-      const paidUsers = Math.max(0, users.filter(u => u.role === 'ClientEmployee').length - (sub.plan_type === 'Advance' ? 2 : 0));
+      const freeCompaniesLimit = sub.free_companies_limit !== undefined ? Number(sub.free_companies_limit) : (sub.plan_type === 'Advance' ? 2 : 1);
+      const freeUsersLimit = sub.free_users_limit !== undefined ? Number(sub.free_users_limit) : (sub.plan_type === 'Advance' ? 3 : 1);
+
+      const paidCompanies = Math.max(0, companies.length - freeCompaniesLimit);
+      const paidUsers = Math.max(0, users.length - freeUsersLimit);
       
-      let totalMonthly = sub.custom_base_price !== undefined ? Number(sub.custom_base_price) : (sub.plan_type === 'Basic' ? 4000 : sub.plan_type === 'Advance' ? 14000 : 3000);
+      let totalMonthly = sub.custom_base_price !== undefined ? Number(sub.custom_base_price) : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic' ? 14000 : sub.plan_type === 'Advance' ? 35000 : 3000);
       totalMonthly += paidCompanies * (sub.custom_extra_company_price !== undefined ? Number(sub.custom_extra_company_price) : 2500);
       totalMonthly += paidUsers * (sub.custom_extra_seat_price !== undefined ? Number(sub.custom_extra_seat_price) : 1500);
       
@@ -1636,13 +1761,20 @@ const API = {
         }
       }
 
+      const allSecurities = State.getTenantEntityList ? State.getTenantEntityList('bidSecurities') : [];
+      const bidSecuritiesCount = allSecurities.filter(b => b.tenant_id === t.id).length || (quota.bid_securities_created || 0);
+
       return {
         tenant: t,
         subscription: sub,
         trialDaysRemaining: daysLeft,
         quota,
+        tenderCount: quota.tenders_created || 0,
+        bidSecurityCount: bidSecuritiesCount,
         companyCount: companies.length,
         userCount: users.length,
+        freeCompaniesLimit,
+        freeUsersLimit,
         paidCompanies,
         paidUsers,
         totalMonthly
@@ -1653,7 +1785,28 @@ const API = {
 
   async configureTenantSubscription(payload) {
     const sub = State.saveTenantSubscription(payload.tenant_id, payload);
-    return { success: true, data: sub, message: 'Tenant subscription and custom pricing updated successfully.' };
+    
+    // Attempt backend sync if available
+    try {
+      if (this.token) {
+        await fetch(`${API_BASE}/users/tenants/${payload.tenant_id}/subscription`, {
+          method: 'PUT',
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            subscription_plan: payload.plan_type,
+            free_business_profile_limit: payload.free_companies_limit,
+            free_employee_limit: payload.free_users_limit,
+            max_users: payload.free_users_limit ? (payload.free_users_limit + 10) : 10,
+            additional_profile_monthly_fee: payload.custom_extra_company_price,
+            additional_employee_monthly_fee: payload.custom_extra_seat_price
+          })
+        });
+      }
+    } catch (e) {
+      console.warn('Backend tenant subscription update sync bypassed:', e.message);
+    }
+
+    return { success: true, data: sub, message: 'Tenant subscription, package quotas & custom pricing updated successfully.' };
   },
 
   async recordTenantSubscriptionPayment(payload) {
@@ -1675,8 +1828,11 @@ const API = {
     const companies = State.getTenantCompanies(tid);
     const users = State.getStoredUsers().filter(u => u.tenant_id === tid || u.tenant_name === State.currentUser?.tenant_name);
 
-    const paidCompanies = Math.max(0, companies.length - (sub.plan_type === 'Advance' ? 2 : 1));
-    const paidUsers = Math.max(0, users.filter(u => u.role === 'ClientEmployee').length - (sub.plan_type === 'Advance' ? 2 : 0));
+    const freeCompaniesLimit = sub.free_companies_limit !== undefined ? Number(sub.free_companies_limit) : (sub.plan_type === 'Advance' ? 2 : 1);
+    const freeUsersLimit = sub.free_users_limit !== undefined ? Number(sub.free_users_limit) : (sub.plan_type === 'Advance' ? 3 : 1);
+
+    const paidCompanies = Math.max(0, companies.length - freeCompaniesLimit);
+    const paidUsers = Math.max(0, users.length - freeUsersLimit);
 
     let totalMonthly = sub.custom_base_price !== undefined ? Number(sub.custom_base_price) : (sub.plan_type === 'Basic' ? 4000 : sub.plan_type === 'Advance' ? 14000 : 3000);
     totalMonthly += paidCompanies * (sub.custom_extra_company_price !== undefined ? Number(sub.custom_extra_company_price) : 2500);
@@ -1697,6 +1853,8 @@ const API = {
       payments,
       companyCount: companies.length,
       userCount: users.length,
+      freeCompaniesLimit,
+      freeUsersLimit,
       paidCompanies,
       paidUsers,
       totalMonthly

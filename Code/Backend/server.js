@@ -3,6 +3,13 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Optional Security & Performance modules (with graceful fallbacks)
 let helmet;
 let compression;
@@ -147,6 +154,10 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/fbr', fbrRoutes);
+
+// 9.5 Dedicated Public Page Routes (/plans, /contact)
+app.get('/plans', (req, res) => res.sendFile(path.join(frontendDir, 'plans.html')));
+app.get('/contact', (req, res) => res.sendFile(path.join(frontendDir, 'contact.html')));
 
 // 10. SPA Routing Fallback (for direct browser hits when served by Node)
 app.get('*', (req, res, next) => {

@@ -22,12 +22,25 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo Executing 02_seed_data.sql on %DB_NAME%...
-psql -U %DB_USER% -d %DB_NAME% -f "%~dp002_seed_data.sql"
+echo Choose Seed Data Mode:
+echo [1] Clean Production (Only Super Admin: naeem4it) [Recommended]
+echo [2] Full Demo Sample Data (Tenants, Tenders, Invoices)
+set /p SEED_CHOICE="Enter selection (1 or 2, default: 1): "
+if "%SEED_CHOICE%"=="" set SEED_CHOICE=1
+
+if "%SEED_CHOICE%"=="1" (
+    echo.
+    echo Executing 02_seed_superadmin_only.sql on %DB_NAME%...
+    psql -U %DB_USER% -d %DB_NAME% -f "%~dp002_seed_superadmin_only.sql"
+) else (
+    echo.
+    echo Executing 02_seed_data.sql on %DB_NAME%...
+    psql -U %DB_USER% -d %DB_NAME% -f "%~dp002_seed_data.sql"
+)
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo WARNING: Failed to execute 02_seed_data.sql. Schema was created, but seed data insertion failed.
+    echo WARNING: Seed step encountered a notice or error.
     pause
     exit /b %ERRORLEVEL%
 )

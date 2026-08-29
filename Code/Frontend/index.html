@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=4.2">
+  <link rel="stylesheet" href="css/main.css?v=5.3">
 </head>
 <body>
 
@@ -26,10 +26,10 @@
 
     <!-- Top Public Navigation Links -->
     <div class="login-top-nav">
-      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Pricing Plans & Enterprise Subscriptions')" class="login-nav-pill">
-        <span class="pill-icon">💎</span> Pricing
+      <a href="plans.html" class="login-nav-pill">
+        <span class="pill-icon">💎</span> Plans & Features
       </a>
-      <a href="javascript:void(0)" onclick="openRevealingSoonModal('Contact Us & Dedicated Enterprise Support')" class="login-nav-pill">
+      <a href="contact.html" class="login-nav-pill">
         <span class="pill-icon">📞</span> Contact Us
       </a>
       <div class="login-system-status-pill">
@@ -159,7 +159,7 @@
               <label class="form-label" for="login-username">Username or Email Address</label>
               <div class="login-input-wrapper">
                 <span class="input-icon">👤</span>
-                <input type="text" class="login-input" id="login-username" placeholder="yourname@companyname.com" required autofocus autocomplete="username">
+                <input type="text" class="login-input" id="login-username" placeholder="e.g. yourname@mailserver.com" required autofocus autocomplete="username">
               </div>
             </div>
 
@@ -328,17 +328,22 @@
               <label class="form-label">Tender / Project Name *</label>
               <input type="text" class="form-input" id="tender-name" required placeholder="e.g. Substation 132kV Expansion Project">
             </div>
-            <div class="form-group">
-              <label class="form-label">Tender Source *</label>
-              <select class="form-select" id="tender-source" required onchange="handleTenderSourceChange(this.value)">
-                <option value="PPRA (Federal)" selected>PPRA (Federal)</option>
-                <option value="PPRA (Punjab)">PPRA (Punjab)</option>
-                <option value="DGP">DGP (Directorate General of Procurement)</option>
-                <option value="RFQ">RFQ (Request for Quotation)</option>
-                <option value="LPQ">LPQ (Local Purchase Quotation)</option>
-                <option value="OTHER">OTHER (Custom / Open Market / Autonomous)</option>
-                <option value="DIRECT SALES">DIRECT SALES (Corporate / Direct Quotation)</option>
-              </select>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Tender Source *</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto;" onclick="promptAddNewTenderSource()">+ Add Source</button>
+              </div>
+              <div class="input-with-action">
+                <select class="form-select" id="tender-source" required onchange="handleTenderSourceChange(this.value)">
+                  <option value="PPRA (Federal)" selected>PPRA (Federal)</option>
+                  <option value="PPRA (Punjab)">PPRA (Punjab)</option>
+                  <option value="DGP">DGP (Directorate General of Procurement)</option>
+                  <option value="RFQ">RFQ (Request for Quotation)</option>
+                  <option value="LPQ">LPQ (Local Purchase Quotation)</option>
+                  <option value="OTHER">OTHER (Custom / Open Market / Autonomous)</option>
+                  <option value="DIRECT SALES">DIRECT SALES (Corporate / Direct Quotation)</option>
+                </select>
+                <button type="button" class="btn-quick-add-icon" onclick="promptAddNewTenderSource()" title="Quick Add Custom Tender Source">+</button>
+              </div>
             </div>
           </div>
 
@@ -471,7 +476,7 @@
           <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Total Estimated Value (<span class="currency-label">PKR</span>) *</label>
-              <input type="text" class="form-input" id="tender-est-value" required placeholder="e.g. 14,500,000" oninput="formatCurrencyInput(this)">
+              <input type="text" class="form-input" id="tender-est-value" required placeholder="e.g. 14,500,000" oninput="formatCurrencyInput(this); calculateTenderBidSecurityFromPct();">
             </div>
             <div class="form-group">
               <label class="form-label">Submission Deadline (DD/MM/YYYY) *</label>
@@ -484,6 +489,29 @@
               <div class="custom-dt-picker-wrapper" style="position:relative;">
                 <input type="text" class="form-input" id="tender-opening-date" placeholder="DD/MM/YYYY hh:mm A" autocomplete="off">
               </div>
+            </div>
+          </div>
+
+          <!-- Bid Security % Quick Calculator Strip -->
+          <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 0.8rem; font-weight: 700; color: #334155;">🛡️ Bid Security % Calc:</span>
+              <select class="form-select" id="tender-sec-pct-select" style="font-size:0.78rem; padding:3px 8px; width:auto;" onchange="applyTenderBidSecurityPct(this.value)">
+                <option value="">-- Select % --</option>
+                <option value="1">1% Earnest Money</option>
+                <option value="2" selected>2% Standard PPRA</option>
+                <option value="2.5">2.5% Security</option>
+                <option value="5">5% Performance/Bid</option>
+                <option value="10">10% Security</option>
+                <option value="custom">Custom %</option>
+              </select>
+              <div id="tender-sec-pct-custom-wrapper" style="display:none; align-items:center; gap:4px;">
+                <input type="number" id="tender-sec-pct-custom" placeholder="e.g. 3.5" min="0.1" max="100" step="0.1" style="width:65px; font-size:0.78rem; padding:3px 6px;" class="form-input" oninput="applyTenderBidSecurityPct(this.value)">
+                <span style="font-size:0.8rem; font-weight:700;">%</span>
+              </div>
+            </div>
+            <div style="font-size: 0.82rem; color: #475569;">
+              Calculated CDR/Bid Security: <strong id="tender-sec-amount-calc" style="color: #0f172a; font-size: 0.88rem;">PKR 0</strong>
             </div>
           </div>
 
@@ -560,7 +588,7 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">1. Account Title * (Mandatory)</label>
-              <input type="text" class="form-input" id="sec-account-title" required placeholder="e.g. Clifton Engineering Pvt Ltd">
+              <input type="text" class="form-input" id="sec-account-title" required placeholder="e.g. ABC Enterprises (Pvt) Ltd">
             </div>
             <div class="form-group">
               <label class="form-label">2. Beneficiary * (Mandatory)</label>
@@ -583,6 +611,19 @@
               <label class="form-label">4. Instrument Number * (Mandatory)</label>
               <input type="text" class="form-input" id="sec-instrument-no" required placeholder="e.g. CDR-HBL-992019">
             </div>
+          </div>
+
+          <!-- Quick Percentage Calculator Helper for Bid Security -->
+          <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 0.78rem; font-weight: 700; color: #334155;">⚡ Auto-Calculate Amount:</span>
+              <button type="button" class="secondary-btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="applyBidSecurityModalPct(1)">1%</button>
+              <button type="button" class="secondary-btn" style="padding: 2px 6px; font-size: 0.75rem; font-weight:700; background:#eff6ff; color:#1d4ed8;" onclick="applyBidSecurityModalPct(2)">2% (PPRA)</button>
+              <button type="button" class="secondary-btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="applyBidSecurityModalPct(2.5)">2.5%</button>
+              <button type="button" class="secondary-btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="applyBidSecurityModalPct(5)">5%</button>
+              <button type="button" class="secondary-btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="applyBidSecurityModalPct(10)">10%</button>
+            </div>
+            <div id="sec-calc-basis-hint" style="font-size: 0.75rem; color: #64748b;">Based on estimated tender value</div>
           </div>
 
           <div class="form-row">
@@ -1020,10 +1061,34 @@
               <input type="text" list="uom-datalist" class="form-input" id="prod-unit" required placeholder="e.g. PCS, Pack, Box, Vial..." value="PCS">
             </div>
             <div class="form-group">
-              <label class="form-label">Pakistan Customs HS Code</label>
-              <input type="text" class="form-input" id="prod-hs-code" placeholder="e.g. 8504.2200">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="form-label" style="margin-bottom:0;">Pakistan Customs HS Code</label>
+                <button type="button" class="btn-quick-add" style="padding:2px 8px; font-size:0.72rem; height:auto; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;" onclick="autoSuggestHsCode()">🔍 Auto Lookup</button>
+              </div>
+              <div class="input-with-action">
+                <input type="text" list="hs-code-datalist" class="form-input" id="prod-hs-code" placeholder="e.g. 8504.2200, 9018.3100" oninput="onHsCodeInput(this.value)">
+                <button type="button" class="btn-quick-add-icon" onclick="autoSuggestHsCode()" title="Lookup HS Code for current product name" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0;">🔍</button>
+              </div>
             </div>
           </div>
+
+          <datalist id="hs-code-datalist">
+            <option value="9018.3100">9018.3100 - Syringes, with or without needles (Medical Devices)</option>
+            <option value="9018.3900">9018.3900 - Needles, catheters, cannulae and the like (Medical)</option>
+            <option value="4015.1900">4015.1900 - Surgical and examination gloves of vulcanized rubber</option>
+            <option value="4802.5600">4802.5600 - Paper sheets/rims, weighing 40g/m2 to 150g/m2 (A4/Legal)</option>
+            <option value="8504.2200">8504.2200 - Liquid dielectric transformers having power handling capacity 650 kVA - 10,000 kVA</option>
+            <option value="8504.2100">8504.2100 - Liquid dielectric transformers not exceeding 650 kVA</option>
+            <option value="8471.3000">8471.3000 - Portable automatic data processing machines (Laptops, Tablets)</option>
+            <option value="8471.5000">8471.5000 - Digital processing units / Servers / Desktop computers</option>
+            <option value="8528.5200">8528.5200 - Computer monitors and display units</option>
+            <option value="3004.9099">3004.9099 - Medicaments and pharmaceutical preparations for retail sale</option>
+            <option value="3808.9400">3808.9400 - Disinfectants and antiseptic chemical solutions</option>
+            <option value="8544.4990">8544.4990 - Electric conductors, cables, and wires for voltage <= 1,000V</option>
+            <option value="8536.2000">8536.2000 - Automatic circuit breakers and switchgear <= 1,000V</option>
+            <option value="8501.5200">8501.5200 - AC Motors multi-phase exceeding 750W but not exceeding 75kW</option>
+            <option value="6307.9090">6307.9090 - Other made up articles, including dress patterns, face masks, PPE</option>
+          </datalist>
 
           <div class="form-row-3">
             <div class="form-group">
@@ -1075,6 +1140,22 @@
             <div class="form-group">
               <label class="form-label">Benchmark Selling Price (PKR) *</label>
               <input type="text" class="form-input" id="prod-selling-price" required placeholder="e.g. 7,800,000" oninput="formatCurrencyInput(this); checkProductSellingPriceMargin();">
+            </div>
+          </div>
+
+          <!-- Batch Number & Expiry Date Lifecycle Tracking -->
+          <div class="form-row-3" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label class="form-label">Batch / Lot #</label>
+              <input type="text" class="form-input" id="prod-batch-no" placeholder="e.g. BATCH-2026-A1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Manufacturing Date</label>
+              <input type="date" class="form-input" id="prod-mfg-date">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Shelf Life Expiry Date</label>
+              <input type="date" class="form-input" id="prod-expiry-date">
             </div>
           </div>
 
@@ -1904,29 +1985,30 @@
   <div class="modal-backdrop" id="modal-add-company">
     <div class="modal-card modal-lg" style="max-width: 680px;">
       <div class="modal-header">
-        <h2 style="font-size: 1.15rem; font-weight: 700;">🏢 Configure Company / Business Profile</h2>
+        <h2 id="modal-add-company-title" style="font-size: 1.15rem; font-weight: 700;">🏢 Configure Company / Business Profile</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-company')">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="company-limit-alert" class="company-limit-banner">
+        <div id="company-limit-alert" class="company-limit-banner" style="display: none;">
           <div>
             <strong>Tier Limit Notice:</strong> Up to 2 companies can be configured for free. Additional profiles incur PKR 2,500/month.
           </div>
         </div>
         <form id="form-add-company" onsubmit="event.preventDefault(); submitNewCompanyForm();">
+          <input type="hidden" id="comp-edit-id">
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Business Display Name * (Mandatory)</label>
-              <input type="text" class="form-input" id="comp-name" required placeholder="e.g. Clifton Global Logistics">
+              <input type="text" class="form-input" id="comp-name" required placeholder="e.g. ABC Enterprises" oninput="syncCompanyAbbrevAndPrefix('comp-name', 'comp-abbrev', 'comp-inv-prefix', 'name')">
             </div>
             <div class="form-group">
               <label class="form-label">Company Abbreviation / Short Code</label>
-              <input type="text" class="form-input" id="comp-abbrev" placeholder="e.g. CGL, ABC" maxlength="10">
+              <input type="text" class="form-input" id="comp-abbrev" placeholder="e.g. ABC, ENT" maxlength="10" oninput="syncCompanyAbbrevAndPrefix('comp-name', 'comp-abbrev', 'comp-inv-prefix', 'abbrev')">
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Legal Entity Name * (Mandatory)</label>
-            <input type="text" class="form-input" id="comp-legal" required placeholder="e.g. Clifton Global Logistics (Pvt) Limited">
+            <input type="text" class="form-input" id="comp-legal" required placeholder="e.g. ABC Enterprises (Pvt) Limited">
           </div>
           <div class="form-row-3">
             <div class="form-group">
@@ -1945,12 +2027,12 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Official Email Address *</label>
-              <input type="email" class="form-input" id="comp-email" required placeholder="admin@clifton.pk">
+              <input type="email" class="form-input" id="comp-email" required placeholder="admin@company.com">
               <span id="comp-email-verify-status" style="font-size:0.75rem; color:#10b981; display:none; margin-top:3px;"></span>
             </div>
             <div class="form-group">
               <label class="form-label">Invoice Prefix</label>
-              <input type="text" class="form-input" id="comp-inv-prefix" value="INV-CGL">
+              <input type="text" class="form-input" id="comp-inv-prefix" placeholder="INV-PREFIX">
             </div>
           </div>
           <div class="form-group">
@@ -2099,16 +2181,16 @@
           <div class="form-row-3">
             <div class="form-group" style="grid-column: span 2;">
               <label class="form-label">Business Display Name * (Mandatory)</label>
-              <input type="text" class="form-input" id="onboard-comp-name" required placeholder="e.g. Clifton Engineering Pvt Ltd">
+              <input type="text" class="form-input" id="onboard-comp-name" required placeholder="e.g. ABC Enterprises (Pvt) Ltd" oninput="syncCompanyAbbrevAndPrefix('onboard-comp-name', 'onboard-comp-abbrev', 'onboard-comp-prefix', 'name')">
             </div>
             <div class="form-group">
               <label class="form-label">Abbreviation / Short Code</label>
-              <input type="text" class="form-input" id="onboard-comp-abbrev" placeholder="e.g. CE, CLG" maxlength="10">
+              <input type="text" class="form-input" id="onboard-comp-abbrev" placeholder="e.g. ABC, ENT" maxlength="10" oninput="syncCompanyAbbrevAndPrefix('onboard-comp-name', 'onboard-comp-abbrev', 'onboard-comp-prefix', 'abbrev')">
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Full Legal Entity Name * (Mandatory)</label>
-            <input type="text" class="form-input" id="onboard-comp-legal" required placeholder="e.g. Clifton Engineering Private Limited">
+            <input type="text" class="form-input" id="onboard-comp-legal" required placeholder="e.g. ABC Enterprises Private Limited">
           </div>
           <div class="form-row-3">
             <div class="form-group">
@@ -2132,7 +2214,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">Invoice Prefix</label>
-              <input type="text" class="form-input" id="onboard-comp-prefix" value="INV-CE" placeholder="e.g. INV-CE">
+              <input type="text" class="form-input" id="onboard-comp-prefix" placeholder="INV-PREFIX">
             </div>
           </div>
           <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-top: 10px;">
@@ -2230,6 +2312,7 @@
       </div>
       <div class="modal-body">
         <form id="form-create-user" onsubmit="event.preventDefault(); submitCreateUserForm();">
+          <input type="hidden" id="newuser-id">
           <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Full Name *</label>
@@ -2240,39 +2323,44 @@
               <input type="text" class="form-input" id="newuser-username" required placeholder="e.g. tariq_ops">
             </div>
             <div class="form-group">
-              <label class="form-label">Email Address *</label>
-              <input type="email" class="form-input" id="newuser-email" required placeholder="tariq@company.pk">
+              <label class="form-label">Email Address (Optional)</label>
+              <input type="email" class="form-input" id="newuser-email" placeholder="tariq@company.pk (Optional)">
             </div>
           </div>
 
           <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Initial Password *</label>
-              <input type="password" class="form-input" id="newuser-password" required minlength="8" maxlength="20" value="Password123!">
+            <div class="form-group" id="box-newuser-password">
+              <label class="form-label" id="label-newuser-password">Initial Password *</label>
+              <div style="position: relative;">
+                <input type="password" class="form-input" id="newuser-password" minlength="8" maxlength="20" value="Password123!" style="padding-right: 42px;">
+                <button type="button" onclick="togglePasswordVisibility('newuser-password', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748b; font-size: 1.1rem; padding: 4px;" title="Show/Hide Password">👁️</button>
+              </div>
             </div>
             <div class="form-group">
-              <label class="form-label">User Role *</label>
+              <label class="form-label">User Role / Access Level *</label>
               <select class="form-select" id="newuser-role" onchange="handleUserRoleSelection(this.value)">
-                <option value="ClientEmployee" selected>Client Employee (Configurable Access)</option>
-                <option value="ClientAdmin">Client Admin (Tenant Admin)</option>
-                <option value="SuperAdmin">Super Admin (System Owner)</option>
+                <option value="ClientEmployee" selected>Client Employee (Custom Configurable Access)</option>
+                <option value="ReadOnly">Read Only (View Permitted Screens - No Create / Edit / Delete)</option>
+                <option value="CompanyAdmin">Company Admin (Single Company Administrator)</option>
+                <option value="ClientAdmin">Client Admin (Full Tenant Admin)</option>
               </select>
             </div>
           </div>
 
-          <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-bottom:14px; font-size:0.76rem; color:#475569; line-height:1.4;">
+          <div class="password-guidelines-box" id="box-newuser-password-guide" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-bottom:14px; font-size:0.76rem; color:#475569; line-height:1.4;">
             <div style="font-weight:700; color:#1e293b; margin-bottom:2px;">🔒 Password Requirements:</div>
-            <div>8–20 chars, with uppercase (A-Z), lowercase (a-z), number (0-9), and special char (e.g. <code>!@#$%^&amp;*</code>).</div>
+            <div>8–20 chars, with uppercase (A-Z), lowercase (a-z), number (0-9), and special char (e.g. <code>!@#$%^&amp;*</code>). (Leave blank to keep current password when editing)</div>
           </div>
 
           <!-- Price & Bidding Security Setting -->
-          <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-              <input type="checkbox" id="newuser-can-see-prices" class="permissions-checkbox" checked>
+          <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+              <input type="checkbox" id="newuser-can-see-prices" class="permissions-checkbox" checked style="margin-top: 3px;">
               <div>
-                <strong style="color: #0f172a; font-size: 0.88rem;">💰 Allow Bidding & Costing Price Visibility</strong>
-                <p style="font-size: 0.78rem; color: #64748b; margin-top: 1px; margin-bottom: 0;">
-                  If unchecked, all tender margins, estimated values, costing sheets, and unit prices will be completely masked from this employee.
+                <strong style="color: #854d0e; font-size: 0.9rem;">💰 Allow Bidding & Costing Price Visibility</strong>
+                <p style="font-size: 0.78rem; color: #a16207; margin-top: 2px; margin-bottom: 0; line-height: 1.4;">
+                  <strong>When checked:</strong> User can view commercial pricing, costing sheets, and financial numbers.<br>
+                  <strong>When unchecked:</strong> All tender margins, estimated values, costing sheets, item costs, invoices, expenses, payments, and financial KPIs will be completely masked as <code>🔒 [Hidden]</code> across all screens.
                 </p>
               </div>
             </label>
@@ -2280,92 +2368,119 @@
 
           <!-- Company Profile Access Restriction -->
           <div class="form-group" style="margin-bottom: 14px;">
-            <label class="form-label">🏢 Assigned Company Entities (Select visible companies)</label>
+            <label class="form-label">🏢 Assigned Company Entities (Select accessible companies)</label>
             <div id="newuser-company-checkboxes" style="display: flex; gap: 12px; flex-wrap: wrap; background: #f8fafc; border: 1px solid var(--border); padding: 10px 14px; border-radius: var(--radius-md);">
               <!-- Injected dynamically -->
             </div>
           </div>
 
           <!-- Granular Permissions Matrix -->
-          <div id="rbac-matrix-container">
-            <label class="form-label" style="font-weight: 700; margin-bottom: 4px;">📋 Granular Module Permissions Matrix</label>
-            <table class="permissions-matrix-table">
-              <thead>
-                <tr>
-                  <th>Application Module / Menu</th>
-                  <th class="center">View (Read)</th>
-                  <th class="center">Add (Create)</th>
-                  <th class="center">Edit (Update)</th>
-                </tr>
-              </thead>
-              <tbody id="permissions-matrix-tbody">
-                <tr>
-                  <td><strong>📑 Tenders & Quotations</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="edit" checked></td>
-                </tr>
-                <tr>
-                  <td><strong>🛡️ Bid Security Registry</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>💰 Costing & Margin Sheet</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="add"></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>📦 Purchase Orders (PO)</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>🏬 Warehouse & Stock</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="edit" checked></td>
-                </tr>
-                <tr>
-                  <td><strong>🚚 Supply & Delivery Challans (DC)</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>🧾 Invoices & FBR PRAL</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="add"></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>💵 Payments Received</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="add"></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>💳 Expenses & Overheads</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="edit"></td>
-                </tr>
-                <tr>
-                  <td><strong>👥 Customers & Suppliers Directories</strong></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="view" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="add" checked></td>
-                  <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="edit" checked></td>
-                </tr>
-              </tbody>
-            </table>
+          <div id="rbac-matrix-container" style="margin-top: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+              <label class="form-label" style="font-weight: 700; margin-bottom: 0;">📋 Screen Rights & Granular Permissions Matrix</label>
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="secondary-btn" style="padding: 3px 10px; font-size: 0.75rem;" onclick="applyRbacPreset('full')">👑 Full Access</button>
+                <button type="button" class="secondary-btn" style="padding: 3px 10px; font-size: 0.75rem;" onclick="applyRbacPreset('readonly')">👁️ Read-Only</button>
+                <button type="button" class="secondary-btn" style="padding: 3px 10px; font-size: 0.75rem;" onclick="applyRbacPreset('revoke')">🚫 Revoke All</button>
+              </div>
+            </div>
+            <div style="max-height: 280px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: #ffffff;">
+              <table class="permissions-matrix-table" style="margin-top: 0; border: none; width: 100%; min-width: 500px;">
+                <thead>
+                  <tr style="position: sticky; top: 0; background: #f1f5f9; z-index: 2;">
+                    <th style="padding: 10px 14px; background: #f1f5f9;">Application Screen / Module</th>
+                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">View (Grant Screen)</th>
+                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">Add (Create)</th>
+                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">Edit (Update / Delete)</th>
+                  </tr>
+                </thead>
+                <tbody id="permissions-matrix-tbody">
+                  <tr>
+                    <td><strong>📑 Commercial Tenders & Bidding</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="edit" checked></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🛡️ Bid Security Registry (CDRs / POs)</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>💰 Costing Sheets & Margin Control</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="add"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>⚖️ Bid Approvals & Governance</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="add"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🏆 Awards & Performance Guarantees</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>📦 Customer Purchase Orders (PO)</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🏬 Warehouse Stock & SKU Inventory</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="edit" checked></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🚚 Supply & Delivery Challans (DC)</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🧾 Sales Invoices & FBR PRAL</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="add"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>💵 Payments Received & Cheques</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="add"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>💳 Expense Vouchers & Overheads</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="edit"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>👥 Customers & Suppliers Directories</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="edit" checked></td>
+                  </tr>
+                  <tr>
+                    <td><strong>📈 Executive Reports & Analytics</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="add"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="edit"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div class="modal-footer" style="padding: 14px 0 0; margin-top: 18px;">
             <button type="button" class="secondary-btn" onclick="closeModal('modal-create-user')">Cancel</button>
-            <button type="submit" class="primary-btn">💾 Save User / Employee</button>
+            <button type="submit" class="primary-btn" id="btn-save-user">💾 Save User / Employee</button>
           </div>
         </form>
       </div>
@@ -2391,12 +2506,43 @@
               <input type="text" class="form-input" id="tenant-subdomain" placeholder="e.g. falcon">
             </div>
             <div class="form-group">
-              <label class="form-label">Subscription Plan</label>
-              <select class="form-select" id="tenant-plan">
-                <option value="Standard" selected>Standard (2 Free Companies, 2 Free Users)</option>
-                <option value="Pro">Pro Enterprise Plan</option>
+              <label class="form-label">Trial Period *</label>
+              <select class="form-select" id="tenant-trial-period">
+                <option value="15 Days" selected>⏱️ 15 Days Free Trial</option>
+                <option value="1 Month">⏱️ 1 Month Free Trial</option>
+                <option value="2 Months">⏱️ 2 Months Free Trial</option>
+                <option value="3 Months">⏱️ 3 Months Free Trial</option>
+                <option value="Standard">💳 Standard / Active (No Expiry)</option>
               </select>
             </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Free Companies Limit *</label>
+              <select class="form-select" id="tenant-free-companies">
+                <option value="1">🏢 1 Free Company</option>
+                <option value="2" selected>🏢 2 Free Companies (Standard)</option>
+                <option value="3">🏢 3 Free Companies</option>
+                <option value="5">🏢 5 Free Companies</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Free Users / Seats Limit *</label>
+              <select class="form-select" id="tenant-free-users">
+                <option value="2" selected>👥 2 Free Users (Standard)</option>
+                <option value="3">👥 3 Free Users</option>
+                <option value="5">👥 5 Free Users</option>
+                <option value="10">👥 10 Free Users</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Subscription Tier *</label>
+            <select class="form-select" id="tenant-plan">
+              <option value="Advance" selected>Advance Plan (Unlimited Bids, Full Features)</option>
+              <option value="Starter">Starter Plan (5 Bids / month)</option>
+              <option value="Enterprise">Enterprise Custom Plan</option>
+            </select>
           </div>
           <div style="background:#f8fafc; border:1px solid var(--border); padding:12px; border-radius:var(--radius-md); margin-top:10px;">
             <h4 style="font-size:0.85rem; font-weight:700; color:#1e293b; margin-bottom:8px;">🔑 Initial Client Admin Account</h4>
@@ -2410,7 +2556,10 @@
             </div>
             <div class="form-group">
               <label class="form-label">Initial Password *</label>
-              <input type="password" class="form-input" id="tenant-admin-password" required minlength="8" maxlength="20" value="Password123!">
+              <div style="position: relative;">
+                <input type="password" class="form-input" id="tenant-admin-password" required minlength="8" maxlength="20" value="Password123!" style="padding-right: 42px;">
+                <button type="button" onclick="togglePasswordVisibility('tenant-admin-password', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748b; font-size: 1.1rem; padding: 4px;" title="Show/Hide Password">👁️</button>
+              </div>
             </div>
             <div class="password-guidelines-box" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:6px 10px; margin-top:6px; font-size:0.75rem; color:#64748b; line-height:1.4;">
               🔒 <strong>Requirements:</strong> 8–20 chars with uppercase (A-Z), lowercase (a-z), number (0-9), and special char (e.g. <code>!@#$%^&amp;*</code>).
@@ -2440,7 +2589,10 @@
           <input type="hidden" id="reset-user-id">
           <div class="form-group">
             <label class="form-label">New Password *</label>
-            <input type="password" class="form-input" id="reset-new-password" required minlength="8" maxlength="20" value="TempPass123!">
+            <div style="position: relative;">
+              <input type="password" class="form-input" id="reset-new-password" required minlength="8" maxlength="20" value="TempPass123!" style="padding-right: 42px;">
+              <button type="button" onclick="togglePasswordVisibility('reset-new-password', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748b; font-size: 1.1rem; padding: 4px;" title="Show/Hide Password">👁️</button>
+            </div>
           </div>
 
           <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-top:6px; font-size:0.75rem; color:#64748b; line-height:1.4;">
@@ -2462,9 +2614,144 @@
     </div>
   </div>
 
+  <!-- 19.5 Public Pre-Login Pricing & Plans Modal (No Prices Displayed, Save Up To Badges, Enterprise Hidden) -->
+  <div class="modal-backdrop" id="modal-public-pricing">
+    <div class="modal-card modal-lg" style="max-width: 960px; padding: 0; overflow: hidden; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+      <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: white; padding: 24px 28px; position: relative;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); padding: 4px 10px; border-radius: 20px; font-size: 0.76rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; margin-bottom: 8px;">
+              ⚡ Transparent Enterprise Tiers
+            </div>
+            <h2 style="font-size: 1.45rem; font-weight: 800; color: #ffffff; margin: 0 0 6px;">Commercial Bidding & ERP Plans</h2>
+            <p style="font-size: 0.88rem; color: #94a3b8; margin: 0; max-width: 580px;">
+              Empower your bidding lifecycle, eliminate CDR risks, calculate accurate margins, and automate FBR PRAL digital invoicing.
+            </p>
+          </div>
+          <button class="modal-close-btn" onclick="closeModal('modal-public-pricing')" style="color: #94a3b8; font-size: 1.5rem; background: none; border: none; cursor: pointer;">&times;</button>
+        </div>
+
+        <!-- Billing Frequency Tabs (Highlighting 'Save up to PKR 30,000') -->
+        <div style="display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap;" id="public-pricing-frequency-tabs">
+          <button type="button" class="freq-tab-btn active" onclick="switchPublicPricingFreq('monthly', this)" style="background: #2563eb; color: white; border: none; padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer;">
+            Monthly Billing
+          </button>
+          <button type="button" class="freq-tab-btn" onclick="switchPublicPricingFreq('quarterly', this)" style="background: rgba(255,255,255,0.08); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.15); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer;">
+            Quarterly <span style="background: #10b981; color: white; padding: 2px 6px; border-radius: 10px; font-size: 0.7rem; margin-left: 4px;">Save PKR 6,000</span>
+          </button>
+          <button type="button" class="freq-tab-btn" onclick="switchPublicPricingFreq('bi_annually', this)" style="background: rgba(255,255,255,0.08); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.15); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer;">
+            Bi-Annually <span style="background: #10b981; color: white; padding: 2px 6px; border-radius: 10px; font-size: 0.7rem; margin-left: 4px;">Save PKR 14,500</span>
+          </button>
+          <button type="button" class="freq-tab-btn" onclick="switchPublicPricingFreq('annually', this)" style="background: rgba(255,255,255,0.08); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.15); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer;">
+            Annually <span style="background: #f59e0b; color: #0f172a; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 800; margin-left: 4px;">🔥 Save up to PKR 30,000</span>
+          </button>
+        </div>
+      </div>
+
+      <div style="padding: 24px 28px; background: #f8fafc;">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;">
+          
+          <!-- Card 1: 15-Day Free Trial -->
+          <div style="background: white; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.08);">
+            <div>
+              <div style="display: inline-block; background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 0.74rem; padding: 3px 8px; border-radius: 12px; margin-bottom: 8px;">
+                Instant Access
+              </div>
+              <h3 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0 0 6px;">15-Day Free Trial</h3>
+              <p style="font-size: 0.78rem; color: #64748b; margin-bottom: 12px;">Full application experience to evaluate end-to-end commercial capabilities.</p>
+              
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-bottom: 14px;">
+                <div style="font-size: 0.95rem; font-weight: 800; color: #166534;">PKR 0 (Free 15 Days)</div>
+                <div style="font-size: 0.72rem; color: #15803d;">No credit card required</div>
+              </div>
+
+              <ul style="list-style: none; padding: 0; margin: 0 0 16px; font-size: 0.8rem; color: #334155;">
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>✅</span> <strong>5 Tender / Bid Opportunities</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>✅</span> <strong>3 Bid Security / CDR Items</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>✅</span> 1 Company & 1 Admin Seat</li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>✅</span> <strong>Full Access (All 8 Modules)</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🤝</span> <em>Personal Reference up to 3 Months (Upon discussion)</em></li>
+              </ul>
+            </div>
+            <button type="button" class="primary-btn" onclick="closeModal('modal-public-pricing'); document.getElementById('login-username')?.focus();" style="width: 100%; text-align: center; justify-content: center; font-size: 0.85rem; padding: 10px;">
+              🚀 Start 15-Day Free Trial
+            </button>
+          </div>
+
+          <!-- Card 2: Starter Plan -->
+          <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="display: inline-block; background: #f1f5f9; color: #475569; font-weight: 700; font-size: 0.74rem; padding: 3px 8px; border-radius: 12px; margin-bottom: 8px;">
+                Single User License
+              </div>
+              <h3 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0 0 6px;">Starter Plan</h3>
+              <p style="font-size: 0.78rem; color: #64748b; margin-bottom: 12px;">Ideal for single-operator commercial contractors and growing bidding desks.</p>
+              
+              <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; text-align: center;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #2563eb;">🔒 Price Unlocked on Login</div>
+                <div style="font-size: 0.7rem; color: #64748b;">Sign in to view exact subscription rates</div>
+              </div>
+
+              <ul style="list-style: none; padding: 0; margin: 0 0 16px; font-size: 0.8rem; color: #334155;">
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>✅</span> <strong>5 Bids Included per cycle</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>⚡</span> <em>Per-bid charges for additional bids</em></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>👤</span> <strong>Single User (1 User License)</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🏢</span> 1 Registered Company Profile</li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🧾</span> FBR PRAL Certified Invoicing & QR</li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>💬</span> Standard Email & Phone Support</li>
+              </ul>
+            </div>
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-public-pricing'); document.getElementById('login-username')?.focus();" style="width: 100%; text-align: center; justify-content: center; font-size: 0.85rem; padding: 10px;">
+              🔐 Sign In to View Pricing
+            </button>
+          </div>
+
+          <!-- Card 3: Advance Plan (Featured) -->
+          <div style="background: white; border: 2px solid #2563eb; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; position: relative; box-shadow: 0 6px 16px rgba(37, 99, 235, 0.1);">
+            <div style="position: absolute; top: -11px; right: 16px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; font-size: 0.68rem; font-weight: 800; padding: 2px 10px; border-radius: 10px; letter-spacing: 0.5px; text-transform: uppercase;">
+              ⭐ Most Popular
+            </div>
+            <div>
+              <div style="display: inline-block; background: #dbeafe; color: #1e40af; font-weight: 700; font-size: 0.74rem; padding: 3px 8px; border-radius: 12px; margin-bottom: 8px;">
+                Unlimited Scaling
+              </div>
+              <h3 style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0 0 6px;">Advance Plan</h3>
+              <p style="font-size: 0.78rem; color: #64748b; margin-bottom: 12px;">Full enterprise power for bidding syndicates and multi-entity commercial operations.</p>
+              
+              <div style="background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; text-align: center;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #1d4ed8;">🔒 Price Unlocked on Login</div>
+                <div style="font-size: 0.7rem; color: #2563eb; font-weight: 600;" id="public-pricing-advance-save-badge">🔥 Save up to PKR 30,000 on Annual</div>
+              </div>
+
+              <ul style="list-style: none; padding: 0; margin: 0 0 16px; font-size: 0.8rem; color: #334155;">
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🌟</span> <strong>Unlimited Bids & Tenders</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🏢</span> <strong>2 Companies Included</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>👥</span> <strong>3 User Seats Included</strong></li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🏦</span> Unlimited Bid Securities & CDR Registry</li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🧮</span> Landed Costing & Margin Approval Gate</li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🚚</span> Supply Chain POs, DCs & Multi-Warehouse</li>
+                <li style="padding: 4px 0; display: flex; align-items: flex-start; gap: 6px;"><span>🇵🇰</span> Certified FBR Digital POS Integration</li>
+              </ul>
+            </div>
+            <button type="button" class="primary-btn" onclick="closeModal('modal-public-pricing'); document.getElementById('login-username')?.focus();" style="width: 100%; text-align: center; justify-content: center; font-size: 0.85rem; padding: 10px;">
+              🔐 Sign In to Select Plan
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Footer Privacy Note -->
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 0.76rem; color: #64748b;">
+          <span>🔒 Enterprise isolation, FBR POS compliance, and multi-tenant security guaranteed.</span>
+          <span style="font-weight: 600; color: #334155;">Detailed billing invoices & payment receipts provided after login.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 20. Super Admin Configure Subscription, Custom Pricing & Trial Modal -->
   <div class="modal-backdrop" id="modal-configure-subscription">
-    <div class="modal-card modal-lg" style="max-width: 760px;">
+    <div class="modal-card modal-lg" style="max-width: 800px;">
       <div class="modal-header">
         <h2 style="font-size: 1.18rem; font-weight: 700; color: #1e293b;">⚙️ Configure Tenant Subscription & Pricing</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-configure-subscription')">&times;</button>
@@ -2487,18 +2774,18 @@
           <div class="form-group" style="margin-bottom: 16px;">
             <label class="form-label" style="font-weight: 700;">Select Subscription Plan Tier *</label>
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px;">
-              <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-basic">
-                <input type="radio" name="sub-plan-choice" value="Basic" onchange="onPlanSelectionChanged('Basic')" style="margin-bottom: 6px;">
-                <div style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Basic Plan</div>
-                <div style="font-size: 0.78rem; color: #64748b;">10 Tenders / 10 Quotes / mo<br>1 Company, 1 User</div>
-                <div style="font-weight: 700; color: var(--primary); margin-top: 6px; font-size: 0.88rem;">PKR 4,000 / mo</div>
+              <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-starter">
+                <input type="radio" name="sub-plan-choice" value="Starter" onchange="onPlanSelectionChanged('Starter')" style="margin-bottom: 6px;">
+                <div style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Starter Plan</div>
+                <div style="font-size: 0.78rem; color: #64748b;">5 Bids Included (Per-bid add-on)<br>1 Company, 1 User</div>
+                <div style="font-weight: 700; color: var(--primary); margin-top: 6px; font-size: 0.88rem;">PKR 14,000 / mo</div>
               </label>
 
               <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-advance">
                 <input type="radio" name="sub-plan-choice" value="Advance" checked onchange="onPlanSelectionChanged('Advance')" style="margin-bottom: 6px;">
                 <div style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Advance Plan</div>
                 <div style="font-size: 0.78rem; color: #64748b;">Unlimited Bidding<br>2 Free Co, 3 Users</div>
-                <div style="font-weight: 700; color: var(--primary); margin-top: 6px; font-size: 0.88rem;">PKR 14,000 / mo</div>
+                <div style="font-weight: 700; color: var(--primary); margin-top: 6px; font-size: 0.88rem;">PKR 35,000 / mo</div>
               </label>
 
               <label class="plan-card-option" style="border: 2px solid var(--border); padding: 12px; border-radius: var(--radius-md); cursor: pointer; display: block;" id="label-plan-custom">
@@ -2510,21 +2797,56 @@
             </div>
           </div>
 
-          <!-- 2. Flexible Trial Period Settings -->
+          <!-- 1.5 Billing Frequency & Multi-Cycle Matrix for Advance Plan -->
+          <div id="sub-billing-cycle-container" style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+              <span>🗓️ Advance Plan Billing Cycle & Discounts</span>
+              <span style="font-size: 0.75rem; color: #059669; font-weight: 700;">Save up to PKR 30,000</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+              <label style="border: 1px solid #cbd5e1; background: white; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;">
+                <input type="radio" name="sub-billing-cycle" value="monthly" checked onchange="onBillingCycleChanged('monthly')">
+                <strong style="display:block; margin-top:2px;">Monthly</strong>
+                <div style="color: #2563eb; font-weight: 700;">PKR 35,000</div>
+                <div style="font-size: 0.7rem; color: #64748b;">PKR 35k/mo</div>
+              </label>
+              <label style="border: 1px solid #cbd5e1; background: white; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;">
+                <input type="radio" name="sub-billing-cycle" value="quarterly" onchange="onBillingCycleChanged('quarterly')">
+                <strong style="display:block; margin-top:2px;">Quarterly</strong>
+                <div style="color: #2563eb; font-weight: 700;">PKR 99,000</div>
+                <div style="font-size: 0.7rem; color: #16a34a; font-weight: 600;">Save PKR 6k</div>
+              </label>
+              <label style="border: 1px solid #cbd5e1; background: white; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;">
+                <input type="radio" name="sub-billing-cycle" value="bi_annually" onchange="onBillingCycleChanged('bi_annually')">
+                <strong style="display:block; margin-top:2px;">Bi-Annually</strong>
+                <div style="color: #2563eb; font-weight: 700;">PKR 195,500</div>
+                <div style="font-size: 0.7rem; color: #16a34a; font-weight: 600;">Save PKR 14.5k</div>
+              </label>
+              <label style="border: 1px solid #cbd5e1; background: white; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;">
+                <input type="radio" name="sub-billing-cycle" value="annually" onchange="onBillingCycleChanged('annually')">
+                <strong style="display:block; margin-top:2px;">Annually</strong>
+                <div style="color: #2563eb; font-weight: 700;">PKR 390,000</div>
+                <div style="font-size: 0.7rem; color: #d97706; font-weight: 700;">Save PKR 30k</div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 2. Flexible Trial Period Settings (Including 15-Day Default & Personal Reference Max 3 Months) -->
           <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
-            <div style="font-weight: 700; color: #1e40af; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-              <span>⏳ Free Trial Period Configuration</span>
+            <div style="font-weight: 700; color: #1e40af; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+              <span>⏳ Free Trial & Personal Reference Configuration</span>
+              <span style="font-size: 0.75rem; color: #2563eb; font-weight: 600;">Max 3 Months on Discussion</span>
             </div>
             <div class="form-row">
               <div class="form-group" style="flex: 1;">
                 <label class="form-label">Trial Duration</label>
                 <select class="form-select" id="sub-trial-duration" onchange="onTrialDurationChanged(this.value)">
                   <option value="none">No Trial (Standard Billing)</option>
-                  <option value="15">15 Days Free Trial</option>
-                  <option value="30" selected>1 Month (30 Days) Free Trial</option>
-                  <option value="60">2 Months (60 Days) Free Trial</option>
-                  <option value="90">3 Months (90 Days) Free Trial</option>
-                  <option value="custom">Custom Trial Expiry Date</option>
+                  <option value="15" selected>15 Days Free Trial (Default - 5 Bids, 3 Bid Sec)</option>
+                  <option value="30">1 Month (30 Days) - Discussion / Personal Ref</option>
+                  <option value="60">2 Months (60 Days) - Discussion / Personal Ref</option>
+                  <option value="90">3 Months (90 Days) - Personal Reference (Max Cap)</option>
+                  <option value="custom">Custom Trial Expiry Date (Max 90 Days)</option>
                 </select>
               </div>
               <div class="form-group" style="flex: 1;" id="box-sub-trial-end">
@@ -2532,17 +2854,41 @@
                 <input type="date" class="form-input" id="sub-trial-end-date">
               </div>
             </div>
+            <div class="form-group" style="margin-top: 8px;">
+              <label class="form-label" style="font-size: 0.78rem;">Personal Reference / Discussion Notes</label>
+              <input type="text" class="form-input" id="sub-personal-reference-note" placeholder="e.g. Approved 3-month trial extension after Director meeting">
+            </div>
           </div>
 
-          <!-- 3. Per-Tenant Custom Price Overrides -->
+          <!-- 3. Package Limits & Included Quotas (Editable for Super Admin) -->
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 700; color: #166534; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+              <span>🏢 Included Quotas & Package Limits (For this specific tenant)</span>
+              <span style="font-size: 0.75rem; color: #15803d; font-weight: 600;">Editable by Super Admin</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Included / Free Companies *</label>
+                <input type="number" class="form-input" id="sub-included-companies" value="2" min="1" max="50" required oninput="recalcSubscriptionBillPreview()">
+                <span style="font-size:0.72rem; color:#15803d;">Allowed business profiles without surcharge (Advance: 2, Starter: 1)</span>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Included / Free Employee Seats *</label>
+                <input type="number" class="form-input" id="sub-included-users" value="3" min="1" max="100" required oninput="recalcSubscriptionBillPreview()">
+                <span style="font-size:0.72rem; color:#15803d;">Allowed user accounts without extra seat fee (Advance: 3, Starter: 1)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Per-Tenant Custom Price Overrides -->
           <div style="background: #fafaf9; border: 1px solid #e7e5e4; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
             <div style="font-weight: 700; color: #292524; font-size: 0.9rem; margin-bottom: 8px;">
               💵 Super Admin Custom Price Overrides (For this specific tenant)
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Monthly Base Plan Fee (PKR) *</label>
-                <input type="number" class="form-input" id="sub-custom-base-price" value="14000" min="0" oninput="recalcSubscriptionBillPreview()">
+                <label class="form-label">Base Plan Agreed Fee (PKR) *</label>
+                <input type="number" class="form-input" id="sub-custom-base-price" value="35000" min="0" oninput="recalcSubscriptionBillPreview()">
               </div>
               <div class="form-group">
                 <label class="form-label">Extra Company Surcharge (PKR/mo)</label>
@@ -2555,7 +2901,7 @@
             </div>
           </div>
 
-          <!-- 4. Modular Catalog (Visible for Custom Plan) -->
+          <!-- 5. Modular Catalog (Visible for Custom Plan) -->
           <div id="sub-modules-selector-container" style="display: none; margin-bottom: 16px;">
             <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem; margin-bottom: 8px;">
               📦 Subscribed Modules & Itemized Pricing (A La Carte)
@@ -2568,11 +2914,11 @@
           <!-- Real-Time Calculated Billing Summary -->
           <div style="background: #0f172a; color: white; padding: 14px 18px; border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
             <div>
-              <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 600;">Calculated Monthly Invoice:</div>
-              <div style="font-size: 0.78rem; color: #cbd5e1;" id="sub-billing-breakdown-text">Base Plan: PKR 14,000 + 0 Extra Co + 0 Extra Seats</div>
+              <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 600;">Agreed Billing Total:</div>
+              <div style="font-size: 0.78rem; color: #cbd5e1;" id="sub-billing-breakdown-text">Advance Plan: PKR 35,000 / mo (2 Co & 3 Seats Included)</div>
             </div>
             <div style="text-align: right;">
-              <div style="font-size: 1.35rem; font-weight: 800; color: #38bdf8;" id="sub-calculated-total-display">PKR 14,000 / mo</div>
+              <div style="font-size: 1.35rem; font-weight: 800; color: #38bdf8;" id="sub-calculated-total-display">PKR 35,000 / mo</div>
             </div>
           </div>
 
@@ -2653,26 +2999,29 @@
     </div>
   </div>
 
-  <!-- 22. Basic Plan Quota Exceeded Interceptor Modal -->
+  <!-- 22. Trial / Starter Quota Exceeded Interceptor Modal -->
   <div class="modal-backdrop" id="modal-quota-upgrade">
-    <div class="modal-card" style="max-width: 480px; text-align: center;">
+    <div class="modal-card" style="max-width: 520px; text-align: center;">
       <div class="modal-header" style="justify-content: center; border: none; padding-bottom: 0;">
         <div style="font-size: 3rem;">⚡</div>
       </div>
       <div class="modal-body" style="padding-top: 10px;">
-        <h3 style="font-size: 1.25rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Monthly Limit Reached</h3>
-        <p style="font-size: 0.9rem; color: #64748b; line-height: 1.5; margin-bottom: 18px;">
-          You have reached the limit of <strong>10 Tenders / Quotes</strong> included in your <strong>Basic Plan</strong> this month.
+        <h3 id="quota-upgrade-title" style="font-size: 1.25rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Quota Limit Reached</h3>
+        <p id="quota-upgrade-desc" style="font-size: 0.88rem; color: #64748b; line-height: 1.5; margin-bottom: 16px;">
+          You have reached your included quota (15-Day Trial / Starter Plan limit). Upgrade to <strong>Advance Plan</strong> for unlimited bidding and multi-entity control.
         </p>
 
-        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; text-align: left; margin-bottom: 18px;">
-          <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px;">🚀 Upgrade to Advance Plan for:</div>
-          <ul style="font-size: 0.85rem; color: #475569; padding-left: 20px; line-height: 1.6;">
-            <li><strong>Unlimited</strong> commercial tenders & quotations</li>
-            <li><strong>2 Free</strong> company profiles included</li>
-            <li><strong>3 Free</strong> employee accounts & access control</li>
-            <li>Full FBR PRAL Digital Invoicing integration</li>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; text-align: left; margin-bottom: 16px;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px; font-size: 0.9rem;">🚀 Advance Plan Highlights:</div>
+          <ul style="font-size: 0.82rem; color: #475569; padding-left: 20px; line-height: 1.6; margin-bottom: 10px;">
+            <li><strong>Unlimited</strong> commercial tenders, RFQs, and quotations</li>
+            <li><strong>Unlimited</strong> Bid Securities, CDRs, and Bank Guarantees</li>
+            <li><strong>2 Companies</strong> & <strong>3 User Seats</strong> included free</li>
+            <li>Full FBR PRAL Digital Invoicing & POS Integration</li>
           </ul>
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 10px; font-size: 0.76rem; color: #1e40af;">
+            💡 <strong>Multi-Cycle Pricing:</strong> Monthly (PKR 35k) | Quarterly (PKR 99k - Save 6k) | Bi-Annual (PKR 195.5k - Save 14.5k) | Annual (PKR 390k - <strong>Save PKR 30k</strong>)
+          </div>
         </div>
 
         <div style="display: flex; gap: 10px; justify-content: center;">
@@ -2777,6 +3126,70 @@
           <div class="modal-footer" style="padding: 12px 0 0; margin-top: 14px;">
             <button type="button" class="secondary-btn" onclick="closeModal('modal-change-password')">Cancel</button>
             <button type="submit" class="primary-btn">💾 Update Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 25. Welcome & Set Password Modal (From Email Link) -->
+  <div class="modal-backdrop" id="modal-set-password" style="z-index: 10050;">
+    <div class="modal-card" style="max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); border-radius: 16px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #0284c7 100%); color: #fff; border-radius: 16px 16px 0 0; padding: 20px 24px;">
+        <div>
+          <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9; font-weight: 600;">Welcome to Mashrue</div>
+          <h2 style="font-size: 1.25rem; font-weight: 800; color: #fff; margin: 4px 0 0 0; display: flex; align-items: center; gap: 8px;">
+            <span>🔐</span> Set Your Account Password
+          </h2>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 24px;">
+        <div id="set-password-user-badge" style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; display: flex; align-items: center; gap: 12px;">
+          <div style="width: 38px; height: 38px; border-radius: 50%; background: #0284c7; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem;" id="set-password-avatar-letter">U</div>
+          <div>
+            <div style="font-weight: 700; color: #0f172a; font-size: 0.95rem;" id="set-password-display-name">Loading user account...</div>
+            <div style="color: #64748b; font-size: 0.8rem;" id="set-password-display-email">Please wait...</div>
+          </div>
+        </div>
+
+        <div class="login-error-box" id="set-password-error-msg" style="display:none; margin-bottom: 14px;"></div>
+        <div class="login-success-box" id="set-password-success-msg" style="display:none; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 0.88rem; font-weight: 600; text-align: center;"></div>
+
+        <form id="form-set-password-token" onsubmit="event.preventDefault(); submitSetPasswordTokenForm();">
+          <input type="hidden" id="set-password-token-input" value="">
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label" style="font-weight: 600; color: #1e293b;">Create New Password *</label>
+            <div style="position: relative;">
+              <input type="password" class="form-input" id="set-new-password" required minlength="8" maxlength="20" placeholder="Enter strong password (8-20 chars)" style="padding-right: 42px;" autocomplete="new-password">
+              <button type="button" onclick="togglePasswordVisibility('set-new-password', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748b; font-size: 1.1rem;" title="Show/Hide Password">👁️</button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label" style="font-weight: 600; color: #1e293b;">Confirm New Password *</label>
+            <div style="position: relative;">
+              <input type="password" class="form-input" id="set-confirm-password" required minlength="8" maxlength="20" placeholder="Re-enter password to confirm" style="padding-right: 42px;" autocomplete="new-password">
+              <button type="button" onclick="togglePasswordVisibility('set-confirm-password', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748b; font-size: 1.1rem;" title="Show/Hide Password">👁️</button>
+            </div>
+          </div>
+
+          <div class="password-guidelines-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:18px; font-size:0.8rem; color:#475569; line-height:1.5;">
+            <div style="font-weight:700; color:#1e293b; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+              <span>🛡️</span> Password Requirements:
+            </div>
+            <ul style="margin:0; padding-left:18px; color:#64748b;">
+              <li>8 to 20 characters in length</li>
+              <li>At least 1 uppercase (A-Z) &amp; 1 lowercase (a-z)</li>
+              <li>At least 1 numeric digit (0-9)</li>
+              <li>At least 1 special character (e.g. <code>!@#$%^&amp;*</code>)</li>
+            </ul>
+          </div>
+
+          <div style="margin-top: 18px;">
+            <button type="submit" id="btn-submit-set-password" class="primary-btn" style="width: 100%; padding: 13px; font-size: 0.95rem; font-weight: 700; justify-content: center; background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border-radius: 10px; box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.4);">
+              🚀 Set Password &amp; Launch App
+            </button>
           </div>
         </form>
       </div>
@@ -2968,12 +3381,80 @@
     </div>
   </div>
 
+  <!-- 30. Tender Activity Diary & Chronological Timeline Modal -->
+  <div class="modal-backdrop" id="modal-tender-diary">
+    <div class="modal-card modal-lg" style="max-width: 840px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="background: #0f172a; color: white;">
+        <div>
+          <h2 style="font-size: 1.15rem; font-weight: 700; color: white;" id="tender-diary-title">📜 Tender Activity Diary & Timeline</h2>
+          <span style="font-size: 0.78rem; color: #94a3b8;" id="tender-diary-subtitle">Chronological Lifecycle Audit & Operations Notes</span>
+        </div>
+        <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-tender-diary')">&times;</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto; padding: 20px; background: #f8fafc;">
+        <!-- New Diary Memo Form -->
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <h4 style="font-size: 0.88rem; font-weight: 700; color: #1e293b; margin: 0 0 10px 0;">✍️ Log New Diary Memo / Meeting Note</h4>
+          <input type="hidden" id="diary-opp-id">
+          <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+              <input type="text" class="form-input" id="diary-note-input" placeholder="e.g. Pre-bid meeting attended at client HQ. Clarified query on Clause 12.">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <select class="form-select" id="diary-category-select">
+                <option value="Client Meeting" selected>🤝 Client Meeting</option>
+                <option value="Pre-Bid Query">❓ Pre-Bid Query</option>
+                <option value="Sample Submission">🧪 Sample Submission</option>
+                <option value="Site Visit">📍 Site Visit</option>
+                <option value="Competitor Intel">🕵️ Competitor Intel</option>
+                <option value="Internal Review">🏢 Internal Review</option>
+              </select>
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+              <button type="button" class="primary-btn" onclick="submitTenderDiaryEntry()" style="height: 38px; white-space: nowrap;">+ Log Memo</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chronological Timeline Display Area -->
+        <div id="tender-diary-timeline-container">
+          <!-- Dynamically populated via openTenderDiaryModal() -->
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 12px 20px; background: white; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="secondary-btn" onclick="closeModal('modal-tender-diary')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 31. Automated 3-Way Match Verification Engine Modal (PO ➔ DC/GRN ➔ Invoice) -->
+  <div class="modal-backdrop" id="modal-3way-match">
+    <div class="modal-card modal-lg" style="max-width: 960px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="background: #0284c7; color: white;">
+        <div>
+          <h2 style="font-size: 1.18rem; font-weight: 700; color: white;">🔍 Automated 3-Way Match Audit (PO ➔ DC/GRN ➔ Invoice)</h2>
+          <span style="font-size: 0.78rem; color: #e0f2fe;">Comprehensive Reconciliation: Purchase Order Contract vs Verified Physical Delivery vs Commercial Billed Invoice</span>
+        </div>
+        <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-3way-match')">&times;</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto; padding: 20px; background: #f8fafc;" id="threeway-match-body">
+        <!-- Dynamically rendered via open3WayMatchModal() -->
+      </div>
+      <div class="modal-footer" style="padding: 12px 20px; background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+        <div id="threeway-match-summary-badge">
+          <!-- Matched / Discrepancy Status -->
+        </div>
+        <button type="button" class="secondary-btn" onclick="closeModal('modal-3way-match')">Close Audit</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Enterprise Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=4.2"></script>
-  <script src="js/state.js?v=4.2"></script>
-  <script src="js/app.js?v=4.2"></script>
+  <script src="js/api.js?v=6.8"></script>
+  <script src="js/state.js?v=6.8"></script>
+  <script src="js/app.js?v=6.8"></script>
 </body>
 </html>

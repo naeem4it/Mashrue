@@ -60,7 +60,10 @@ async function authenticate(req, res, next) {
          FROM users u
          LEFT JOIN tenants t ON u.tenant_id = t.id
          LEFT JOIN user_business_access uba ON u.id = uba.user_id
-         WHERE u.id::text = $1 OR LOWER(u.username) = LOWER($2) OR (LOWER(u.email) = 'naeem@mashrue.com' AND $3 = 'SuperAdmin')
+         WHERE (u.id::text = $1) 
+            OR (u.username IS NOT NULL AND LOWER(u.username) = LOWER($2)) 
+            OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER($2)) 
+            OR (u.email IS NOT NULL AND LOWER(u.email) = 'naeem@mashrue.com' AND $3 = 'SuperAdmin')
          GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                   u.must_change_password, u.can_see_bidding_prices, u.permissions,
                   t.company_name, t.subscription_plan`,

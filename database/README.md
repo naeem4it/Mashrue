@@ -10,27 +10,25 @@ Target Database: **`mashrueDB`** (PostgreSQL 16 / 18)
    * Creates UUID & Crypto extensions.
    * Initializes all 24 relational tables + multi-tenant indexes.
    * Includes `vector_documents` table for future AI RAG search.
-2. **[`02_seed_data.sql`](file:///d:/mashrue/CodeBase/database/02_seed_data.sql)**:
-   * Seeds primary tenant: `Alpha Group Pakistan`.
-   * Seeds 3 business profiles: `ABC Pvt Ltd`, `XYZ Enterprises`, `Company 3 Trading`.
-   * Seeds admin user: `Muhammad Naeem Khan` (`naeem@mashrue.com`).
-   * Seeds sample customer (*WAPDA*), supplier (*Siemens Pakistan*), active tender (`TND-2026-8812`), cost sheet, and validated FBR invoice.
-3. **[`setup_database.bat`](file:///d:/mashrue/CodeBase/database/setup_database.bat)**:
-   * Automated 1-click batch runner to execute both SQL scripts directly against `mashrueDB`.
+2. **[`02_seed_superadmin_only.sql`](file:///d:/mashrue/CodeBase/database/02_seed_superadmin_only.sql)** *(Recommended for Production)*:
+   * Provisions ONLY the primary Super Admin user: `naeem4it` (`Password123!`).
+   * No dummy tenants, fake tenders, or sample invoices.
+3. **[`02_seed_data.sql`](file:///d:/mashrue/CodeBase/database/02_seed_data.sql)** *(Optional Demo Data)*:
+   * Seeds demo tenant (`Alpha Group Pakistan`), business profiles, sample tenders, cost sheets, and invoices.
+4. **[`setup_database.bat`](file:///d:/mashrue/CodeBase/database/setup_database.bat)**:
+   * Automated 1-click batch runner with interactive choice (Clean SuperAdmin or Full Demo).
 
 ---
 
 ## 🛠️ How to Execute the Scripts on `mashrueDB`
 
-### Option A: Using Command Prompt / Terminal
-Open your Command Prompt or PowerShell and run:
-
+### Option A: Clean Setup with ONLY Super Admin (Production)
 ```bash
 # 1. Run Schema Creation
-psql -U postgres -d mashrueDB -f "d:\mashrue\CodeBase\database\01_schema_init.sql"
+psql -U postgres -d mashrueDB -f "01_schema_init.sql"
 
-# 2. Run Sample Seed Data
-psql -U postgres -d mashrueDB -f "d:\mashrue\CodeBase\database\02_seed_data.sql"
+# 2. Seed ONLY Super Admin (naeem4it / Password123!)
+psql -U postgres -d mashrueDB -f "02_seed_superadmin_only.sql"
 ```
 
 ### Option B: Using pgAdmin 4 (GUI)
