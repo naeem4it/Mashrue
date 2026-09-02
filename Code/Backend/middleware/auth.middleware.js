@@ -63,24 +63,23 @@ async function authenticate(req, res, next) {
          WHERE (u.id::text = $1) 
             OR (u.username IS NOT NULL AND LOWER(u.username) = LOWER($2)) 
             OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER($2)) 
-            OR (u.email IS NOT NULL AND LOWER(u.email) = 'naeem@mashrue.com' AND $3 = 'SuperAdmin')
          GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                   u.must_change_password, u.can_see_bidding_prices, u.permissions,
                   t.company_name, t.subscription_plan`,
-        [String(decoded.userId || ''), String(decoded.username || ''), String(decoded.role || '')]
+        [String(decoded.userId || ''), String(decoded.username || '')]
       );
     } catch (dbErr) {
       console.warn('User auth DB query fallback:', dbErr.message);
     }
 
     if (userRes.rows.length === 0) {
-      if (decoded.role === 'SuperAdmin' || decoded.username === 'naeem4it') {
+      if (decoded.role === 'SuperAdmin') {
         req.user = {
-          id: 'e0000000-0000-0000-0000-000000000000',
+          id: decoded.userId || 'super-admin-id',
           tenantId: null,
-          username: 'naeem4it',
-          fullName: 'Muhammad Naeem Khan (Super Admin)',
-          email: 'naeem@mashrue.com',
+          username: decoded.username || 'superadmin',
+          fullName: decoded.fullName || 'Super Admin',
+          email: decoded.email || null,
           role: 'SuperAdmin',
           status: 'Active',
           mustChangePassword: false,

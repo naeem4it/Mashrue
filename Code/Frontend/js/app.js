@@ -1268,10 +1268,12 @@ async function renderActiveView() {
 // 1. DASHBOARD VIEW
 // --------------------------------------------------------------------------
 async function renderDashboardHTML() {
-  const kpis = await API.getDashboardKPIs(State.currentBusinessProfileId);
-  const opps = await API.getOpportunities(State.currentBusinessProfileId);
-  const pendingBills = await API.getPendingBills();
-  const securities = await API.getBidSecurities(State.currentBusinessProfileId);
+  const [kpis, opps, pendingBills, securities] = await Promise.all([
+    API.getDashboardKPIs(State.currentBusinessProfileId),
+    API.getOpportunities(State.currentBusinessProfileId),
+    API.getPendingBills(),
+    API.getBidSecurities(State.currentBusinessProfileId)
+  ]);
 
   const tendersKPI = kpis?.tenders || { total_tenders: 0, in_process: 0, won_count: 0, total_pipeline_value: 0 };
   const secKPI = kpis?.bidSecurities || { active_securities_count: 0, active_securities_amount: 0 };
@@ -3624,7 +3626,12 @@ async function renderBusinessProfilesHTML() {
                   ${idx < 2 ? `<span class="badge badge-won">Free Tier Included</span>` : `<span class="badge badge-hold">Paid Add-on (PKR 2,500/mo)</span>`}
                 </td>
                 <td>
-                  <button class="edit-btn" onclick="openEditCompanyModal('${p.id}')">✏️ Edit</button>
+                  <div style="display:flex; gap:6px;">
+                    <button class="edit-btn" onclick="openEditCompanyModal('${p.id}')">✏️ Edit</button>
+                    ${State.isSuperAdmin() ? `
+                      <button class="delete-btn" style="padding:3px 8px; font-size:0.75rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteCompany('${p.id}', '${encodeURIComponent(p.business_name)}')" title="Delete Company Profile">🗑️ Delete</button>
+                    ` : ''}
+                  </div>
                 </td>
               </tr>
             `).join('')}
@@ -3638,11 +3645,14 @@ async function renderBusinessProfilesHTML() {
 // --------------------------------------------------------------------------
 // 16. USERS & RBAC VIEW
 // --------------------------------------------------------------------------
+// 16. USERS & RBAC VIEW
+// --------------------------------------------------------------------------
 async function renderUsersHTML() {
   const isSuper = State.isSuperAdmin();
   const res = await API.getUsersWithStats();
   const rawUsers = (res && res.data && res.data.length > 0) ? res.data : State.getStoredUsers();
   const currentTid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+  const currentUserId = State.currentUser?.id;
 
   // Strict Tenant Scoping: Client Admin only sees their own tenant's users
   const userList = isSuper ? rawUsers : rawUsers.filter(u => {
@@ -3660,18 +3670,18 @@ async function renderUsersHTML() {
   };
 
   if (isSuper) {
-    // SUPER ADMIN VIEW: Global Tenants & System Users
+    // SUPER ADMIN VIEW: Hierarchical Expandable / Collapsible Grid
     return `
-      <!-- Super Admin Quick Stats & Actions -->
+      <!-- Super Admin Header & Actions -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
         <div style="display: flex; gap: 10px; align-items: center;">
           <span class="seat-counter-badge" style="background:#eff6ff; color:#1d4ed8; border-color:#93c5fd;">
-            👑 <strong>Super Admin Mode</strong> (Full Access to All Tenants & Modules)
+            👑 <strong>Super Admin Control Hub</strong> (Expand clients below to inspect companies & sub-users)
           </span>
         </div>
         <div style="display: flex; gap: 8px;">
           <button class="primary-btn" onclick="openModal('modal-create-tenant')">
-            🏢 + Provision New Tenant & Admin
+            🏢 + Provision New Client / Tenant
           </button>
           <button class="secondary-btn" onclick="openCreateUserModal('SuperAdmin')">
             👑 + Add System Super Admin
@@ -3679,19 +3689,21 @@ async function renderUsersHTML() {
         </div>
       </div>
 
-      <!-- Tenants Overview Card -->
+      <!-- Main Hierarchical Tenants & Clients Grid -->
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
-          <div class="card-title">🏢 Active Tenant Organizations (${tenants.length})</div>
+          <div class="card-title">🏢 Client Organizations & Hierarchical Structure (${tenants.length})</div>
+          <span style="font-size:0.8rem; color:var(--text-muted);">Click <strong>➕ Expand</strong> on any client to view their companies & registered users</span>
         </div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Tenant Organization</th>
+                <th style="width: 40px;"></th>
+                <th>Client / Organization</th>
                 <th>Subdomain</th>
                 <th>Plan Tier</th>
-                <th>Trial Period</th>
+                <th>Trial / Period</th>
                 <th>Companies</th>
                 <th>Users</th>
                 <th>Status</th>
@@ -3699,70 +3711,156 @@ async function renderUsersHTML() {
               </tr>
             </thead>
             <tbody>
-              ${tenants.map(t => `
+              ${tenants.length === 0 ? `
                 <tr>
-                  <td><strong>${t.company_name || t.name}</strong></td>
-                  <td><span class="pill-source">${t.subdomain || 'app'}.mashrue.com</span></td>
-                  <td><span class="badge badge-won">${t.subscription_plan || 'Advance'}</span></td>
-                  <td><span class="badge badge-ready" style="font-size:0.75rem;">⏱️ ${t.trial_period || '15 Days'}</span></td>
-                  <td>${t.company_count || 1} / ${t.free_business_profile_limit || 2} Free</td>
-                  <td>${t.user_count || 1} / ${t.free_employee_limit || 2} Free</td>
-                  <td><span class="badge badge-sec-attached">${t.status || 'Active'}</span></td>
-                  <td>
-                    <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="alert('Manage Tenant: ${t.company_name || t.name}')">Manage</button>
+                  <td colspan="9" style="text-align:center; padding:32px; color:#64748b;">
+                    No client organizations registered yet. Click <strong>+ Provision New Client / Tenant</strong> above.
                   </td>
                 </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              ` : tenants.map((t, idx) => {
+                const tenantCompanies = t.companies || [];
+                const tenantUsers = t.tenant_users || userList.filter(u => String(u.tenant_id) === String(t.id));
+                const expRowId = `tenant-exp-${t.id || idx}`;
 
-      <!-- All System Users Card -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">👥 All System Users (${userList.length})</div>
-        </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>User Full Name</th>
-                <th>Username</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Tenant Organization</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${userList.map(u => `
-                <tr>
-                  <td><strong>${u.full_name || u.username}</strong></td>
-                  <td><code>${u.username}</code></td>
-                  <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
-                  <td>
-                    <span class="badge ${u.role === 'SuperAdmin' ? 'badge-sec-missing' : u.role === 'ClientAdmin' ? 'badge-won' : u.role === 'ReadOnly' ? 'badge-ready' : 'badge-sec-attached'}">
-                      ${u.role === 'ReadOnly' ? '👁️ Read-Only' : u.role}
-                    </span>
-                  </td>
-                  <td>${u.tenant_name || u.tenant?.name || 'System / Platform'}</td>
-                  <td><span class="badge ${u.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${u.status || 'Active'}</span></td>
-                  <td>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                      <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Rights & Permissions">✏️ Edit</button>
-                      <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${u.username}')">🔑 Pass</button>
-                      ${u.email ? `
-                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; background:#0284c7; color:#fff; border-color:#0284c7;" onclick="handleResendInviteEmail('${u.id}', '${u.full_name || u.username}', '${u.email}')" title="Resend Activation / Welcome Email via Resend.com">📧 Resend Email</button>
-                      ` : ''}
-                      ${(u.username !== 'naeem4it' && u.email !== 'naeem@mashrue.com') ? `
-                        <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
-                      ` : ''}
-                    </div>
-                  </td>
-                </tr>
-              `).join('')}
+                return `
+                  <tr style="background:#ffffff; font-weight:500;">
+                    <td>
+                      <button class="secondary-btn" style="padding:2px 7px; font-size:0.75rem; font-weight:700; border-radius:4px; min-width:32px;" onclick="toggleTenantExpand('${expRowId}', this)" title="Expand/Collapse details">
+                        ➕
+                      </button>
+                    </td>
+                    <td>
+                      <strong>${t.company_name || t.name}</strong>
+                    </td>
+                    <td><span class="pill-source">${t.subdomain || 'app'}.mashrue.com</span></td>
+                    <td><span class="badge badge-won">${t.subscription_plan || 'Advance'}</span></td>
+                    <td><span class="badge badge-ready" style="font-size:0.75rem;">⏱️ ${t.trial_period || '15 Days'}</span></td>
+                    <td><span class="badge badge-sec-attached">${tenantCompanies.length} registered</span></td>
+                    <td><span class="badge badge-sec-attached">${tenantUsers.length} users</span></td>
+                    <td><span class="badge ${t.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${t.status || 'Active'}</span></td>
+                    <td>
+                      <div style="display:flex; gap:6px;">
+                        <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="toggleTenantExpand('${expRowId}', this)">📂 Details</button>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Collapsible Child Row: Companies & Users under this Client -->
+                  <tr id="${expRowId}" style="display:none; background:#f8fafc;">
+                    <td colspan="9" style="padding: 16px 20px; border-bottom: 2px solid #cbd5e1;">
+                      <div style="display: flex; flex-direction: column; gap: 16px;">
+                        
+                        <!-- 1. Companies Box under this Tenant -->
+                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px;">
+                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">
+                              🏢 Registered Companies under ${t.company_name || t.name} (${tenantCompanies.length})
+                            </div>
+                            <span style="font-size: 0.75rem; color: #64748b;">Super Admin has rights to manage or delete companies</span>
+                          </div>
+                          
+                          ${tenantCompanies.length === 0 ? `
+                            <div style="padding: 12px; font-size: 0.82rem; color: #64748b; font-style: italic;">
+                              No companies registered under this client yet.
+                            </div>
+                          ` : `
+                            <table class="data-table" style="font-size: 0.8rem; margin: 0;">
+                              <thead>
+                                <tr style="background: #f1f5f9;">
+                                  <th>Company Name</th>
+                                  <th>Legal Name</th>
+                                  <th>NTN</th>
+                                  <th>STRN</th>
+                                  <th>City</th>
+                                  <th>FBR PRAL</th>
+                                  <th>Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${tenantCompanies.map(c => `
+                                  <tr>
+                                    <td><strong>${c.business_name}</strong></td>
+                                    <td>${c.legal_name || c.business_name}</td>
+                                    <td><code>${c.ntn || 'N/A'}</code></td>
+                                    <td><code>${c.strn || 'N/A'}</code></td>
+                                    <td>${c.city || 'Lahore'}</td>
+                                    <td><span class="badge ${c.fbr_enabled ? 'badge-fbr' : 'badge-withdraw'}">${c.fbr_enabled ? 'Enabled' : 'Disabled'}</span></td>
+                                    <td>
+                                      <button class="delete-btn" style="padding:3px 8px; font-size:0.72rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteCompany('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Company Profile">🗑️ Delete Company</button>
+                                    </td>
+                                  </tr>
+                                `).join('')}
+                              </tbody>
+                            </table>
+                          `}
+                        </div>
+
+                        <!-- 2. Sub-Users / Employees Box under this Tenant -->
+                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px;">
+                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">
+                              👥 Client Users &amp; Employees under ${t.company_name || t.name} (${tenantUsers.length})
+                            </div>
+                          </div>
+
+                          ${tenantUsers.length === 0 ? `
+                            <div style="padding: 12px; font-size: 0.82rem; color: #64748b; font-style: italic;">
+                              No users registered under this client yet.
+                            </div>
+                          ` : `
+                            <table class="data-table" style="font-size: 0.8rem; margin: 0;">
+                              <thead>
+                                <tr style="background: #f1f5f9;">
+                                  <th>Full Name</th>
+                                  <th>Username</th>
+                                  <th>Email</th>
+                                  <th>Role</th>
+                                  <th>Status</th>
+                                  <th>Bidding Prices</th>
+                                  <th>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${tenantUsers.map(u => {
+                                  const canDelete = (String(u.id) !== String(currentUserId)) && (u.role !== 'SuperAdmin');
+                                  return `
+                                    <tr>
+                                      <td><strong>${u.full_name || u.username}</strong></td>
+                                      <td><code>${u.username}</code></td>
+                                      <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
+                                      <td>
+                                        <span class="badge ${u.role === 'ClientAdmin' ? 'badge-won' : 'badge-sec-attached'}">
+                                          ${u.role}
+                                        </span>
+                                      </td>
+                                      <td><span class="badge ${u.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${u.status || 'Active'}</span></td>
+                                      <td>
+                                        <span class="badge ${u.can_see_bidding_prices !== false ? 'badge-won' : 'badge-hold'}">
+                                          ${u.can_see_bidding_prices !== false ? 'Visible' : 'Masked'}
+                                        </span>
+                                      </td>
+                                      <td>
+                                        <div style="display:flex; gap:4px;">
+                                          <button class="edit-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="openEditUserModal('${u.id}')">✏️ Edit</button>
+                                          <button class="secondary-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="openResetPasswordModal('${u.id}', '${u.username}')">🔑 Pass</button>
+                                          ${canDelete ? `
+                                            <button class="delete-btn" style="padding:2px 6px; font-size:0.72rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
+                                          ` : ''}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  `;
+                                }).join('')}
+                              </tbody>
+                            </table>
+                          `}
+                        </div>
+
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -3825,6 +3923,11 @@ async function renderUsersHTML() {
                   ? '<span class="badge" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe;">👁️ Read-Only</span>'
                   : '<span class="badge badge-ready">⚙️ Configurable</span>');
 
+              // Strict Creator Rule: User A can delete User B (created by User A). No self-deletion.
+              const isSelf = String(u.id) === String(currentUserId);
+              const isCreatedByMe = u.created_by && String(u.created_by) === String(currentUserId);
+              const canDelete = !isSelf && u.role !== 'SuperAdmin' && (isCreatedByMe || isSuper);
+
               return `
                 <tr>
                   <td><strong>${u.full_name}</strong></td>
@@ -3842,10 +3945,10 @@ async function renderUsersHTML() {
                     <div class="action-buttons-group">
                       <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>
                       <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${u.full_name}')" title="Reset Password">🔑 Pass</button>
-                      ${u.email ? `
-                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; background:#0284c7; color:#fff; border-color:#0284c7;" onclick="handleResendInviteEmail('${u.id}', '${u.full_name}', '${u.email}')" title="Resend Activation / Welcome Email via Resend.com">📧 Resend Email</button>
+                      ${u.email && isSuper ? `
+                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; background:#0284c7; color:#fff; border-color:#0284c7;" onclick="handleResendInviteEmail('${u.id}', '${u.full_name}', '${u.email}')" title="Resend Activation / Welcome Email">📧 Resend Email</button>
                       ` : ''}
-                      ${(u.id !== State.currentUser?.id && u.role !== 'SuperAdmin') ? `
+                      ${canDelete ? `
                         <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
                       ` : ''}
                     </div>
@@ -4993,62 +5096,82 @@ function applyBidSecurityModalPct(pct) {
 let _tenderLineItems = [];
 
 async function openNewTenderModal() {
-  const form = document.getElementById('form-add-tender');
-  if (form) form.reset();
+  try {
+    const form = document.getElementById('form-add-tender');
+    if (form) form.reset();
 
-  const editIdEl = document.getElementById('tender-edit-id');
-  if (editIdEl) editIdEl.value = '';
+    const editIdEl = document.getElementById('tender-edit-id');
+    if (editIdEl) editIdEl.value = '';
 
-  const modal = document.getElementById('modal-add-tender');
-  if (modal) {
-    const title = modal.querySelector('h2');
-    if (title) title.innerHTML = '📑 Register New Tender / Opportunity';
+    const modal = document.getElementById('modal-add-tender');
+    if (modal) {
+      const title = modal.querySelector('h2');
+      if (title) title.innerHTML = '📑 Register New Tender / Opportunity';
+    }
+
+    const otherContainer = document.getElementById('tender-source-other-container');
+    if (otherContainer) otherContainer.style.display = 'none';
+
+    // Parallelize data fetching for lightning fast load
+    let customers = [];
+    let profiles = [];
+    try {
+      const [cRes, pRes, prRes] = await Promise.all([
+        API.getCustomers(),
+        API.getBusinessProfiles(),
+        API.getProducts()
+      ]);
+      customers = cRes || [];
+      profiles = pRes || [];
+      window._cachedProducts = prRes || [];
+    } catch (e) {
+      console.warn('Tender modal reference fetch warning:', e.message);
+    }
+
+    const custSelect = document.getElementById('tender-customer');
+    const profSelect = document.getElementById('tender-business-profile');
+    const currSelect = document.getElementById('tender-currency');
+
+    if (custSelect) {
+      custSelect.innerHTML = customers.length === 0 
+        ? '<option value="">-- No Customers Registered --</option>' 
+        : customers.map(c => `<option value="${c.id}">${c.business_name || c.name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
+    }
+    if (profSelect) {
+      profSelect.innerHTML = profiles.length === 0 
+        ? '<option value="">-- No Business Profiles --</option>' 
+        : profiles.map(p => `<option value="${p.id}" ${String(p.id) === String(State.currentBusinessProfileId) ? 'selected' : ''}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
+    }
+    if (currSelect) {
+      currSelect.value = 'PKR';
+      if (typeof updateTenderCurrencyLabels === 'function') updateTenderCurrencyLabels('PKR');
+    }
+
+    _tenderLineItems = [];
+    const tbody = document.getElementById('tender-items-tbody');
+    if (tbody) tbody.innerHTML = '';
+    if (typeof addTenderItemRow === 'function') addTenderItemRow();
+
+    const exemptEl = document.getElementById('tender-gst-exempt');
+    const inclusiveEl = document.getElementById('tender-gst-inclusive');
+    const rateEl = document.getElementById('tender-gst-rate');
+    if (exemptEl) exemptEl.checked = false;
+    if (inclusiveEl) inclusiveEl.checked = false;
+    if (rateEl) rateEl.value = '18';
+
+    if (typeof recalculateTenderItemsSum === 'function') recalculateTenderItemsSum();
+    if (typeof calculateTenderBidSecurityFromPct === 'function') calculateTenderBidSecurityFromPct();
+    if (typeof initCustomDateTimePickers === 'function') {
+      try { initCustomDateTimePickers(); } catch (e) {}
+    }
+
+    openModal('modal-add-tender');
+  } catch (err) {
+    console.error('Error opening Tender modal:', err);
+    openModal('modal-add-tender');
   }
-
-  const otherContainer = document.getElementById('tender-source-other-container');
-  if (otherContainer) otherContainer.style.display = 'none';
-
-  const customers = await API.getCustomers();
-  const profiles = await API.getBusinessProfiles();
-  window._cachedProducts = await API.getProducts();
-
-  const custSelect = document.getElementById('tender-customer');
-  const profSelect = document.getElementById('tender-business-profile');
-  const currSelect = document.getElementById('tender-currency');
-
-  if (custSelect) {
-    custSelect.innerHTML = customers.length === 0 
-      ? '<option value="">-- No Customers Registered --</option>' 
-      : customers.map(c => `<option value="${c.id}">${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
-  }
-  if (profSelect) {
-    profSelect.innerHTML = profiles.length === 0 
-      ? '<option value="">-- No Business Profiles --</option>' 
-      : profiles.map(p => `<option value="${p.id}">${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
-  }
-  if (currSelect) {
-    currSelect.value = 'PKR';
-    updateTenderCurrencyLabels('PKR');
-  }
-
-  _tenderLineItems = [];
-  const tbody = document.getElementById('tender-items-tbody');
-  if (tbody) tbody.innerHTML = '';
-  addTenderItemRow();
-
-  const exemptEl = document.getElementById('tender-gst-exempt');
-  const inclusiveEl = document.getElementById('tender-gst-inclusive');
-  const rateEl = document.getElementById('tender-gst-rate');
-  if (exemptEl) exemptEl.checked = false;
-  if (inclusiveEl) inclusiveEl.checked = false;
-  if (rateEl) rateEl.value = '18';
-
-  recalculateTenderItemsSum();
-  calculateTenderBidSecurityFromPct();
-  initCustomDateTimePickers();
-
-  openModal('modal-add-tender');
 }
+window.openNewTenderModal = openNewTenderModal;
 
 async function openEditTenderModal(id) {
   const opps = await API.getOpportunities('all');
@@ -8837,6 +8960,42 @@ async function deleteUserAction(userId, userName) {
   }
 }
 window.deleteUserAction = deleteUserAction;
+
+function toggleTenantExpand(expRowId, btnEl) {
+  const row = document.getElementById(expRowId);
+  if (!row) return;
+  if (row.style.display === 'none' || !row.style.display) {
+    row.style.display = 'table-row';
+    if (btnEl) btnEl.innerHTML = '➖';
+  } else {
+    row.style.display = 'none';
+    if (btnEl) btnEl.innerHTML = '➕';
+  }
+}
+window.toggleTenantExpand = toggleTenantExpand;
+
+async function handleDeleteCompany(companyId, companyName) {
+  if (!companyId) return;
+  const decodedName = decodeURIComponent(companyName || companyId);
+  if (!confirm(`Are you sure you want to permanently delete company profile "${decodedName}"?\n\nThis will remove this business profile from the client organization.`)) {
+    return;
+  }
+
+  try {
+    const res = await API.deleteBusinessProfile(companyId);
+    if (res && res.success) {
+      alert(`✓ ${res.message || 'Company deleted successfully.'}`);
+      State.businessProfiles = await API.getBusinessProfiles();
+      populateBusinessSwitcher();
+      await renderActiveView();
+    } else {
+      alert(res.message || 'Failed to delete company.');
+    }
+  } catch (err) {
+    alert(`Error deleting company: ${err.message}`);
+  }
+}
+window.handleDeleteCompany = handleDeleteCompany;
 
 async function handleResendInviteEmail(userId, userName, userEmail) {
   if (!userId) return;

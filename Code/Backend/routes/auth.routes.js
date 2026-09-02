@@ -32,9 +32,9 @@ router.post('/login', async (req, res) => {
       // Ignore migration errors if already present
     }
 
-    // 2. Query user by username or email (with support for naeem4it / naeem4it@gmail.com / naeem@mashrue.com)
-    let result = await db.query(
-      `      SELECT u.*, 
+    // 2. Query user by username or email
+    const result = await db.query(
+      `SELECT u.*, 
               t.company_name as tenant_name, 
               t.subdomain, 
               t.subscription_plan,
@@ -46,7 +46,6 @@ router.post('/login', async (req, res) => {
        LEFT JOIN tenants t ON u.tenant_id = t.id
        WHERE (u.username IS NOT NULL AND LOWER(TRIM(u.username)) = LOWER(TRIM($1))) 
           OR (u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM($1)))
-          OR (LOWER(TRIM($1)) IN ('naeem4it', 'naeem4it@gmail.com', 'naeem@mashrue.com') AND (LOWER(u.username) = 'naeem4it' OR (u.email IS NOT NULL AND LOWER(u.email) LIKE '%naeem%') OR u.role = 'SuperAdmin'))
        ORDER BY CASE 
          WHEN u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM($1)) THEN 0 
          WHEN u.username IS NOT NULL AND LOWER(TRIM(u.username)) = LOWER(TRIM($1)) THEN 1 
@@ -56,43 +55,7 @@ router.post('/login', async (req, res) => {
       [loginIdentifier]
     );
 
-    // If naeem4it Super Admin is requested but not in DB yet, auto-provision right now!
-    if (result.rows.length === 0 && (loginIdentifier.toLowerCase() === 'naeem4it' || loginIdentifier.toLowerCase() === 'naeem@mashrue.com' || loginIdentifier.toLowerCase() === 'naeem4it@gmail.com')) {
-      const salt = await bcrypt.genSalt(10);
-      const hash = await bcrypt.hash('Password123!', salt);
-      const insertRes = await db.query(
-        `INSERT INTO users (id, tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions)
-         VALUES (uuid_generate_v4(), NULL, 'naeem4it', 'Muhammad Naeem Khan (Super Admin)', 'naeem4it@gmail.com', $1, 'SuperAdmin', 'Active', FALSE, TRUE, '{}'::jsonb)
-         RETURNING *`,
-        [hash]
-      );
-      if (insertRes.rows.length > 0) {
-        result = insertRes;
-      }
-    }
-
     if (result.rows.length === 0) {
-      // Check for demo fallback users if DB has no records
-      if (loginIdentifier.toLowerCase() === 'naeem4it' || loginIdentifier.toLowerCase() === 'alphaclient' || loginIdentifier.toLowerCase() === 'tariq_ops') {
-        const isSuper = loginIdentifier.toLowerCase() === 'naeem4it';
-        const isAdmin = loginIdentifier.toLowerCase() === 'alphaclient';
-        const demoUser = {
-          id: isSuper ? 'e0000000-0000-0000-0000-000000000000' : (isAdmin ? 'e0000000-0000-0000-0000-000000000001' : 'e0000000-0000-0000-0000-000000000002'),
-          username: loginIdentifier,
-          fullName: isSuper ? 'Muhammad Naeem Khan (Super Admin)' : (isAdmin ? 'Alpha Client Administrator' : 'Tariq Javed (Operations)'),
-          email: isSuper ? 'naeem@mashrue.com' : (isAdmin ? 'admin@alphagroup.pk' : 'tariq@alphagroup.pk'),
-          role: isSuper ? 'SuperAdmin' : (isAdmin ? 'ClientAdmin' : 'ClientEmployee'),
-          status: 'Active',
-          mustChangePassword: false,
-          canSeeBiddingPrices: isSuper || isAdmin,
-          permissions: {},
-          tenant: isSuper ? null : { id: 'a0000000-0000-0000-0000-000000000001', name: 'Alpha Group PK', subdomain: 'alphagroup', subscriptionPlan: 'Standard', freeCompanyLimit: 2, freeEmployeeLimit: 2, companyCount: 2, employeeCount: 1 }
-        };
-
-        const token = jwt.sign({ userId: demoUser.id, username: demoUser.username, role: demoUser.role }, JWT_SECRET, { expiresIn: '7d' });
-        return res.json({ success: true, message: 'Login successful (Demo Mode)', data: { token, user: demoUser } });
-      }
-
       return res.status(401).json({ success: false, message: 'Invalid username/email or password.' });
     }
 
@@ -102,13 +65,12 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ success: false, message: 'Account is inactive. Please contact your system administrator.' });
     }
 
-    // Verify password with bcrypt (or fallback for demo password)
+    // Verify password with bcrypt
     let isMatch = false;
     if (user.password_hash && (user.password_hash.startsWith('$2a$') || user.password_hash.startsWith('$2b$'))) {
       isMatch = await bcrypt.compare(password, user.password_hash);
-    }
-    if (!isMatch) {
-      isMatch = (user.password_hash === password || password === 'Password123!' || password === 'demo123');
+    } else if (user.password_hash) {
+      isMatch = (user.password_hash === password);
     }
 
     if (!isMatch) {

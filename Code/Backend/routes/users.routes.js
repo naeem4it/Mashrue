@@ -18,15 +18,17 @@ router.get('/', authenticate, async (req, res) => {
   try {
     let queryText = `
       SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
-             u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at,
+             u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at, u.created_by,
+             c.username as creator_username, c.full_name as creator_name,
              t.company_name as tenant_name,
              COALESCE(
                json_agg(
-                 json_build_object('id', bp.id, 'name', bp.business_name)
+                 json_build_object('id', bp.id, 'name', bp.business_name, 'legal_name', bp.legal_name, 'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled)
                ) FILTER (WHERE bp.id IS NOT NULL),
                '[]'
              ) as business_access
       FROM users u
+      LEFT JOIN users c ON u.created_by = c.id
       LEFT JOIN tenants t ON u.tenant_id = t.id
       LEFT JOIN user_business_access uba ON u.id = uba.user_id
       LEFT JOIN business_profiles bp ON uba.business_profile_id = bp.id
@@ -45,8 +47,8 @@ router.get('/', authenticate, async (req, res) => {
 
     queryText += `
       GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
-               u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at,
-               t.company_name
+               u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at, u.created_by,
+               c.username, c.full_name, t.company_name
       ORDER BY u.created_at DESC
     `;
 
@@ -72,18 +74,29 @@ router.get('/', authenticate, async (req, res) => {
       };
     }
 
-    // If Super Admin, also fetch list of tenants for dropdown
+    // If Super Admin, fetch list of tenants with their attached companies and users
     let tenantsList = [];
     if (req.user.role === 'SuperAdmin') {
       const tenantsRes = await db.query(
         `SELECT t.id, t.company_name, t.subdomain, t.subscription_plan, t.status,
                 t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
-                (SELECT COUNT(*) FROM users u WHERE u.tenant_id = t.id) as user_count,
-                (SELECT COUNT(*) FROM business_profiles bp WHERE bp.tenant_id = t.id) as company_count
+                (SELECT json_agg(json_build_object(
+                   'id', bp.id, 'business_name', bp.business_name, 'legal_name', bp.legal_name,
+                   'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled, 'created_at', bp.created_at
+                )) FROM business_profiles bp WHERE bp.tenant_id = t.id) as companies,
+                (SELECT json_agg(json_build_object(
+                   'id', tu.id, 'username', tu.username, 'full_name', tu.full_name, 'email', tu.email,
+                   'role', tu.role, 'status', tu.status, 'can_see_bidding_prices', tu.can_see_bidding_prices,
+                   'created_by', tu.created_by, 'created_at', tu.created_at
+                )) FROM users tu WHERE tu.tenant_id = t.id) as tenant_users
          FROM tenants t
          ORDER BY t.created_at DESC`
       );
-      tenantsList = tenantsRes.rows;
+      tenantsList = tenantsRes.rows.map(t => ({
+        ...t,
+        company_count: (t.companies || []).length,
+        user_count: (t.tenant_users || []).length
+      }));
     }
 
     res.json({
@@ -246,10 +259,10 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
       userRes = await db.query(
         `INSERT INTO users (
           tenant_id, username, full_name, email, password_hash, role, status,
-          must_change_password, can_see_bidding_prices, permissions
+          must_change_password, can_see_bidding_prices, permissions, created_by
          )
-         VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9)
-         RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_at`,
+         VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, $10)
+         RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_by, created_at`,
         [
           targetTenantId,
           cleanUsername,
@@ -259,7 +272,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
           targetRole,
           mustChangePassword,
           can_see_bidding_prices !== false,
-          JSON.stringify(defaultPermissions)
+          JSON.stringify(defaultPermissions),
+          req.user.id
         ]
       );
     } catch (insertErr) {
@@ -269,10 +283,10 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
           userRes = await db.query(
             `INSERT INTO users (
               tenant_id, username, full_name, email, password_hash, role, status,
-              must_change_password, can_see_bidding_prices, permissions
+              must_change_password, can_see_bidding_prices, permissions, created_by
              )
-             VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9)
-             RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_at`,
+             VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, $10)
+             RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_by, created_at`,
             [
               targetTenantId,
               cleanUsername,
@@ -282,7 +296,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
               targetRole,
               mustChangePassword,
               can_see_bidding_prices !== false,
-              JSON.stringify(defaultPermissions)
+              JSON.stringify(defaultPermissions),
+              req.user.id
             ]
           );
         } catch (retryErr) {
@@ -290,10 +305,10 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
           userRes = await db.query(
             `INSERT INTO users (
               tenant_id, username, full_name, email, password_hash, role, status,
-              must_change_password, can_see_bidding_prices, permissions
+              must_change_password, can_see_bidding_prices, permissions, created_by
              )
-             VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9)
-             RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_at`,
+             VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, $10)
+             RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_by, created_at`,
             [
               targetTenantId,
               cleanUsername,
@@ -303,7 +318,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
               targetRole,
               mustChangePassword,
               can_see_bidding_prices !== false,
-              JSON.stringify(defaultPermissions)
+              JSON.stringify(defaultPermissions),
+              req.user.id
             ]
           );
         }
@@ -315,7 +331,7 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
     const newUser = userRes.rows[0];
 
     // Assign company/business profile access
-    if (business_profile_ids && Array.isArray(business_profile_ids)) {
+    if (business_profile_ids && Array.isArray(business_profile_ids) && business_profile_ids.length > 0) {
       for (const bpId of business_profile_ids) {
         if (isUUID(bpId)) {
           await db.query(
@@ -325,13 +341,22 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
           );
         }
       }
+    } else if (targetTenantId) {
+      // Automatically assign all existing companies of this tenant to the new user (User B)
+      await db.query(
+        `INSERT INTO user_business_access (user_id, business_profile_id)
+         SELECT $1, id FROM business_profiles WHERE tenant_id = $2
+         ON CONFLICT DO NOTHING`,
+        [newUser.id, targetTenantId]
+      );
     }
 
-    // Automatically send Welcome Email with Password Setup link if email was provided
+    // Welcome Email policy: Only send welcome email if Super Admin creates a user.
+    // When Client Admin (User A) creates User B, User A gives the password directly.
     let emailSent = false;
     let emailError = null;
 
-    if (cleanEmail) {
+    if (cleanEmail && req.user.role === 'SuperAdmin') {
       let tenantName = '';
       if (isUUID(targetTenantId)) {
         try {
@@ -360,12 +385,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
           companyName: tenantName
         });
         emailSent = emailResult.success;
-        if (!emailResult.success) {
-          emailError = emailResult.error;
-        }
+        if (!emailResult.success) emailError = emailResult.error;
       } catch (e) {
-        emailError = e.message;
-      }
     }
 
     res.status(201).json({
@@ -373,7 +394,7 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
       message: cleanEmail
         ? (emailSent
             ? `${targetRole} created successfully. An activation email has been sent to ${newUser.email}.`
-            : `${targetRole} created successfully (Email delivery notice: ${emailError || 'Failed to dispatch email'}).`)
+            : `${targetRole} created successfully.`)
         : `${targetRole} '${newUser.username}' created successfully.`,
       data: newUser,
       email_sent: emailSent,
@@ -610,40 +631,43 @@ router.post('/:id/resend-invite', authenticate, requireRoles('SuperAdmin', 'Clie
 });
 
 /**
- * DELETE user (SuperAdmin can delete any user except primary owner; ClientAdmin can delete employees in own tenant)
+ * DELETE user (SuperAdmin can delete descendant users; User A can delete User B created by User A; No self-deletion or upward deletion)
  */
 router.delete('/:id', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'CompanyAdmin'), async (req, res) => {
   const { id } = req.params;
 
   try {
-    // 1. Fetch user to check safety rules
-    const userRes = await db.query(`SELECT id, username, email, role, tenant_id FROM users WHERE id::text = $1`, [String(id)]);
+    // 1. Fetch user to check safety & creator rules
+    const userRes = await db.query(`SELECT id, username, email, role, tenant_id, created_by FROM users WHERE id::text = $1`, [String(id)]);
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
     const targetUser = userRes.rows[0];
 
-    // 2. Safety Rule: Cannot delete primary Super Admin account (naeem4it / naeem@mashrue.com)
-    if (
-      (targetUser.username && targetUser.username.toLowerCase() === 'naeem4it') ||
-      (targetUser.email && (targetUser.email.toLowerCase() === 'naeem@mashrue.com' || targetUser.email.toLowerCase() === 'naeem4it@gmail.com'))
-    ) {
-      return res.status(403).json({ success: false, message: 'System Protection Rule: Primary Super Admin account cannot be deleted.' });
-    }
-
-    // 3. Prevent self-deletion
+    // 2. Prevent self-deletion (User A cannot delete User A; User B cannot delete User B)
     if (String(req.user.id) === String(id) || (req.user.username && targetUser.username && req.user.username.toLowerCase() === targetUser.username.toLowerCase())) {
-      return res.status(400).json({ success: false, message: 'You cannot delete your own active session account.' });
+      return res.status(400).json({ success: false, message: 'You cannot delete your own active account.' });
     }
 
-    // 4. Tenant isolation for ClientAdmin
+    // 3. Prevent deletion of Super Admin accounts
+    if (targetUser.role === 'SuperAdmin') {
+      return res.status(403).json({ success: false, message: 'System Protection Rule: Super Admin accounts cannot be deleted.' });
+    }
+
+    // 4. Downward / Creator check for non-SuperAdmin users
     if (req.user.role !== 'SuperAdmin') {
+      // Must be created by this user
+      if (!targetUser.created_by || String(targetUser.created_by) !== String(req.user.id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You can only delete users that were created by your account.'
+        });
+      }
+
+      // Tenant isolation
       if (String(targetUser.tenant_id) !== String(req.user.tenantId)) {
         return res.status(403).json({ success: false, message: 'Forbidden: You can only delete users within your organization.' });
-      }
-      if (targetUser.role === 'SuperAdmin') {
-        return res.status(403).json({ success: false, message: 'Forbidden: Client Administrators cannot delete Super Admin accounts.' });
       }
     }
 
@@ -731,12 +755,13 @@ router.post('/tenants', authenticate, requireRoles('SuperAdmin'), async (req, re
     }
 
     const userRes = await db.query(
-      `INSERT INTO users (tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions)
-       VALUES ($1, $2, $3, $4, $5, 'ClientAdmin', 'Active', TRUE, TRUE, '{}'::jsonb)
+      `INSERT INTO users (tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'ClientAdmin', 'Active', TRUE, TRUE, '{}'::jsonb, $6)
        RETURNING id, username, full_name, email, role, status`,
-      [newTenant.id, finalUsername, admin_name || company_name + ' Admin', cleanAdminEmail, passwordHash]
+      [newTenant.id, finalUsername, admin_name || company_name + ' Admin', cleanAdminEmail, passwordHash, req.user.id]
     );
     const adminUser = userRes.rows[0];
+
 
     // Generate password setup token and send welcome email
     const resetToken = jwt.sign(

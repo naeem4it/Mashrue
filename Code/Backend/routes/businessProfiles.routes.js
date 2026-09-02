@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
+const { requireRoles } = require('../middleware/rbac.middleware');
 
 /**
  * GET all business profiles under active tenant
  * Strict Tenant Isolation: Only returns companies belonging to the user's tenant.
- * If user is a Client Employee with restricted company access, filters accordingly.
+ * Dynamically resolves creator from created_by or tenant primary Client Admin
  */
 router.get('/', optionalAuth, async (req, res) => {
   try {
@@ -14,9 +15,19 @@ router.get('/', optionalAuth, async (req, res) => {
       SELECT bp.*, 
              t.company_name as tenant_company_name,
              t.free_business_profile_limit,
-             t.additional_profile_monthly_fee
+             t.additional_profile_monthly_fee,
+             COALESCE(u_created.full_name, u_primary.full_name, 'System') as creator_name,
+             COALESCE(u_created.username, u_primary.username, 'admin') as creator_username
       FROM business_profiles bp
       JOIN tenants t ON bp.tenant_id = t.id
+      LEFT JOIN users u_created ON bp.created_by = u_created.id
+      LEFT JOIN LATERAL (
+        SELECT u2.id, u2.username, u2.full_name 
+        FROM users u2 
+        WHERE u2.tenant_id = bp.tenant_id AND u2.role IN ('ClientAdmin', 'CompanyAdmin')
+        ORDER BY u2.created_at ASC 
+        LIMIT 1
+      ) u_primary ON true
       WHERE 1=1
     `;
     const params = [];
@@ -136,8 +147,8 @@ router.post('/', authenticate, async (req, res) => {
 
     const result = await db.query(
       `INSERT INTO business_profiles 
-       (tenant_id, business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       (tenant_id, business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         tenantId,
@@ -154,7 +165,8 @@ router.post('/', authenticate, async (req, res) => {
         Boolean(fbr_enabled),
         invoice_prefix || 'INV',
         po_prefix || 'PO',
-        dc_prefix || 'DC'
+        dc_prefix || 'DC',
+        req.user.id
       ]
     );
 
@@ -303,4 +315,33 @@ router.post('/:id/verify-email', optionalAuth, async (req, res) => {
   }
 });
 
+/**
+ * DELETE business profile / company (Super Admin Only)
+ */
+router.delete('/:id', authenticate, requireRoles('SuperAdmin'), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const bpRes = await db.query(`SELECT id, business_name, tenant_id FROM business_profiles WHERE id::text = $1`, [String(id)]);
+    if (bpRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Business Profile not found.' });
+    }
+
+    const company = bpRes.rows[0];
+
+    // Clean up foreign key associations
+    await db.query(`DELETE FROM user_business_access WHERE business_profile_id::text = $1`, [String(id)]);
+    await db.query(`DELETE FROM business_profiles WHERE id::text = $1`, [String(id)]);
+
+    res.json({
+      success: true,
+      message: `Company '${company.business_name}' deleted successfully.`
+    });
+  } catch (err) {
+    console.error('Delete Business Profile Error:', err);
+    res.status(500).json({ success: false, message: `Failed to delete company: ${err.message}`, error: err.message });
+  }
+});
+
 module.exports = router;
+

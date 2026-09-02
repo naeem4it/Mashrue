@@ -477,6 +477,18 @@ const API = {
     return { success: true, data: newCompany, message: 'Company profile created successfully.' };
   },
 
+  async deleteBusinessProfile(id) {
+    try {
+      const res = await fetch(`${API_BASE}/business-profiles/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to delete business profile.' };
+    }
+  },
+
   // 1B. Company-Based FBR PRAL Gateway Configuration
   async getFbrSettings(businessProfileId) {
     try {

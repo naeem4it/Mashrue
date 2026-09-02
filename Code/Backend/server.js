@@ -96,7 +96,11 @@ if (rateLimit) {
 
 // 7. Serve Static Frontend Files (Direct fallback if not served by Nginx)
 const frontendDir = path.join(__dirname, '../Frontend');
-app.use(express.static(frontendDir));
+app.use(express.static(frontendDir, {
+  maxAge: isProd ? '1d' : '1h',
+  etag: true,
+  lastModified: true
+}));
 
 // 8. Health Check Endpoints (Nginx / Uptime Monitoring / Load Balancer)
 const handleHealthCheck = async (req, res) => {
