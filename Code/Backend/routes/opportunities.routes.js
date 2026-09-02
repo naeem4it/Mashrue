@@ -14,12 +14,21 @@ router.get('/', optionalAuth, async (req, res) => {
              bp.business_name as business_name, 
              c.business_name as customer_name,
              c.org_type as customer_org_type,
+             COALESCE(t.organization_name, 'Default Org') as tenant_name,
+             u.full_name as client_admin_name,
+             u.username as client_admin_username,
              (SELECT COUNT(*) FROM tender_items ti WHERE ti.opportunity_id = o.id) as item_count,
              (SELECT COUNT(*) FROM bid_securities bs WHERE bs.opportunity_id = o.id AND bs.status IN ('Active', 'Submitted')) as active_bid_securities_count,
              (SELECT COUNT(*) FROM opportunity_requirements r WHERE r.opportunity_id = o.id) as req_count
       FROM opportunities o
       LEFT JOIN business_profiles bp ON o.business_profile_id = bp.id
       LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN tenants t ON o.tenant_id = t.id
+      LEFT JOIN LATERAL (
+        SELECT full_name, username FROM users 
+        WHERE tenant_id = o.tenant_id AND role IN ('ClientAdmin', 'CompanyAdmin')
+        ORDER BY created_at ASC LIMIT 1
+      ) u ON true
       WHERE 1=1
     `;
     const params = [];
@@ -259,21 +268,40 @@ router.post('/', optionalAuth, async (req, res) => {
     // Insert Items if provided (Auto-population)
     if (items && Array.isArray(items) && items.length > 0) {
       for (const itm of items) {
-        await db.query(
-          `INSERT INTO tender_items 
-           (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            createdOpp.id,
-            itm.product_service_id || null,
-            itm.item_name || 'Generic Item',
-            itm.item_description || '',
-            parseFloat(itm.quantity || 1),
-            itm.unit || 'PCS',
-            parseFloat(itm.estimated_unit_price || 0),
-            parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
-          ]
-        );
+        try {
+          await db.query(
+            `INSERT INTO tender_items 
+             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              createdOpp.id,
+              itm.product_service_id || null,
+              itm.item_name || 'Generic Item',
+              itm.item_description || '',
+              parseFloat(itm.quantity || 1),
+              itm.unit || 'PCS',
+              parseFloat(itm.estimated_unit_price || 0),
+              parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
+              itm.item_size || itm.size || null
+            ]
+          );
+        } catch (colErr) {
+          await db.query(
+            `INSERT INTO tender_items 
+             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              createdOpp.id,
+              itm.product_service_id || null,
+              itm.item_name || 'Generic Item',
+              (itm.item_size ? `${itm.item_description || ''} (Size: ${itm.item_size})` : itm.item_description) || '',
+              parseFloat(itm.quantity || 1),
+              itm.unit || 'PCS',
+              parseFloat(itm.estimated_unit_price || 0),
+              parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
+            ]
+          );
+        }
       }
     }
 
@@ -416,6 +444,32 @@ router.put('/:id', optionalAuth, async (req, res) => {
       data: result.rows[0],
       message: 'Tender record updated successfully'
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE opportunity / tender (Admin / Super Admin)
+router.delete('/:id', optionalAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    let queryText = `DELETE FROM opportunities WHERE id::text = $1`;
+    const params = [String(id)];
+
+    if (req.user && req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
+      const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+      params.push(tid);
+      queryText += ` AND tenant_id::text = $2`;
+    }
+
+    // Clean up associated items, bid securities, requirements
+    try {
+      await db.query(`DELETE FROM tender_items WHERE opportunity_id::text = $1`, [String(id)]);
+      await db.query(`DELETE FROM opportunity_requirements WHERE opportunity_id::text = $1`, [String(id)]);
+    } catch (e) {}
+
+    await db.query(queryText, params);
+    res.json({ success: true, message: 'Tender record deleted successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

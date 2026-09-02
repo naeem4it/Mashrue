@@ -411,16 +411,17 @@
               ⚠️ <span id="tender-price-warning-msg">Loss Alert: One or more scope items have a Selling Price lower than the Landed Cost! Negative margin detected.</span>
             </div>
 
-            <div class="table-responsive" style="max-height: 220px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: white;">
+            <div class="table-responsive" style="max-height: 240px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: white;">
               <table class="data-table" style="font-size:0.82rem; margin:0;" id="tender-items-table">
                 <thead>
                   <tr style="background:#f1f5f9;">
-                    <th style="min-width: 150px;">Item / Catalog SKU</th>
-                    <th style="min-width: 160px;">Description *</th>
-                    <th style="width: 80px;">Qty *</th>
-                    <th style="width: 100px;">Unit</th>
-                    <th style="width: 120px;">Unit Price (<span class="currency-label">PKR</span>)</th>
-                    <th style="width: 120px;">Total (<span class="currency-label">PKR</span>)</th>
+                    <th style="min-width: 140px;">Item / Catalog SKU</th>
+                    <th style="min-width: 150px;">Description *</th>
+                    <th style="width: 95px;">Size</th>
+                    <th style="width: 75px;">Qty *</th>
+                    <th style="width: 85px;">Unit</th>
+                    <th style="width: 110px;">Unit Price (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 110px;">Total (<span class="currency-label">PKR</span>)</th>
                     <th style="width: 36px; text-align:center;">Action</th>
                   </tr>
                 </thead>
@@ -846,9 +847,12 @@
             <textarea class="form-textarea" id="cust-notes" rows="2" placeholder="e.g. Requires 2% CDR earnest money and original testing certificate with delivery."></textarea>
           </div>
 
-          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
-            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-customer')">Cancel</button>
-            <button type="submit" class="primary-btn">💾 Save Customer</button>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px; display:flex; justify-content:space-between; align-items:center;">
+            <button type="button" class="danger-btn" id="btn-delete-customer-modal" style="display:none; background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:6px 14px; font-weight:700; border-radius:4px; cursor:pointer;" onclick="handleModalDeleteCustomer()">🗑️ Delete Customer</button>
+            <div style="display:flex; gap:8px; margin-left:auto;">
+              <button type="button" class="secondary-btn" onclick="closeModal('modal-add-customer')">Cancel</button>
+              <button type="submit" class="primary-btn">💾 Save Customer</button>
+            </div>
           </div>
         </form>
       </div>
@@ -1012,9 +1016,12 @@
             <textarea class="form-textarea" id="sup-notes" rows="2" placeholder="e.g. Exclusive authorized distributor for Pakistan region. ISO 9001 certified."></textarea>
           </div>
 
-          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
-            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-supplier')">Cancel</button>
-            <button type="submit" class="primary-btn">💾 Save Supplier</button>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px; display:flex; justify-content:space-between; align-items:center;">
+            <button type="button" class="danger-btn" id="btn-delete-supplier-modal" style="display:none; background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:6px 14px; font-weight:700; border-radius:4px; cursor:pointer;" onclick="handleModalDeleteSupplier()">🗑️ Delete Supplier</button>
+            <div style="display:flex; gap:8px; margin-left:auto;">
+              <button type="button" class="secondary-btn" onclick="closeModal('modal-add-supplier')">Cancel</button>
+              <button type="submit" class="primary-btn">💾 Save Supplier</button>
+            </div>
           </div>
         </form>
       </div>
@@ -1116,9 +1123,16 @@
                 <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('supplier', 'prod-supplier-select')" title="Quick Add New Supplier">+</button>
               </div>
             </div>
+          </div>
+
+          <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Reorder Stock Alert Level</label>
-              <input type="number" class="form-input" id="prod-reorder-level" value="10" min="0">
+              <label class="form-label">Initial / Current Stock (Quantity) *</label>
+              <input type="number" class="form-input" id="prod-current-stock" value="0" min="0" step="any" placeholder="e.g. 50">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reorder Stock Alert Level *</label>
+              <input type="number" class="form-input" id="prod-reorder-level" value="10" min="0" step="any">
             </div>
           </div>
 
@@ -1169,9 +1183,12 @@
             <textarea class="form-textarea" id="prod-description" rows="2" placeholder="Detail specifications, voltage grade, compliance standards (IEC 60076 / IEEE), and warranty terms..."></textarea>
           </div>
 
-          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
-            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-product')">Cancel</button>
-            <button type="submit" class="primary-btn">💾 Save Master Product</button>
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px; display:flex; justify-content:space-between; align-items:center;">
+            <button type="button" class="danger-btn" id="btn-delete-product-modal" style="display:none; background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:6px 14px; font-weight:700; border-radius:4px; cursor:pointer;" onclick="handleModalDeleteProduct()">🗑️ Delete Item</button>
+            <div style="display:flex; gap:8px; margin-left:auto;">
+              <button type="button" class="secondary-btn" onclick="closeModal('modal-add-product')">Cancel</button>
+              <button type="submit" class="primary-btn">💾 Save Master Product</button>
+            </div>
           </div>
         </form>
       </div>
@@ -3453,8 +3470,8 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=7.0"></script>
-  <script src="js/state.js?v=7.0"></script>
-  <script src="js/app.js?v=7.0"></script>
+  <script src="js/api.js?v=7.9"></script>
+  <script src="js/state.js?v=7.9"></script>
+  <script src="js/app.js?v=7.9"></script>
 </body>
 </html>

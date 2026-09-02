@@ -40,6 +40,8 @@ router.post('/login', async (req, res) => {
               t.subscription_plan,
               t.free_business_profile_limit,
               t.free_employee_limit,
+              t.trial_period,
+              t.trial_ends_at,
               (SELECT COUNT(*) FROM business_profiles bp WHERE bp.tenant_id = u.tenant_id) as company_count,
               (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count
        FROM users u
@@ -119,6 +121,8 @@ router.post('/login', async (req, res) => {
             subscriptionPlan: user.subscription_plan || 'Standard',
             freeCompanyLimit: parseInt(user.free_business_profile_limit || 2, 10),
             freeEmployeeLimit: parseInt(user.free_employee_limit || 2, 10),
+            trialPeriod: user.trial_period || '15 Days',
+            trialEndsAt: user.trial_ends_at || null,
             companyCount: parseInt(user.company_count || 0, 10),
             employeeCount: parseInt(user.employee_count || 0, 10)
           } : null

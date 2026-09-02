@@ -60,15 +60,15 @@ if (compression) {
 }
 
 // 4. Production-Ready CORS Whitelist
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://mashrue.com,https://www.mashrue.com,http://localhost:3033,http://localhost:3000,http://127.0.0.1:3033')
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://mashrue.com,https://www.mashrue.com,http://localhost:3033,http://localhost:3000,http://127.0.0.1:3033,http://localhost:5500,http://127.0.0.1:5500,http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
   .map(o => o.trim())
   .filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow non-browser requests (curl, server-to-server, PM2 healthcheck) or matched origins
-    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    // Allow non-browser requests or any localhost/127.0.0.1 dev origin
+    if (!origin || !isProd || origin.includes('localhost') || origin.includes('127.0.0.1') || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     return callback(new Error(`CORS Error: Origin ${origin} is not allowed by production policy.`));

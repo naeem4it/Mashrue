@@ -1577,6 +1577,7 @@ async function renderOpportunitiesHTML() {
                 <td>
                   <strong>${o.tender_name || o.title}</strong><br>
                   <span style="font-size:0.75rem; color:var(--text-muted);">${o.opportunity_number || ''} ${o.external_tender_number ? `(${o.external_tender_number})` : ''}</span>
+                  ${State.isSuperAdmin() ? `<br><span class="badge" style="font-size:0.7rem; background:#f1f5f9; color:#475569; margin-top:2px;">👤 ${o.client_admin_name || o.tenant_name || 'System'}</span>` : ''}
                 </td>
                 <td><span class="pill-source">${o.tender_source || 'PPRA (Federal)'}</span></td>
                 <td>
@@ -1621,6 +1622,8 @@ async function renderOpportunitiesHTML() {
                     </button>
 
                     <button class="edit-btn" onclick="openEditTenderModal('${o.id}')" title="Edit Tender Details & Line Items">✏️ Edit</button>
+
+                    <button class="danger-btn" style="padding:3px 7px; font-size:0.75rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteOpportunity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}')" title="Delete Tender Record">🗑️</button>
 
                     <!-- Single Clean Action Dropdown -->
                     <select class="form-select" style="font-size:0.72rem; padding:2px 6px; border-radius:4px; height:24px; min-width:92px; font-weight:600; background:#f8fafc; color:#0f172a;" onchange="handleTenderActionSelect('${o.id}', this.value, '${encodeURIComponent(o.tender_name || o.title)}', ${parseFloat(o.estimated_value || 0)})" title="Select Action for this Tender">
@@ -3201,34 +3204,152 @@ async function renderReportsHTML() {
 // 12. CUSTOMERS VIEW (SEPARATE DEDICATED SCREEN)
 // --------------------------------------------------------------------------
 async function renderCustomersHTML() {
-  const customers = await API.getCustomers();
+  let customers = await API.getCustomers();
+  const isSuper = State.isSuperAdmin();
+
+  let clientAdmins = [];
+  if (isSuper) {
+    try {
+      const uRes = await API.getUsersWithStats();
+      const allUsers = uRes?.data || State.getStoredUsers() || [];
+      clientAdmins = allUsers.filter(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin');
+    } catch (e) {}
+  }
+
+  const selectedFilter = window._adminSelectedClientFilter || 'all';
+  if (isSuper && selectedFilter !== 'all') {
+    customers = customers.filter(c => String(c.tenant_id) === String(selectedFilter));
+  }
+
+  const renderCustomerRow = (c) => `
+    <tr>
+      <td>
+        <strong>${c.business_name}</strong><br>
+        <span style="font-size:0.75rem; color:var(--text-muted); font-family:monospace;">${c.customer_code || 'CUST-' + (c.id ? c.id.slice(0, 6) : 'AUTO')}</span>
+        ${isSuper ? `<br><span class="badge" style="font-size:0.7rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; margin-top:2px;">👤 ${c.client_admin_name || c.tenant_name || 'System Primary'}</span>` : ''}
+      </td>
+      <td><span class="pill-source">${c.customer_type || c.org_type || 'Government Department'}</span></td>
+      <td>${c.department_name || c.department || '—'}</td>
+      <td>
+        <span style="font-size:0.82rem;">
+          <strong>NTN:</strong> ${c.ntn || 'N/A'}<br>
+          ${c.strn ? `<strong style="font-size:0.75rem; color:var(--text-muted);">STRN:</strong> ${c.strn}` : ''}
+        </span>
+      </td>
+      <td>${c.city || 'Lahore'}${c.province ? `, ${c.province}` : ''}</td>
+      <td>
+        <span style="font-size:0.82rem;">
+          ${c.payment_terms || 'Net 30'}<br>
+          ${c.credit_limit ? `<strong style="color:#059669; font-size:0.75rem;">Limit: PKR ${Number(c.credit_limit).toLocaleString()}</strong>` : ''}
+        </span>
+      </td>
+      <td>
+        <span style="font-size:0.82rem;">
+          <strong>${c.contact_person || '—'}</strong><br>
+          <span style="font-size:0.75rem; color:var(--text-muted);">${c.phone || c.email || ''}</span>
+        </span>
+      </td>
+      <td>
+        <span class="badge ${c.status === 'Inactive' ? 'badge-withdraw' : 'badge-won'}">
+          ${c.status || 'Active'}
+        </span>
+      </td>
+      <td>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button class="edit-btn" onclick="openEditCustomerModal('${c.id}')" title="Edit Customer Details">✏️ Edit</button>
+          <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleCustomerStatus('${c.id}', '${c.status}')" title="Toggle Active / Inactive">
+            ${c.status === 'Inactive' ? '✓' : '⛔'}
+          </button>
+          <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteCustomerItem('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Customer">🗑️ Delete</button>
+        </div>
+      </td>
+    </tr>
+  `;
+
+  let tableBodyHTML = '';
+  if (isSuper && selectedFilter === 'all' && clientAdmins.length > 0) {
+    const groups = {};
+    customers.forEach(c => {
+      const key = c.tenant_id || 'system';
+      if (!groups[key]) {
+        const admin = clientAdmins.find(ca => String(ca.tenant?.id || ca.tenant_id) === String(key));
+        groups[key] = {
+          adminName: c.client_admin_name || (admin ? (admin.full_name || admin.username) : 'System Primary'),
+          orgName: c.tenant_name || (admin?.tenant?.company_name || admin?.tenant?.organization_name || 'System Default'),
+          items: []
+        };
+      }
+      groups[key].items.push(c);
+    });
+
+    if (customers.length === 0) {
+      tableBodyHTML = `
+        <tr>
+          <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
+            🏛️ <strong>No customers registered yet.</strong>
+          </td>
+        </tr>
+      `;
+    } else {
+      tableBodyHTML = Object.values(groups).map(g => `
+        <tr style="background:#f1f5f9; border-top:2px solid #cbd5e1; border-bottom:2px solid #cbd5e1;">
+          <td colspan="9" style="padding:10px 16px; font-weight:800; font-size:0.88rem; color:#0f172a;">
+            👤 Client Admin: <span style="color:#2563eb;">${g.adminName}</span> | 🏢 Organization: <span style="color:#475569;">${g.orgName}</span>
+            <span class="badge badge-sec-attached" style="margin-left:10px;">${g.items.length} Registered Customers</span>
+          </td>
+        </tr>
+        ${g.items.map(c => renderCustomerRow(c)).join('')}
+      `).join('');
+    }
+  } else {
+    tableBodyHTML = customers.length === 0 ? `
+      <tr>
+        <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
+          🏛️ <strong>No customers registered yet.</strong><br>
+          <span style="font-size:0.85rem;">Click the <strong>+ Register Customer</strong> button above to register your first client department or commercial buyer.</span>
+        </td>
+      </tr>
+    ` : customers.map(c => renderCustomerRow(c)).join('');
+  }
 
   return `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:0.9rem;">
-        Government, Semi-Government, Autonomous, MNC & Private client accounts with NTN/STRN.
-      </p>
-      <button class="primary-btn" onclick="openModal('modal-add-customer')">+ Add New Customer</button>
-    </div>
+    <!-- Super Admin Client Filter Bar -->
+    ${isSuper ? `
+      <div class="card" style="background:linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border:1px solid #bae6fd; padding:12px 18px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.6rem;">👑</span>
+          <div>
+            <div style="font-weight:800; color:#0369a1; font-size:0.95rem;">Super Admin View — Customers Grouped by Client Admin</div>
+            <div style="font-size:0.78rem; color:#0284c7;">Filter by Client Admin created by Super Admin or view consolidated registry</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:0.82rem; font-weight:700; color:#0f172a; white-space:nowrap;">Client Admin Filter:</label>
+          <select class="form-select" style="font-size:0.82rem; font-weight:600; min-width:240px; border:1px solid #7dd3fc; background:#fff; padding:6px 10px; border-radius:6px;" onchange="setAdminClientFilter(this.value)">
+            <option value="all" ${selectedFilter === 'all' ? 'selected' : ''}>🌐 All Client Admins (Grouped View)</option>
+            ${clientAdmins.map(ca => {
+              const cTid = ca.tenant?.id || ca.tenant_id;
+              const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
+              return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
+            }).join('')}
+          </select>
+        </div>
+      </div>
+    ` : ''}
 
-    <!-- Quick Master Stats -->
-    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+    <!-- Top KPI Highlights -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
-        <div class="kpi-title">Total Customer Accounts</div>
+        <div class="kpi-title">Total Registered Buyers</div>
         <div class="kpi-value">${customers.length}</div>
-        <div class="kpi-subtext">Registered buyers & agencies</div>
+        <div class="kpi-subtext">Government departments & commercial clients</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #3b82f6;">
+        <div class="kpi-title">Government Entities</div>
+        <div class="kpi-value">${customers.filter(c => (c.customer_type || c.org_type || '').includes('Government')).length}</div>
+        <div class="kpi-subtext">Public sector departments & autonomous bodies</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #10b981;">
-        <div class="kpi-title">Government & Autonomous</div>
-        <div class="kpi-value">${customers.filter(c => (c.org_type || c.customer_type || '').includes('Government') || (c.org_type || c.customer_type || '').includes('Autonomous')).length}</div>
-        <div class="kpi-subtext">PPRA & DGP public clients</div>
-      </div>
-      <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
-        <div class="kpi-title">MNC & Private Corporate</div>
-        <div class="kpi-value">${customers.filter(c => (c.org_type || c.customer_type || '').includes('MNC') || (c.org_type || c.customer_type || '').includes('Private')).length}</div>
-        <div class="kpi-subtext">Direct commercial buyers</div>
-      </div>
-      <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
         <div class="kpi-title">Active Accounts</div>
         <div class="kpi-value">${customers.filter(c => c.status !== 'Inactive').length}</div>
         <div class="kpi-subtext">Eligible for tender bidding</div>
@@ -3256,55 +3377,7 @@ async function renderCustomersHTML() {
             </tr>
           </thead>
           <tbody>
-            ${customers.length === 0 ? `
-              <tr>
-                <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
-                  🏛️ <strong>No customers registered yet.</strong><br>
-                  <span style="font-size:0.85rem;">Click the <strong>+ Register Customer</strong> button above to register your first client department or commercial buyer.</span>
-                </td>
-              </tr>
-            ` : customers.map(c => `
-              <tr>
-                <td>
-                  <strong>${c.business_name}</strong><br>
-                  <span style="font-size:0.75rem; color:var(--text-muted); font-family:monospace;">${c.customer_code || 'CUST-' + (c.id ? c.id.slice(0, 6) : 'AUTO')}</span>
-                </td>
-                <td><span class="pill-source">${c.customer_type || c.org_type || 'Government Department'}</span></td>
-                <td>${c.department_name || c.department || '—'}</td>
-                <td>
-                  <span style="font-size:0.82rem;">
-                    <strong>NTN:</strong> ${c.ntn || 'N/A'}<br>
-                    ${c.strn ? `<strong style="font-size:0.75rem; color:var(--text-muted);">STRN:</strong> ${c.strn}` : ''}
-                  </span>
-                </td>
-                <td>${c.city || 'Lahore'}${c.province ? `, ${c.province}` : ''}</td>
-                <td>
-                  <span style="font-size:0.82rem;">
-                    ${c.payment_terms || 'Net 30'}<br>
-                    ${c.credit_limit ? `<strong style="color:#059669; font-size:0.75rem;">Limit: PKR ${Number(c.credit_limit).toLocaleString()}</strong>` : ''}
-                  </span>
-                </td>
-                <td>
-                  <span style="font-size:0.82rem;">
-                    <strong>${c.contact_person || '—'}</strong><br>
-                    <span style="font-size:0.75rem; color:var(--text-muted);">${c.phone || c.email || ''}</span>
-                  </span>
-                </td>
-                <td>
-                  <span class="badge ${c.status === 'Inactive' ? 'badge-withdraw' : 'badge-won'}">
-                    ${c.status || 'Active'}
-                  </span>
-                </td>
-                <td>
-                  <div style="display:flex; gap:6px;">
-                    <button class="edit-btn" onclick="openEditCustomerModal('${c.id}')" title="Edit Customer Details">✏️ Edit</button>
-                    <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleCustomerStatus('${c.id}', '${c.status}')" title="Toggle Active / Inactive">
-                      ${c.status === 'Inactive' ? '✓' : '⛔'}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            `).join('')}
+            ${tableBodyHTML}
           </tbody>
         </table>
       </div>
@@ -3316,11 +3389,157 @@ async function renderCustomersHTML() {
 // 13. SUPPLIERS VIEW (LOCAL & INTERNATIONAL PROCUREMENT REGISTRY)
 // --------------------------------------------------------------------------
 async function renderSuppliersHTML() {
-  const suppliers = await API.getSuppliers();
+  let suppliers = await API.getSuppliers();
+  const isSuper = State.isSuperAdmin();
+
+  let clientAdmins = [];
+  if (isSuper) {
+    try {
+      const uRes = await API.getUsersWithStats();
+      const allUsers = uRes?.data || State.getStoredUsers() || [];
+      clientAdmins = allUsers.filter(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin');
+    } catch (e) {}
+  }
+
+  const selectedFilter = window._adminSelectedClientFilter || 'all';
+  if (isSuper && selectedFilter !== 'all') {
+    suppliers = suppliers.filter(s => String(s.tenant_id) === String(selectedFilter));
+  }
+
   const intlCount = suppliers.filter(s => s.supplier_type === 'International Supplier' || s.origin === 'International').length;
   const localCount = suppliers.length - intlCount;
 
+  const renderSupplierRow = (s) => {
+    const isIntl = (s.supplier_type === 'International Supplier' || s.origin === 'International');
+    return `
+      <tr>
+        <td>
+          <strong>${s.supplier_name}</strong><br>
+          <span style="font-size:0.75rem; color:var(--text-muted); font-family:monospace;">${s.supplier_code || 'SUP-' + (s.id ? s.id.slice(0, 6) : 'AUTO')}</span>
+          ${isSuper ? `<br><span class="badge" style="font-size:0.7rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; margin-top:2px;">👤 ${s.client_admin_name || s.tenant_name || 'System Primary'}</span>` : ''}
+        </td>
+        <td>
+          <span class="pill-source" style="${isIntl ? 'background:#e0e7ff; color:#3730a3;' : ''}">
+            ${isIntl ? '🌐 Import (Intl)' : '🇵🇰 Local (PK)'}
+          </span><br>
+          <span style="font-size:0.8rem; font-weight:600;">${s.country || 'Pakistan'}</span>
+        </td>
+        <td>
+          <span style="font-size:0.82rem;">
+            <strong>${s.origin_port_city || s.city || 'Karachi Port'}</strong><br>
+            <span class="badge badge-sec-attached">${s.currency || 'PKR'}</span>
+          </span>
+        </td>
+        <td>
+          <span style="font-size:0.82rem;">
+            <strong>${s.incoterms || 'FOB'}</strong> | ${s.payment_terms || 'Net 30'}<br>
+            <span style="font-size:0.75rem; color:var(--text-muted);">${s.product_categories || 'General Supply'}</span>
+          </span>
+        </td>
+        <td>
+          <span style="color:#f59e0b; font-size:0.95rem;">${'★'.repeat(s.rating || 5)}</span>
+        </td>
+        <td>
+          <span style="font-size:0.78rem;">
+            ${s.bank_name ? `<strong>${s.bank_name}</strong><br>` : ''}
+            ${s.bank_swift ? `<code>SWIFT: ${s.bank_swift}</code>` : (s.bank_iban ? `<code>IBAN: ${s.bank_iban.slice(0, 10)}...</code>` : '—')}
+          </span>
+        </td>
+        <td>
+          <span style="font-size:0.82rem;">
+            <strong>${s.contact_person || '—'}</strong><br>
+            <span style="font-size:0.75rem; color:var(--text-muted);">${s.phone || s.email || ''}</span>
+          </span>
+        </td>
+        <td>
+          <span class="badge ${s.status === 'Inactive' ? 'badge-withdraw' : 'badge-won'}">
+            ${s.status || 'Active'}
+          </span>
+        </td>
+        <td>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button class="edit-btn" onclick="openEditSupplierModal('${s.id}')" title="Edit Supplier Details">✏️ Edit</button>
+            <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleSupplierStatus('${s.id}', '${s.status}')" title="Toggle Active / Inactive">
+              ${s.status === 'Inactive' ? '✓' : '⛔'}
+            </button>
+            <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteSupplierItem('${s.id}', '${encodeURIComponent(s.supplier_name)}')" title="Delete Supplier">🗑️ Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  };
+
+  let tableBodyHTML = '';
+  if (isSuper && selectedFilter === 'all' && clientAdmins.length > 0) {
+    const groups = {};
+    suppliers.forEach(s => {
+      const key = s.tenant_id || 'system';
+      if (!groups[key]) {
+        const admin = clientAdmins.find(ca => String(ca.tenant?.id || ca.tenant_id) === String(key));
+        groups[key] = {
+          adminName: s.client_admin_name || (admin ? (admin.full_name || admin.username) : 'System Primary'),
+          orgName: s.tenant_name || (admin?.tenant?.company_name || admin?.tenant?.organization_name || 'System Default'),
+          items: []
+        };
+      }
+      groups[key].items.push(s);
+    });
+
+    if (suppliers.length === 0) {
+      tableBodyHTML = `
+        <tr>
+          <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
+            🏭 <strong>No suppliers registered yet.</strong>
+          </td>
+        </tr>
+      `;
+    } else {
+      tableBodyHTML = Object.values(groups).map(g => `
+        <tr style="background:#f1f5f9; border-top:2px solid #cbd5e1; border-bottom:2px solid #cbd5e1;">
+          <td colspan="9" style="padding:10px 16px; font-weight:800; font-size:0.88rem; color:#0f172a;">
+            👤 Client Admin: <span style="color:#2563eb;">${g.adminName}</span> | 🏢 Organization: <span style="color:#475569;">${g.orgName}</span>
+            <span class="badge badge-sec-attached" style="margin-left:10px;">${g.items.length} Registered Suppliers</span>
+          </td>
+        </tr>
+        ${g.items.map(s => renderSupplierRow(s)).join('')}
+      `).join('');
+    }
+  } else {
+    tableBodyHTML = suppliers.length === 0 ? `
+      <tr>
+        <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
+          🏭 <strong>No suppliers registered yet.</strong><br>
+          <span style="font-size:0.85rem;">Click the <strong>+ Register Supplier</strong> button above to add your local and international manufacturers, OEMs, and stockists.</span>
+        </td>
+      </tr>
+    ` : suppliers.map(s => renderSupplierRow(s)).join('');
+  }
+
   return `
+    <!-- Super Admin Client Filter Bar -->
+    ${isSuper ? `
+      <div class="card" style="background:linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border:1px solid #bae6fd; padding:12px 18px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.6rem;">👑</span>
+          <div>
+            <div style="font-weight:800; color:#0369a1; font-size:0.95rem;">Super Admin View — Suppliers Grouped by Client Admin</div>
+            <div style="font-size:0.78rem; color:#0284c7;">Filter by Client Admin created by Super Admin or view consolidated registry</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:0.82rem; font-weight:700; color:#0f172a; white-space:nowrap;">Client Admin Filter:</label>
+          <select class="form-select" style="font-size:0.82rem; font-weight:600; min-width:240px; border:1px solid #7dd3fc; background:#fff; padding:6px 10px; border-radius:6px;" onchange="setAdminClientFilter(this.value)">
+            <option value="all" ${selectedFilter === 'all' ? 'selected' : ''}>🌐 All Client Admins (Grouped View)</option>
+            ${clientAdmins.map(ca => {
+              const cTid = ca.tenant?.id || ca.tenant_id;
+              const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
+              return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
+            }).join('')}
+          </select>
+        </div>
+      </div>
+    ` : ''}
+
     <!-- Top KPI Highlights -->
     <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
@@ -3366,70 +3585,7 @@ async function renderSuppliersHTML() {
             </tr>
           </thead>
           <tbody>
-            ${suppliers.length === 0 ? `
-              <tr>
-                <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
-                  🏭 <strong>No suppliers registered yet.</strong><br>
-                  <span style="font-size:0.85rem;">Click the <strong>+ Register Supplier</strong> button above to add your local and international manufacturers, OEMs, and stockists.</span>
-                </td>
-              </tr>
-            ` : suppliers.map(s => {
-              const isIntl = (s.supplier_type === 'International Supplier' || s.origin === 'International');
-              return `
-                <tr>
-                  <td>
-                    <strong>${s.supplier_name}</strong><br>
-                    <span style="font-size:0.75rem; color:var(--text-muted); font-family:monospace;">${s.supplier_code || 'SUP-' + (s.id ? s.id.slice(0, 6) : 'AUTO')}</span>
-                  </td>
-                  <td>
-                    <span class="pill-source" style="${isIntl ? 'background:#e0e7ff; color:#3730a3;' : ''}">
-                      ${isIntl ? '🌐 Import (Intl)' : '🇵🇰 Local (PK)'}
-                    </span><br>
-                    <span style="font-size:0.8rem; font-weight:600;">${s.country || 'Pakistan'}</span>
-                  </td>
-                  <td>
-                    <span style="font-size:0.82rem;">
-                      <strong>${s.origin_port_city || s.city || 'Karachi Port'}</strong><br>
-                      <span class="badge badge-sec-attached">${s.currency || 'PKR'}</span>
-                    </span>
-                  </td>
-                  <td>
-                    <span style="font-size:0.82rem;">
-                      <strong>${s.incoterms || 'FOB'}</strong> | ${s.payment_terms || 'Net 30'}<br>
-                      <span style="font-size:0.75rem; color:var(--text-muted);">${s.product_categories || 'General Supply'}</span>
-                    </span>
-                  </td>
-                  <td>
-                    <span style="color:#f59e0b; font-size:0.95rem;">${'★'.repeat(s.rating || 5)}</span>
-                  </td>
-                  <td>
-                    <span style="font-size:0.78rem;">
-                      ${s.bank_name ? `<strong>${s.bank_name}</strong><br>` : ''}
-                      ${s.bank_swift ? `<code>SWIFT: ${s.bank_swift}</code>` : (s.bank_iban ? `<code>IBAN: ${s.bank_iban.slice(0, 10)}...</code>` : '—')}
-                    </span>
-                  </td>
-                  <td>
-                    <span style="font-size:0.82rem;">
-                      <strong>${s.contact_person || '—'}</strong><br>
-                      <span style="font-size:0.75rem; color:var(--text-muted);">${s.phone || s.email || ''}</span>
-                    </span>
-                  </td>
-                  <td>
-                    <span class="badge ${s.status === 'Inactive' ? 'badge-withdraw' : 'badge-won'}">
-                      ${s.status || 'Active'}
-                    </span>
-                  </td>
-                  <td>
-                    <div style="display:flex; gap:6px;">
-                      <button class="edit-btn" onclick="openEditSupplierModal('${s.id}')" title="Edit Supplier Details">✏️ Edit</button>
-                      <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleSupplierStatus('${s.id}', '${s.status}')" title="Toggle Active / Inactive">
-                        ${s.status === 'Inactive' ? '✓' : '⛔'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
+            ${tableBodyHTML}
           </tbody>
         </table>
       </div>
@@ -3441,12 +3597,172 @@ async function renderSuppliersHTML() {
 // 14. PRODUCTS / ITEMS MASTER CATALOG VIEW
 // --------------------------------------------------------------------------
 async function renderProductsHTML() {
-  const products = await API.getProducts();
+  let products = await API.getProducts();
   const suppliers = await API.getSuppliers();
+  const isSuper = State.isSuperAdmin();
+
+  let clientAdmins = [];
+  if (isSuper) {
+    try {
+      const uRes = await API.getUsersWithStats();
+      const allUsers = uRes?.data || State.getStoredUsers() || [];
+      clientAdmins = allUsers.filter(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin');
+    } catch (e) {}
+  }
+
+  // Filter if super admin selected a specific client
+  const selectedFilter = window._adminSelectedClientFilter || 'all';
+  if (isSuper && selectedFilter !== 'all') {
+    products = products.filter(p => String(p.tenant_id) === String(selectedFilter));
+  }
+
   const totalStockItems = products.reduce((sum, p) => sum + (parseFloat(p.current_stock) || 0), 0);
   const reorderAlerts = products.filter(p => (parseFloat(p.current_stock) || 0) <= (parseFloat(p.reorder_level) || 10)).length;
 
+  // Helper to render a single product row
+  const renderProductRow = (p) => {
+    const sup = suppliers.find(s => s.id === p.default_supplier_id || s.id === p.supplier_id);
+    const isLowStock = (parseFloat(p.current_stock) || 0) <= (parseFloat(p.reorder_level) || 10);
+    const costPrice = parseFloat(p.cost_price || 0);
+    const sellingPrice = parseFloat(p.selling_price || 0);
+    const isLoss = (costPrice > 0 && sellingPrice > 0 && sellingPrice < costPrice);
+    const lossAmt = costPrice - sellingPrice;
+    const lossPct = costPrice > 0 ? ((lossAmt / costPrice) * 100).toFixed(1) : '0';
+
+    let expiryPill = '';
+    if (p.expiry_date) {
+      const expDate = new Date(p.expiry_date);
+      const now = new Date();
+      const daysLeft = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysLeft < 0) {
+        expiryPill = `<span class="badge badge-withdraw" style="font-size:0.7rem; background:#fee2e2; color:#b91c1c;">🔴 Expired (${p.expiry_date})</span>`;
+      } else if (daysLeft <= 60) {
+        expiryPill = `<span class="badge badge-hold" style="font-size:0.7rem; background:#fef3c7; color:#92400e;">🟡 Expiring in ${daysLeft}d</span>`;
+      } else {
+        expiryPill = `<span class="badge badge-won" style="font-size:0.7rem;">🟢 Fresh (Exp: ${p.expiry_date})</span>`;
+      }
+    }
+
+    return `
+      <tr class="${isLoss ? 'loss-row' : ''}">
+        <td>
+          <strong><code>${p.sku || 'SKU'}</code></strong>
+          ${isSuper ? `<br><span class="badge" style="font-size:0.7rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; margin-top:2px;">👤 ${p.client_admin_name || p.tenant_name || 'System Primary'}</span>` : ''}
+        </td>
+        <td>
+          <strong>${p.name}</strong>${p.specifications ? ` <span style="display:inline-block; font-size:0.75rem; background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:4px;">${p.specifications}</span>` : ''}<br>
+          <span style="font-size:0.75rem; color:var(--text-muted);">${p.description ? p.description : ''}</span>
+        </td>
+        <td>
+          <span class="badge badge-sec-attached">${p.item_type || 'Product'}</span><br>
+          <span style="font-size:0.8rem; font-weight:600;">${p.unit || 'PCS'}</span>
+        </td>
+        <td>
+          <span style="font-size:0.8rem; font-weight:600; color:#1e293b;">
+            ${p.batch_number || p.batch_no ? `<code>Batch: ${p.batch_number || p.batch_no}</code><br>` : '<span style="color:#94a3b8; font-size:0.75rem;">Standard Lot</span><br>'}
+          </span>
+          ${expiryPill || '<span style="font-size:0.75rem; color:#64748b;">No Expiry</span>'}
+        </td>
+        <td>
+          <span style="font-weight:600;">${formatCurrency(costPrice, 'PKR')}</span><br>
+          ${p.cost_price_foreign && p.currency && p.currency !== 'PKR' ? `<span style="font-size:0.72rem; color:var(--text-muted);">${p.currency} ${parseFloat(p.cost_price_foreign).toLocaleString()}</span>` : ''}
+        </td>
+        <td>
+          <strong class="${isLoss ? 'loss-text' : ''}">${formatCurrency(sellingPrice, 'PKR')}</strong>
+          ${isLoss ? `<br><span class="badge badge-loss" title="Loss detected: Selling Price is lower than Landed Cost Price!">⚠️ Loss: -${formatCurrency(lossAmt, 'PKR')} (-${lossPct}%)</span>` : ''}
+        </td>
+        <td>
+          <span class="badge ${isLowStock ? 'badge-withdraw' : 'badge-won'}">
+            ${p.current_stock || 0} ${p.unit || 'PCS'}
+          </span>
+        </td>
+        <td>
+          <span style="font-size:0.82rem; font-weight:600; color:var(--primary);">
+            ${sup ? sup.supplier_name : (p.supplier_name || '—')}
+          </span>
+        </td>
+        <td>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button class="edit-btn" onclick="openEditProductModal('${p.id}')" title="Edit Item Details">✏️ Edit</button>
+            <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteProductItem('${p.id}', '${encodeURIComponent(p.name)}')" title="Delete Item">🗑️ Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  };
+
+  // Group by client admin if Super Admin and viewing 'all'
+  let tableBodyHTML = '';
+  if (isSuper && selectedFilter === 'all' && clientAdmins.length > 0) {
+    const groups = {};
+    products.forEach(p => {
+      const key = p.tenant_id || 'system';
+      if (!groups[key]) {
+        const admin = clientAdmins.find(ca => String(ca.tenant?.id || ca.tenant_id) === String(key));
+        groups[key] = {
+          adminName: p.client_admin_name || (admin ? (admin.full_name || admin.username) : 'System Primary'),
+          orgName: p.tenant_name || (admin?.tenant?.company_name || admin?.tenant?.organization_name || 'System Default'),
+          items: []
+        };
+      }
+      groups[key].items.push(p);
+    });
+
+    if (products.length === 0) {
+      tableBodyHTML = `
+        <tr>
+          <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
+            📦 <strong>No products or items in catalog yet.</strong>
+          </td>
+        </tr>
+      `;
+    } else {
+      tableBodyHTML = Object.values(groups).map(g => `
+        <tr style="background:#f1f5f9; border-top:2px solid #cbd5e1; border-bottom:2px solid #cbd5e1;">
+          <td colspan="9" style="padding:10px 16px; font-weight:800; font-size:0.88rem; color:#0f172a;">
+            👤 Client Admin: <span style="color:#2563eb;">${g.adminName}</span> | 🏢 Organization: <span style="color:#475569;">${g.orgName}</span>
+            <span class="badge badge-sec-attached" style="margin-left:10px;">${g.items.length} Registered Items</span>
+          </td>
+        </tr>
+        ${g.items.map(p => renderProductRow(p)).join('')}
+      `).join('');
+    }
+  } else {
+    tableBodyHTML = products.length === 0 ? `
+      <tr>
+        <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
+          📦 <strong>No products or items in catalog yet.</strong><br>
+          <span style="font-size:0.85rem;">Click the <strong>+ Add Master Item</strong> button above to register your inventory items, electrical equipment, and SKUs.</span>
+        </td>
+      </tr>
+    ` : products.map(p => renderProductRow(p)).join('');
+  }
+
   return `
+    <!-- Super Admin Client Filter Bar -->
+    ${isSuper ? `
+      <div class="card" style="background:linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border:1px solid #bae6fd; padding:12px 18px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.6rem;">👑</span>
+          <div>
+            <div style="font-weight:800; color:#0369a1; font-size:0.95rem;">Super Admin View — Items Grouped by Client Admin</div>
+            <div style="font-size:0.78rem; color:#0284c7;">Filter by Client Admin created by Super Admin or view consolidated registry</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:0.82rem; font-weight:700; color:#0f172a; white-space:nowrap;">Client Admin Filter:</label>
+          <select class="form-select" style="font-size:0.82rem; font-weight:600; min-width:240px; border:1px solid #7dd3fc; background:#fff; padding:6px 10px; border-radius:6px;" onchange="setAdminClientFilter(this.value)">
+            <option value="all" ${selectedFilter === 'all' ? 'selected' : ''}>🌐 All Client Admins (Grouped View)</option>
+            ${clientAdmins.map(ca => {
+              const cTid = ca.tenant?.id || ca.tenant_id;
+              const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
+              return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
+            }).join('')}
+          </select>
+        </div>
+      </div>
+    ` : ''}
+
     <!-- Top KPI Highlights -->
     <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
@@ -3492,78 +3808,7 @@ async function renderProductsHTML() {
             </tr>
           </thead>
           <tbody>
-            ${products.length === 0 ? `
-              <tr>
-                <td colspan="9" style="text-align:center; padding:36px 20px; color:#64748b;">
-                  📦 <strong>No products or items in catalog yet.</strong><br>
-                  <span style="font-size:0.85rem;">Click the <strong>+ Add Master Item</strong> button above to register your inventory items, electrical equipment, and SKUs.</span>
-                </td>
-              </tr>
-            ` : products.map(p => {
-              const sup = suppliers.find(s => s.id === p.default_supplier_id || s.id === p.supplier_id);
-              const isLowStock = (parseFloat(p.current_stock) || 0) <= (parseFloat(p.reorder_level) || 10);
-              const costPrice = parseFloat(p.cost_price || 0);
-              const sellingPrice = parseFloat(p.selling_price || 0);
-              const isLoss = (costPrice > 0 && sellingPrice > 0 && sellingPrice < costPrice);
-              const lossAmt = costPrice - sellingPrice;
-              const lossPct = costPrice > 0 ? ((lossAmt / costPrice) * 100).toFixed(1) : '0';
-
-              // Shelf Life Expiry Status
-              let expiryPill = '';
-              if (p.expiry_date) {
-                const expDate = new Date(p.expiry_date);
-                const now = new Date();
-                const daysLeft = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                if (daysLeft < 0) {
-                  expiryPill = `<span class="badge badge-withdraw" style="font-size:0.7rem; background:#fee2e2; color:#b91c1c;">🔴 Expired (${p.expiry_date})</span>`;
-                } else if (daysLeft <= 60) {
-                  expiryPill = `<span class="badge badge-hold" style="font-size:0.7rem; background:#fef3c7; color:#92400e;">🟡 Expiring in ${daysLeft}d</span>`;
-                } else {
-                  expiryPill = `<span class="badge badge-won" style="font-size:0.7rem;">🟢 Fresh (Exp: ${p.expiry_date})</span>`;
-                }
-              }
-
-              return `
-                <tr class="${isLoss ? 'loss-row' : ''}">
-                  <td><strong><code>${p.sku || 'SKU'}</code></strong></td>
-                  <td>
-                    <strong>${p.name}</strong>${p.specifications ? ` <span style="display:inline-block; font-size:0.75rem; background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:4px;">${p.specifications}</span>` : ''}<br>
-                    <span style="font-size:0.75rem; color:var(--text-muted);">${p.description ? p.description.slice(0, 50) + '...' : ''}</span>
-                  </td>
-                  <td>
-                    <span class="badge badge-sec-attached">${p.item_type || 'Product'}</span><br>
-                    <span style="font-size:0.8rem; font-weight:600;">${p.unit || 'PCS'}</span>
-                  </td>
-                  <td>
-                    <span style="font-size:0.8rem; font-weight:600; color:#1e293b;">
-                      ${p.batch_number || p.batch_no ? `<code>Batch: ${p.batch_number || p.batch_no}</code><br>` : '<span style="color:#94a3b8; font-size:0.75rem;">Standard Lot</span><br>'}
-                    </span>
-                    ${expiryPill || '<span style="font-size:0.75rem; color:#64748b;">No Expiry</span>'}
-                  </td>
-                  <td>
-                    <span style="font-weight:600;">${formatCurrency(costPrice, 'PKR')}</span><br>
-                    ${p.cost_price_foreign && p.currency && p.currency !== 'PKR' ? `<span style="font-size:0.72rem; color:var(--text-muted);">${p.currency} ${parseFloat(p.cost_price_foreign).toLocaleString()}</span>` : ''}
-                  </td>
-                  <td>
-                    <strong class="${isLoss ? 'loss-text' : ''}">${formatCurrency(sellingPrice, 'PKR')}</strong>
-                    ${isLoss ? `<br><span class="badge badge-loss" title="Loss detected: Selling Price is lower than Landed Cost Price!">⚠️ Loss: -${formatCurrency(lossAmt, 'PKR')} (-${lossPct}%)</span>` : ''}
-                  </td>
-                  <td>
-                    <span class="badge ${isLowStock ? 'badge-withdraw' : 'badge-won'}">
-                      ${p.current_stock || 0} ${p.unit || 'PCS'}
-                    </span>
-                  </td>
-                  <td>
-                    <span style="font-size:0.82rem; font-weight:600; color:var(--primary);">
-                      ${sup ? sup.supplier_name : (p.supplier_name || '—')}
-                    </span>
-                  </td>
-                  <td>
-                    <button class="edit-btn" onclick="openEditProductModal('${p.id}')">✏️ Edit</button>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
+            ${tableBodyHTML}
           </tbody>
         </table>
       </div>
@@ -3670,18 +3915,18 @@ async function renderUsersHTML() {
   };
 
   if (isSuper) {
-    // SUPER ADMIN VIEW: Hierarchical Expandable / Collapsible Grid
+    // SUPER ADMIN VIEW: 2 DEDICATED HIERARCHICAL GRIDS (Company Grid & User Grid)
     return `
       <!-- Super Admin Header & Actions -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
         <div style="display: flex; gap: 10px; align-items: center;">
-          <span class="seat-counter-badge" style="background:#eff6ff; color:#1d4ed8; border-color:#93c5fd;">
-            👑 <strong>Super Admin Control Hub</strong> (Expand clients below to inspect companies & sub-users)
+          <span class="seat-counter-badge" style="background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; font-size:0.9rem; padding:6px 14px;">
+            👑 <strong>Super Admin Control Hub</strong> (Full Platform Management)
           </span>
         </div>
         <div style="display: flex; gap: 8px;">
           <button class="primary-btn" onclick="openModal('modal-create-tenant')">
-            🏢 + Provision New Client / Tenant
+            🏢 + Provision New Client Admin &amp; Tenant
           </button>
           <button class="secondary-btn" onclick="openCreateUserModal('SuperAdmin')">
             👑 + Add System Super Admin
@@ -3689,23 +3934,151 @@ async function renderUsersHTML() {
         </div>
       </div>
 
-      <!-- Main Hierarchical Tenants & Clients Grid -->
-      <div class="card" style="margin-bottom: 20px;">
-        <div class="card-header">
-          <div class="card-title">🏢 Client Organizations & Hierarchical Structure (${tenants.length})</div>
-          <span style="font-size:0.8rem; color:var(--text-muted);">Click <strong>➕ Expand</strong> on any client to view their companies & registered users</span>
+      <!-- ========================================================= -->
+      <!-- GRID 1: COMPANY GRID (Client Admin -> His Companies)     -->
+      <!-- ========================================================= -->
+      <div class="card" style="margin-bottom: 28px;">
+        <div class="card-header" style="background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:14px 20px;">
+          <div>
+            <div class="card-title" style="font-size:1.05rem; font-weight:700; color:#0f172a;">
+              🏢 1. Client Companies Grid (Grouped by Client Admin)
+            </div>
+            <span style="font-size:0.8rem; color:#64748b;">
+              Lists each Client Admin created by Super Admin. Click <strong>➕ Expand</strong> to see companies registered under that Client Admin.
+            </span>
+          </div>
+          <span class="badge badge-won" style="font-size:0.8rem;">${tenants.length} Client Admin Accounts</span>
         </div>
         <div class="table-responsive">
           <table class="data-table">
             <thead>
-              <tr>
-                <th style="width: 40px;"></th>
-                <th>Client / Organization</th>
+              <tr style="background:#f1f5f9;">
+                <th style="width: 45px;"></th>
+                <th>Client Admin (Created by Super Admin)</th>
+                <th>Client Organization</th>
                 <th>Subdomain</th>
                 <th>Plan Tier</th>
-                <th>Trial / Period</th>
                 <th>Companies</th>
-                <th>Users</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tenants.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align:center; padding:32px; color:#64748b;">
+                    No Client Admins provisioned yet. Click <strong>+ Provision New Client Admin &amp; Tenant</strong> above.
+                  </td>
+                </tr>
+              ` : tenants.map((t, idx) => {
+                const tenantCompanies = t.companies || [];
+                const clientAdmin = (t.tenant_users || []).find(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') || (t.tenant_users || [])[0];
+                const adminName = clientAdmin ? (clientAdmin.full_name || clientAdmin.username) : (t.company_name || 'Client Admin');
+                const adminUsername = clientAdmin?.username || '';
+                const compExpId = `comp-grid-exp-${t.id || idx}`;
+
+                return `
+                  <tr style="background:#ffffff;">
+                    <td>
+                      <button class="secondary-btn" style="padding:2px 7px; font-size:0.75rem; font-weight:700; border-radius:4px; min-width:32px;" onclick="toggleTenantExpand('${compExpId}', this)" title="Expand / Collapse Companies">
+                        ➕
+                      </button>
+                    </td>
+                    <td>
+                      <strong>${adminName}</strong>
+                      ${adminUsername ? `<br><code style="font-size:0.75rem; color:#475569;">${adminUsername}</code>` : ''}
+                    </td>
+                    <td><span style="font-weight:600; color:#1e293b;">${t.company_name || t.name}</span></td>
+                    <td><span class="pill-source">${t.subdomain || 'app'}.mashrue.com</span></td>
+                    <td><span class="badge badge-won">${t.subscription_plan || 'Advance'}</span></td>
+                    <td><span class="badge badge-sec-attached">${tenantCompanies.length} Registered</span></td>
+                    <td><span class="badge ${t.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${t.status || 'Active'}</span></td>
+                    <td>
+                      <button class="secondary-btn" style="padding:4px 10px; font-size:0.75rem;" onclick="toggleTenantExpand('${compExpId}', this)">
+                        🏢 View Companies (${tenantCompanies.length})
+                      </button>
+                    </td>
+                  </tr>
+
+                  <!-- Collapsible Child Row: Companies under this Client Admin -->
+                  <tr id="${compExpId}" style="display:none; background:#f8fafc;">
+                    <td colspan="8" style="padding: 16px 20px; border-bottom: 2px solid #cbd5e1;">
+                      <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                          <div style="font-size: 0.92rem; font-weight: 700; color: #0f172a;">
+                            🏢 Companies Registered under ${adminName} (${t.company_name || t.name})
+                          </div>
+                          <span style="font-size: 0.75rem; color: #64748b;">Super Admin has rights to delete companies</span>
+                        </div>
+
+                        ${tenantCompanies.length === 0 ? `
+                          <div style="padding: 16px; font-size: 0.85rem; color: #64748b; background: #f8fafc; border-radius: 6px; text-align: center;">
+                            🏢 No companies created by this Client Admin yet.
+                          </div>
+                        ` : `
+                          <table class="data-table" style="font-size: 0.82rem; margin: 0;">
+                            <thead>
+                              <tr style="background: #f1f5f9;">
+                                <th>Company / Business Name</th>
+                                <th>Legal Name</th>
+                                <th>NTN</th>
+                                <th>STRN</th>
+                                <th>City</th>
+                                <th>FBR PRAL</th>
+                                <th>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${tenantCompanies.map(c => `
+                                <tr>
+                                  <td><strong>${c.business_name}</strong></td>
+                                  <td>${c.legal_name || c.business_name}</td>
+                                  <td><code>${c.ntn || 'N/A'}</code></td>
+                                  <td><code>${c.strn || 'N/A'}</code></td>
+                                  <td>${c.city || 'Lahore'}</td>
+                                  <td><span class="badge ${c.fbr_enabled ? 'badge-fbr' : 'badge-withdraw'}">${c.fbr_enabled ? 'Enabled' : 'Disabled'}</span></td>
+                                  <td>
+                                    <button class="delete-btn" style="padding:3px 8px; font-size:0.75rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteCompany('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Company Profile">🗑️ Delete Company</button>
+                                  </td>
+                                </tr>
+                              `).join('')}
+                            </tbody>
+                          </table>
+                        `}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- GRID 2: USER GRID (Client Admin -> Users He Created)      -->
+      <!-- ========================================================= -->
+      <div class="card">
+        <div class="card-header" style="background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:14px 20px;">
+          <div>
+            <div class="card-title" style="font-size:1.05rem; font-weight:700; color:#0f172a;">
+              👥 2. Client Users Grid (Grouped by Client Admin)
+            </div>
+            <span style="font-size:0.8rem; color:#64748b;">
+              Lists each Client Admin created by Super Admin. Click <strong>➕ Expand</strong> to see sub-users and employees created under him.
+            </span>
+          </div>
+          <span class="badge badge-sec-attached" style="font-size:0.8rem;">${userList.length} Total Users in System</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr style="background:#f1f5f9;">
+                <th style="width: 45px;"></th>
+                <th>Client Admin (Created by Super Admin)</th>
+                <th>Client Organization</th>
+                <th>Admin Email</th>
+                <th>Sub-Users Created</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -3713,149 +4086,108 @@ async function renderUsersHTML() {
             <tbody>
               ${tenants.length === 0 ? `
                 <tr>
-                  <td colspan="9" style="text-align:center; padding:32px; color:#64748b;">
-                    No client organizations registered yet. Click <strong>+ Provision New Client / Tenant</strong> above.
+                  <td colspan="7" style="text-align:center; padding:32px; color:#64748b;">
+                    No Client Admins provisioned yet.
                   </td>
                 </tr>
               ` : tenants.map((t, idx) => {
-                const tenantCompanies = t.companies || [];
                 const tenantUsers = t.tenant_users || userList.filter(u => String(u.tenant_id) === String(t.id));
-                const expRowId = `tenant-exp-${t.id || idx}`;
+                const clientAdmin = tenantUsers.find(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') || tenantUsers[0];
+                const adminName = clientAdmin ? (clientAdmin.full_name || clientAdmin.username) : (t.company_name || 'Client Admin');
+                const adminUsername = clientAdmin?.username || '';
+                const adminEmail = clientAdmin?.email || '—';
+                const subUsers = tenantUsers.filter(u => !clientAdmin || String(u.id) !== String(clientAdmin.id));
+                const userExpId = `user-grid-exp-${t.id || idx}`;
 
                 return `
-                  <tr style="background:#ffffff; font-weight:500;">
+                  <tr style="background:#ffffff;">
                     <td>
-                      <button class="secondary-btn" style="padding:2px 7px; font-size:0.75rem; font-weight:700; border-radius:4px; min-width:32px;" onclick="toggleTenantExpand('${expRowId}', this)" title="Expand/Collapse details">
+                      <button class="secondary-btn" style="padding:2px 7px; font-size:0.75rem; font-weight:700; border-radius:4px; min-width:32px;" onclick="toggleTenantExpand('${userExpId}', this)" title="Expand / Collapse Users">
                         ➕
                       </button>
                     </td>
                     <td>
-                      <strong>${t.company_name || t.name}</strong>
+                      <strong>${adminName}</strong>
+                      ${adminUsername ? `<br><code style="font-size:0.75rem; color:#475569;">${adminUsername}</code>` : ''}
                     </td>
-                    <td><span class="pill-source">${t.subdomain || 'app'}.mashrue.com</span></td>
-                    <td><span class="badge badge-won">${t.subscription_plan || 'Advance'}</span></td>
-                    <td><span class="badge badge-ready" style="font-size:0.75rem;">⏱️ ${t.trial_period || '15 Days'}</span></td>
-                    <td><span class="badge badge-sec-attached">${tenantCompanies.length} registered</span></td>
-                    <td><span class="badge badge-sec-attached">${tenantUsers.length} users</span></td>
-                    <td><span class="badge ${t.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${t.status || 'Active'}</span></td>
+                    <td><span style="font-weight:600; color:#1e293b;">${t.company_name || t.name}</span></td>
+                    <td>${adminEmail}</td>
+                    <td><span class="badge badge-sec-attached">${subUsers.length} Sub-Users</span></td>
+                    <td><span class="badge ${clientAdmin?.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${clientAdmin?.status || 'Active'}</span></td>
                     <td>
                       <div style="display:flex; gap:6px;">
-                        <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="toggleTenantExpand('${expRowId}', this)">📂 Details</button>
+                        <button class="secondary-btn" style="padding:4px 10px; font-size:0.75rem;" onclick="toggleTenantExpand('${userExpId}', this)">
+                          👥 View Users (${subUsers.length})
+                        </button>
+                        ${clientAdmin ? `
+                          <button class="edit-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="openEditUserModal('${clientAdmin.id}')" title="Edit Admin">✏️</button>
+                          <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="openResetPasswordModal('${clientAdmin.id}', '${clientAdmin.username}')" title="Reset Password">🔑</button>
+                        ` : ''}
                       </div>
                     </td>
                   </tr>
 
-                  <!-- Collapsible Child Row: Companies & Users under this Client -->
-                  <tr id="${expRowId}" style="display:none; background:#f8fafc;">
-                    <td colspan="9" style="padding: 16px 20px; border-bottom: 2px solid #cbd5e1;">
-                      <div style="display: flex; flex-direction: column; gap: 16px;">
-                        
-                        <!-- 1. Companies Box under this Tenant -->
-                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px;">
-                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <div style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">
-                              🏢 Registered Companies under ${t.company_name || t.name} (${tenantCompanies.length})
-                            </div>
-                            <span style="font-size: 0.75rem; color: #64748b;">Super Admin has rights to manage or delete companies</span>
+                  <!-- Collapsible Child Row: Users created by this Client Admin -->
+                  <tr id="${userExpId}" style="display:none; background:#f8fafc;">
+                    <td colspan="7" style="padding: 16px 20px; border-bottom: 2px solid #cbd5e1;">
+                      <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                          <div style="font-size: 0.92rem; font-weight: 700; color: #0f172a;">
+                            👥 Sub-Users &amp; Employees Created by ${adminName} (${subUsers.length})
                           </div>
-                          
-                          ${tenantCompanies.length === 0 ? `
-                            <div style="padding: 12px; font-size: 0.82rem; color: #64748b; font-style: italic;">
-                              No companies registered under this client yet.
-                            </div>
-                          ` : `
-                            <table class="data-table" style="font-size: 0.8rem; margin: 0;">
-                              <thead>
-                                <tr style="background: #f1f5f9;">
-                                  <th>Company Name</th>
-                                  <th>Legal Name</th>
-                                  <th>NTN</th>
-                                  <th>STRN</th>
-                                  <th>City</th>
-                                  <th>FBR PRAL</th>
-                                  <th>Action</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                ${tenantCompanies.map(c => `
+                        </div>
+
+                        ${subUsers.length === 0 ? `
+                          <div style="padding: 16px; font-size: 0.85rem; color: #64748b; background: #f8fafc; border-radius: 6px; text-align: center;">
+                            👥 No sub-users / employees created by this Client Admin yet.
+                          </div>
+                        ` : `
+                          <table class="data-table" style="font-size: 0.82rem; margin: 0;">
+                            <thead>
+                              <tr style="background: #f1f5f9;">
+                                <th>Full Name</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Bidding Prices</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${subUsers.map(u => {
+                                const canDelete = (String(u.id) !== String(currentUserId)) && (u.role !== 'SuperAdmin');
+                                return `
                                   <tr>
-                                    <td><strong>${c.business_name}</strong></td>
-                                    <td>${c.legal_name || c.business_name}</td>
-                                    <td><code>${c.ntn || 'N/A'}</code></td>
-                                    <td><code>${c.strn || 'N/A'}</code></td>
-                                    <td>${c.city || 'Lahore'}</td>
-                                    <td><span class="badge ${c.fbr_enabled ? 'badge-fbr' : 'badge-withdraw'}">${c.fbr_enabled ? 'Enabled' : 'Disabled'}</span></td>
+                                    <td><strong>${u.full_name || u.username}</strong></td>
+                                    <td><code>${u.username}</code></td>
+                                    <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
                                     <td>
-                                      <button class="delete-btn" style="padding:3px 8px; font-size:0.72rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteCompany('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Company Profile">🗑️ Delete Company</button>
+                                      <span class="badge ${u.role === 'ClientAdmin' ? 'badge-won' : 'badge-sec-attached'}">
+                                        ${u.role}
+                                      </span>
+                                    </td>
+                                    <td><span class="badge ${u.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${u.status || 'Active'}</span></td>
+                                    <td>
+                                      <span class="badge ${u.can_see_bidding_prices !== false ? 'badge-won' : 'badge-hold'}">
+                                        ${u.can_see_bidding_prices !== false ? 'Visible' : 'Masked'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <div style="display:flex; gap:4px;">
+                                        <button class="edit-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="openEditUserModal('${u.id}')">✏️ Edit</button>
+                                        <button class="secondary-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="openResetPasswordModal('${u.id}', '${u.username}')">🔑 Pass</button>
+                                        ${canDelete ? `
+                                          <button class="delete-btn" style="padding:2px 6px; font-size:0.72rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
+                                        ` : ''}
+                                      </div>
                                     </td>
                                   </tr>
-                                `).join('')}
-                              </tbody>
-                            </table>
-                          `}
-                        </div>
-
-                        <!-- 2. Sub-Users / Employees Box under this Tenant -->
-                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px;">
-                          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <div style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">
-                              👥 Client Users &amp; Employees under ${t.company_name || t.name} (${tenantUsers.length})
-                            </div>
-                          </div>
-
-                          ${tenantUsers.length === 0 ? `
-                            <div style="padding: 12px; font-size: 0.82rem; color: #64748b; font-style: italic;">
-                              No users registered under this client yet.
-                            </div>
-                          ` : `
-                            <table class="data-table" style="font-size: 0.8rem; margin: 0;">
-                              <thead>
-                                <tr style="background: #f1f5f9;">
-                                  <th>Full Name</th>
-                                  <th>Username</th>
-                                  <th>Email</th>
-                                  <th>Role</th>
-                                  <th>Status</th>
-                                  <th>Bidding Prices</th>
-                                  <th>Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                ${tenantUsers.map(u => {
-                                  const canDelete = (String(u.id) !== String(currentUserId)) && (u.role !== 'SuperAdmin');
-                                  return `
-                                    <tr>
-                                      <td><strong>${u.full_name || u.username}</strong></td>
-                                      <td><code>${u.username}</code></td>
-                                      <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
-                                      <td>
-                                        <span class="badge ${u.role === 'ClientAdmin' ? 'badge-won' : 'badge-sec-attached'}">
-                                          ${u.role}
-                                        </span>
-                                      </td>
-                                      <td><span class="badge ${u.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${u.status || 'Active'}</span></td>
-                                      <td>
-                                        <span class="badge ${u.can_see_bidding_prices !== false ? 'badge-won' : 'badge-hold'}">
-                                          ${u.can_see_bidding_prices !== false ? 'Visible' : 'Masked'}
-                                        </span>
-                                      </td>
-                                      <td>
-                                        <div style="display:flex; gap:4px;">
-                                          <button class="edit-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="openEditUserModal('${u.id}')">✏️ Edit</button>
-                                          <button class="secondary-btn" style="padding:2px 6px; font-size:0.72rem;" onclick="openResetPasswordModal('${u.id}', '${u.username}')">🔑 Pass</button>
-                                          ${canDelete ? `
-                                            <button class="delete-btn" style="padding:2px 6px; font-size:0.72rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
-                                          ` : ''}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  `;
-                                }).join('')}
-                              </tbody>
-                            </table>
-                          `}
-                        </div>
-
+                                `;
+                              }).join('')}
+                            </tbody>
+                          </table>
+                        `}
                       </div>
                     </td>
                   </tr>
@@ -3868,16 +4200,21 @@ async function renderUsersHTML() {
     `;
   }
 
+  const freeSeatLimit = res?.seatStats?.freeLimit || State.currentUser?.tenant?.freeEmployeeLimit || 2;
+  const usedEmployeeSeats = userList.filter(u => u.role === 'ClientEmployee').length;
+  const paidEmployeeSeats = Math.max(0, usedEmployeeSeats - freeSeatLimit);
+  const additionalSeatFee = res?.seatStats?.additionalMonthlyFee || 1500.00;
+
   // CLIENT ADMIN VIEW: Tenant Employee Management & Granular RBAC
   return `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <span class="seat-counter-badge">
-          👥 Employee Seats: <strong>${seatStats.usedEmployees} / ${seatStats.freeLimit} Free Used</strong>
+          👥 Employee Seats: <strong>${usedEmployeeSeats} / ${freeSeatLimit} Free Used</strong>
         </span>
-        ${seatStats.paidEmployees > 0 ? `
+        ${paidEmployeeSeats > 0 ? `
           <span class="badge badge-hold" style="padding: 5px 10px;">
-            💰 ${seatStats.paidEmployees} Paid Seat(s) active (+PKR ${(seatStats.paidEmployees * seatStats.additionalMonthlyFee).toLocaleString()}/mo)
+            💰 ${paidEmployeeSeats} Paid Seat(s) active (+PKR ${(paidEmployeeSeats * additionalSeatFee).toLocaleString()}/mo)
           </span>
         ` : ''}
       </div>
@@ -3888,7 +4225,7 @@ async function renderUsersHTML() {
 
     <div class="card">
       <div class="card-header">
-        <div class="card-title">👥 Organization Employees & Access Control (${userList.length})</div>
+        <div class="card-title">👥 Organization Users &amp; Access Control (${userList.length})</div>
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -3909,7 +4246,7 @@ async function renderUsersHTML() {
               <tr>
                 <td colspan="8" style="text-align:center; padding:36px 20px; color:#64748b;">
                   👥 <strong>No employee users added yet.</strong><br>
-                  <span style="font-size:0.85rem;">Click the <strong>+ Add Employee User</strong> button above to invite your team members (2 Free Seats included).</span>
+                  <span style="font-size:0.85rem;">Click the <strong>+ Add Employee User</strong> button above to invite your team members (${freeSeatLimit} Free Seats included).</span>
                 </td>
               </tr>
             ` : userList.map(u => {
@@ -3923,14 +4260,15 @@ async function renderUsersHTML() {
                   ? '<span class="badge" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe;">👁️ Read-Only</span>'
                   : '<span class="badge badge-ready">⚙️ Configurable</span>');
 
-              // Strict Creator Rule: User A can delete User B (created by User A). No self-deletion.
+              const fullNameDisplay = u.full_name || u.fullName || u.name || u.username || '—';
               const isSelf = String(u.id) === String(currentUserId);
-              const isCreatedByMe = u.created_by && String(u.created_by) === String(currentUserId);
+              const isCreatedByMe = Boolean(u.created_by && String(u.created_by) === String(currentUserId));
+              const canManage = isSelf || isCreatedByMe || isSuper;
               const canDelete = !isSelf && u.role !== 'SuperAdmin' && (isCreatedByMe || isSuper);
 
               return `
                 <tr>
-                  <td><strong>${u.full_name}</strong></td>
+                  <td><strong>${fullNameDisplay}</strong></td>
                   <td><code>${u.username || '—'}</code></td>
                   <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
                   <td>${roleBadge}</td>
@@ -3942,16 +4280,17 @@ async function renderUsersHTML() {
                   <td><span style="font-size: 0.82rem; color: #475569;">${compAccessNames}</span></td>
                   <td><span class="badge badge-active">${u.status || 'Active'}</span></td>
                   <td>
-                    <div class="action-buttons-group">
-                      <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>
-                      <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${u.full_name}')" title="Reset Password">🔑 Pass</button>
-                      ${u.email && isSuper ? `
-                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; background:#0284c7; color:#fff; border-color:#0284c7;" onclick="handleResendInviteEmail('${u.id}', '${u.full_name}', '${u.email}')" title="Resend Activation / Welcome Email">📧 Resend Email</button>
-                      ` : ''}
-                      ${canDelete ? `
-                        <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${u.full_name || u.username}')" title="Delete User">🗑️ Delete</button>
-                      ` : ''}
-                    </div>
+                    ${canManage ? `
+                      <div class="action-buttons-group">
+                        <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>
+                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${fullNameDisplay}')" title="Reset Password">🔑 Pass</button>
+                        ${canDelete ? `
+                          <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${fullNameDisplay}')" title="Delete User">🗑️ Delete</button>
+                        ` : ''}
+                      </div>
+                    ` : `
+                      <span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.75rem; border:1px solid #cbd5e1;">👁️ Read-Only</span>
+                    `}
                   </td>
                 </tr>
               `;
@@ -5286,17 +5625,20 @@ function addTenderItemRow(initialData = null) {
       <td>
         <select class="form-select tnd-item-product" style="font-size:0.78rem; padding:4px 6px;" onchange="onTenderProductSelect(${rowIndex}, this.value)">
           <option value="">-- Custom Scope Item --</option>
-          ${products.map(p => `<option value="${p.id}" ${(initialData && (initialData.product_service_id === p.id || initialData.product_id === p.id)) ? 'selected' : ''} data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${p.current_stock || 0})</option>`).join('')}
+          ${products.map(p => `<option value="${p.id}" ${(initialData && (initialData.product_service_id === p.id || initialData.product_id === p.id)) ? 'selected' : ''} data-name="${p.name}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${p.current_stock || 0})</option>`).join('')}
         </select>
       </td>
       <td>
         <input type="text" class="form-input tnd-item-desc" required placeholder="Item Scope / Technical Description" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_description || initialData?.item_name || ''}" oninput="recalculateTenderItemsSum()">
       </td>
       <td>
+        <input type="text" class="form-input tnd-item-size" placeholder="Size / Spec" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_size || initialData?.size || initialData?.specifications || ''}">
+      </td>
+      <td>
         <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="font-size:0.78rem; padding:4px 6px;" oninput="recalculateTenderItemsSum()">
       </td>
       <td>
-        <input list="uom-datalist" type="text" class="form-input tnd-item-unit" value="${initialData?.unit || 'PCS'}" style="font-size:0.78rem; padding:4px 6px;" placeholder="e.g. PCS, ROLL">
+        <input list="uom-datalist" type="text" class="form-input tnd-item-unit" value="${initialData?.unit || 'PCS'}" style="font-size:0.78rem; padding:4px 6px;" placeholder="e.g. PCS, Nos">
       </td>
       <td>
         <input type="text" class="form-input tnd-item-price" placeholder="0" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.estimated_unit_price ? Number(initialData.estimated_unit_price).toLocaleString() : (initialData?.unit_price ? Number(initialData.unit_price).toLocaleString() : '0')}" oninput="formatCurrencyInput(this); recalculateTenderItemsSum();">
@@ -5315,6 +5657,7 @@ function addTenderItemRow(initialData = null) {
     index: rowIndex,
     product_service_id: initialData?.product_service_id || null,
     item_description: initialData?.item_description || '',
+    item_size: initialData?.item_size || initialData?.size || '',
     quantity: initialData?.quantity || 1,
     unit: initialData?.unit || 'PCS',
     estimated_unit_price: initialData?.estimated_unit_price || 0,
@@ -5332,11 +5675,13 @@ function onTenderProductSelect(rowIndex, productId) {
   const prod = products.find(p => p.id === productId);
 
   const descInput = row.querySelector('.tnd-item-desc');
+  const sizeInput = row.querySelector('.tnd-item-size');
   const unitInput = row.querySelector('.tnd-item-unit');
   const priceInput = row.querySelector('.tnd-item-price');
 
   if (prod) {
-    if (descInput) descInput.value = `${prod.name}${prod.specifications ? ' - ' + prod.specifications : (prod.description ? ' - ' + prod.description : '')}`;
+    if (descInput) descInput.value = prod.name;
+    if (sizeInput) sizeInput.value = prod.specifications || prod.size || '';
     if (unitInput) unitInput.value = prod.unit || 'PCS';
     if (priceInput) {
       priceInput.value = prod.selling_price ? Number(prod.selling_price).toLocaleString() : '0';
@@ -5502,7 +5847,8 @@ async function submitNewTenderForm() {
     const items = [];
     rows.forEach(row => {
       const prodId = row.querySelector('.tnd-item-product')?.value || null;
-      const itemDesc = row.querySelector('.tnd-item-desc')?.value;
+      const itemDesc = row.querySelector('.tnd-item-desc')?.value?.trim();
+      const itemSize = row.querySelector('.tnd-item-size')?.value?.trim() || '';
       const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
       const unit = row.querySelector('.tnd-item-unit')?.value || 'PCS';
       const unitPrice = parseCurrency(row.querySelector('.tnd-item-price')?.value);
@@ -5512,6 +5858,8 @@ async function submitNewTenderForm() {
           product_service_id: prodId,
           item_name: itemDesc,
           item_description: itemDesc,
+          item_size: itemSize,
+          size: itemSize,
           quantity: qty,
           unit: unit,
           estimated_unit_price: unitPrice,
@@ -6906,6 +7254,8 @@ function openNewCustomerModal() {
   if (codeEl) codeEl.value = 'CUST-' + Math.floor(1000 + Math.random() * 9000);
   const otherTermsCont = document.getElementById('cust-other-terms-container');
   if (otherTermsCont) otherTermsCont.style.display = 'none';
+  const delBtn = document.getElementById('btn-delete-customer-modal');
+  if (delBtn) delBtn.style.display = 'none';
 
   const modal = document.getElementById('modal-add-customer');
   if (modal) {
@@ -6955,6 +7305,9 @@ async function openEditCustomerModal(id) {
   document.getElementById('cust-bank-iban').value = c.bank_iban || '';
   document.getElementById('cust-notes').value = c.notes || '';
 
+  const delBtn = document.getElementById('btn-delete-customer-modal');
+  if (delBtn) delBtn.style.display = 'inline-block';
+
   const modal = document.getElementById('modal-add-customer');
   if (modal) {
     const title = modal.querySelector('h2');
@@ -6962,6 +7315,15 @@ async function openEditCustomerModal(id) {
   }
   openModal('modal-add-customer');
 }
+
+async function handleModalDeleteCustomer() {
+  const editId = document.getElementById('cust-edit-id')?.value;
+  const name = document.getElementById('cust-name')?.value?.trim();
+  if (!editId) return;
+  closeModal('modal-add-customer');
+  await deleteCustomerItem(editId, encodeURIComponent(name || 'this customer'));
+}
+window.handleModalDeleteCustomer = handleModalDeleteCustomer;
 
 async function submitNewCustomerForm() {
   const editId = document.getElementById('cust-edit-id')?.value;
@@ -7105,6 +7467,9 @@ async function openNewSupplierModal() {
   if (typeEl) typeEl.value = 'International Supplier';
   handleSupplierTypeChanged('International Supplier');
 
+  const delBtn = document.getElementById('btn-delete-supplier-modal');
+  if (delBtn) delBtn.style.display = 'none';
+
   const modal = document.getElementById('modal-add-supplier');
   if (modal) {
     const title = modal.querySelector('h2');
@@ -7139,6 +7504,9 @@ async function openEditSupplierModal(id) {
   document.getElementById('sup-categories').value = s.product_categories || '';
   document.getElementById('sup-notes').value = s.notes || '';
 
+  const delBtn = document.getElementById('btn-delete-supplier-modal');
+  if (delBtn) delBtn.style.display = 'inline-block';
+
   const modal = document.getElementById('modal-add-supplier');
   if (modal) {
     const title = modal.querySelector('h2');
@@ -7146,6 +7514,15 @@ async function openEditSupplierModal(id) {
   }
   openModal('modal-add-supplier');
 }
+
+async function handleModalDeleteSupplier() {
+  const editId = document.getElementById('sup-edit-id')?.value;
+  const name = document.getElementById('sup-name')?.value?.trim();
+  if (!editId) return;
+  closeModal('modal-add-supplier');
+  await deleteSupplierItem(editId, encodeURIComponent(name || 'this supplier'));
+}
+window.handleModalDeleteSupplier = handleModalDeleteSupplier;
 
 async function submitNewSupplierForm() {
   const editId = document.getElementById('sup-edit-id')?.value;
@@ -7347,14 +7724,20 @@ function onHsCodeInput(val) {
   }
 }
 
+function setAdminClientFilter(tenantId) {
+  window._adminSelectedClientFilter = tenantId;
+  renderActiveView();
+}
+window.setAdminClientFilter = setAdminClientFilter;
+
 async function openNewProductModal() {
   const form = document.getElementById('form-add-product');
   if (form) form.reset();
 
   const suppliers = await API.getSuppliers();
-  const supSelect = document.getElementById('prod-supplier-select');
+  const supSelect = document.getElementById('prod-supplier');
   if (supSelect) {
-    supSelect.innerHTML = `<option value="">-- Select Preferred Supplier --</option>` + suppliers.map(s => `
+    supSelect.innerHTML = `<option value="">— None (Open Sourcing) —</option>` + suppliers.map(s => `
       <option value="${s.id}">${s.supplier_name} (${s.country || 'Pakistan'})</option>
     `).join('');
   }
@@ -7373,20 +7756,27 @@ async function openNewProductModal() {
   if (typeEl) typeEl.value = 'Product';
   const unitEl = document.getElementById('prod-unit');
   if (unitEl) unitEl.value = 'PCS';
+  const batchEl = document.getElementById('prod-batch-no');
+  if (batchEl) batchEl.value = '';
   const hsEl = document.getElementById('prod-hs-code');
   if (hsEl) hsEl.value = '';
-  const countryEl = document.getElementById('prod-country');
-  if (countryEl) countryEl.value = 'Pakistan';
+  const taxEl = document.getElementById('prod-tax-cat');
+  if (taxEl) taxEl.value = '18% Standard Sales Tax';
+  const stockEl = document.getElementById('prod-current-stock');
+  if (stockEl) stockEl.value = '0';
   const reorderEl = document.getElementById('prod-reorder-level');
-  if (reorderEl) reorderEl.value = '10';
-  const currEl = document.getElementById('prod-currency');
-  if (currEl) currEl.value = 'PKR';
-  const costEl = document.getElementById('prod-cost-pkr');
+  if (reorderEl) reorderEl.value = '5';
+  const costEl = document.getElementById('prod-cost-price');
   if (costEl) costEl.value = '';
   const sellEl = document.getElementById('prod-selling-price');
   if (sellEl) sellEl.value = '';
+  const expEl = document.getElementById('prod-expiry-date');
+  if (expEl) expEl.value = '';
   const descEl = document.getElementById('prod-description');
   if (descEl) descEl.value = '';
+
+  const delBtn = document.getElementById('btn-delete-product-modal');
+  if (delBtn) delBtn.style.display = 'none';
 
   const modal = document.getElementById('modal-add-product');
   if (modal) {
@@ -7401,12 +7791,12 @@ async function openNewProductModal() {
 async function openEditProductModal(id) {
   const products = await API.getProducts();
   const suppliers = await API.getSuppliers();
-  const p = products.find(item => item.id === id);
+  const p = products.find(item => String(item.id) === String(id));
   if (!p) return;
 
-  const supSelect = document.getElementById('prod-supplier-select');
+  const supSelect = document.getElementById('prod-supplier');
   if (supSelect) {
-    supSelect.innerHTML = `<option value="">-- Select Preferred Supplier --</option>` + suppliers.map(s => `
+    supSelect.innerHTML = `<option value="">— None (Open Sourcing) —</option>` + suppliers.map(s => `
       <option value="${s.id}" ${(s.id === p.default_supplier_id || s.id === p.supplier_id) ? 'selected' : ''}>
         ${s.supplier_name} (${s.country || 'Pakistan'})
       </option>
@@ -7420,13 +7810,27 @@ async function openEditProductModal(id) {
   if (specEl) specEl.value = p.specifications || p.spec || '';
   document.getElementById('prod-type').value = p.item_type || 'Product';
   document.getElementById('prod-unit').value = p.unit || 'PCS';
-  document.getElementById('prod-hs-code').value = p.hs_code || '';
-  document.getElementById('prod-country').value = p.country_of_origin || 'Pakistan';
-  document.getElementById('prod-reorder-level').value = p.reorder_level || 10;
-  document.getElementById('prod-currency').value = p.currency || 'PKR';
-  document.getElementById('prod-cost-pkr').value = p.cost_price ? Number(p.cost_price).toLocaleString() : '';
-  document.getElementById('prod-selling-price').value = p.selling_price ? Number(p.selling_price).toLocaleString() : '';
-  document.getElementById('prod-description').value = p.description || '';
+  const batchEl = document.getElementById('prod-batch-no');
+  if (batchEl) batchEl.value = p.batch_number || p.batch_no || '';
+  const hsEl = document.getElementById('prod-hs-code');
+  if (hsEl) hsEl.value = p.hs_code || '';
+  const taxEl = document.getElementById('prod-tax-cat');
+  if (taxEl) taxEl.value = p.tax_category || '18% Standard Sales Tax';
+  const stockEl = document.getElementById('prod-current-stock');
+  if (stockEl) stockEl.value = (p.current_stock !== undefined && p.current_stock !== null) ? p.current_stock : 0;
+  const reorderEl = document.getElementById('prod-reorder-level');
+  if (reorderEl) reorderEl.value = (p.reorder_level !== undefined && p.reorder_level !== null) ? p.reorder_level : 5;
+  const costEl = document.getElementById('prod-cost-price');
+  if (costEl) costEl.value = p.cost_price ? Number(p.cost_price) : '';
+  const sellEl = document.getElementById('prod-selling-price');
+  if (sellEl) sellEl.value = p.selling_price ? Number(p.selling_price) : '';
+  const expEl = document.getElementById('prod-expiry-date');
+  if (expEl) expEl.value = p.expiry_date || '';
+  const descEl = document.getElementById('prod-description');
+  if (descEl) descEl.value = p.description || '';
+
+  const delBtn = document.getElementById('btn-delete-product-modal');
+  if (delBtn) delBtn.style.display = 'inline-block';
 
   const modal = document.getElementById('modal-add-product');
   if (modal) {
@@ -7438,23 +7842,34 @@ async function openEditProductModal(id) {
   openModal('modal-add-product');
 }
 
+async function handleModalDeleteProduct() {
+  const editId = document.getElementById('prod-edit-id')?.value;
+  const name = document.getElementById('prod-name')?.value?.trim();
+  if (!editId) return;
+  closeModal('modal-add-product');
+  await deleteProductItem(editId, encodeURIComponent(name || 'this item'));
+}
+window.handleModalDeleteProduct = handleModalDeleteProduct;
+
 async function submitNewProductForm() {
   const editId = document.getElementById('prod-edit-id')?.value;
   const sku = document.getElementById('prod-sku')?.value?.trim();
   const name = document.getElementById('prod-name')?.value?.trim();
   const spec = document.getElementById('prod-spec')?.value?.trim() || '';
-  const type = document.getElementById('prod-type')?.value;
+  const type = document.getElementById('prod-type')?.value || 'Product';
   const unit = document.getElementById('prod-unit')?.value?.trim() || 'PCS';
-  const hsCode = document.getElementById('prod-hs-code')?.value?.trim();
-  const country = document.getElementById('prod-country')?.value;
-  const supplierId = document.getElementById('prod-supplier-select')?.value;
-  const reorder = document.getElementById('prod-reorder-level')?.value;
-  const currency = document.getElementById('prod-currency')?.value;
-  const cost = parseCurrency(document.getElementById('prod-cost-pkr')?.value);
-  const price = parseCurrency(document.getElementById('prod-selling-price')?.value);
-  const desc = document.getElementById('prod-description')?.value?.trim();
+  const batchNo = document.getElementById('prod-batch-no')?.value?.trim() || '';
+  const hsCode = document.getElementById('prod-hs-code')?.value?.trim() || '';
+  const taxCat = document.getElementById('prod-tax-cat')?.value || '18% Standard Sales Tax';
+  const supplierId = document.getElementById('prod-supplier')?.value || null;
+  const currentStock = parseFloat(document.getElementById('prod-current-stock')?.value || 0);
+  const reorder = parseFloat(document.getElementById('prod-reorder-level')?.value || 5);
+  const cost = parseFloat(document.getElementById('prod-cost-price')?.value || 0);
+  const price = parseFloat(document.getElementById('prod-selling-price')?.value || 0);
+  const expDate = document.getElementById('prod-expiry-date')?.value || null;
+  const desc = document.getElementById('prod-description')?.value?.trim() || '';
 
-  if (!sku || !name || !cost) {
+  if (!sku || !name || isNaN(cost)) {
     alert('SKU, Item Name, and Landed Cost Price are mandatory.');
     return;
   }
@@ -7466,16 +7881,16 @@ async function submitNewProductForm() {
   }
 
   try {
-    // Pre-flight duplicate check
+    // Pre-flight duplicate check (skip self if editing)
     const existing = await API.getProducts();
     const isDup = existing.some(p => 
-      (p.sku?.toLowerCase().trim() === sku.toLowerCase() && String(p.id) !== String(editId || '')) ||
-      (p.name?.toLowerCase().trim() === name.toLowerCase() && 
-       (p.specifications || p.description || '').toLowerCase().trim() === spec.toLowerCase() && 
-       String(p.id) !== String(editId || ''))
+      String(p.id) !== String(editId || '') && (
+        (p.sku && sku && p.sku.toLowerCase().trim() === sku.toLowerCase().trim()) ||
+        (p.name && name && p.name.toLowerCase().trim() === name.toLowerCase().trim() && (p.specifications || '') === spec)
+      )
     );
     if (isDup) {
-      alert(`⚠️ Duplicate Product Error:\nAn item with SKU "${sku}" or name "${name}" (${spec}) is already registered in your catalog.`);
+      alert(`⚠️ Duplicate Product Error:\nAn item with SKU "${sku}" or name "${name}" is already registered in your catalog.`);
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
@@ -7489,21 +7904,24 @@ async function submitNewProductForm() {
       specifications: spec,
       item_type: type,
       unit: unit,
+      batch_number: batchNo,
+      batch_no: batchNo,
       hs_code: hsCode,
-      country_of_origin: country,
-      default_supplier_id: supplierId || null,
-      reorder_level: parseFloat(reorder || 10),
-      currency: currency,
+      tax_category: taxCat,
+      default_supplier_id: supplierId,
+      current_stock: currentStock,
+      reorder_level: reorder,
       cost_price: cost,
       selling_price: price || cost,
+      expiry_date: expDate,
       description: desc
     };
 
     let created = null;
     if (editId) {
-      await API.updateEntity('product', editId, payload);
-      created = { id: editId, ...payload };
-      showToast('✓ Master Product SKU updated.', 'success');
+      const res = await API.updateProduct(editId, payload);
+      created = (res && res.data) ? res.data : { id: editId, ...payload };
+      showToast('✓ Master Product SKU updated successfully.', 'success');
     } else {
       const res = await API.createProduct(payload);
       if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
@@ -7528,6 +7946,62 @@ async function submitNewProductForm() {
       submitBtn.disabled = false;
       submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
     }
+  }
+}
+
+async function deleteProductItem(id, encodedName) {
+  const name = decodeURIComponent(encodedName || 'this item');
+  if (!confirm(`Are you sure you want to delete "${name}" from the product catalog?`)) {
+    return;
+  }
+  try {
+    await API.deleteProduct(id);
+    showToast(`✓ "${name}" deleted from catalog.`, 'success');
+    await renderActiveView();
+  } catch (err) {
+    alert(`Error deleting item: ${err.message}`);
+  }
+}
+
+async function deleteCustomerItem(id, encodedName) {
+  const name = decodeURIComponent(encodedName || 'this customer');
+  if (!confirm(`Are you sure you want to delete customer "${name}"?`)) {
+    return;
+  }
+  try {
+    await API.deleteCustomer(id);
+    showToast(`✓ Customer "${name}" deleted.`, 'success');
+    await renderActiveView();
+  } catch (err) {
+    alert(`Error deleting customer: ${err.message}`);
+  }
+}
+
+async function deleteSupplierItem(id, encodedName) {
+  const name = decodeURIComponent(encodedName || 'this supplier');
+  if (!confirm(`Are you sure you want to delete supplier "${name}"?`)) {
+    return;
+  }
+  try {
+    await API.deleteSupplier(id);
+    showToast(`✓ Supplier "${name}" deleted.`, 'success');
+    await renderActiveView();
+  } catch (err) {
+    alert(`Error deleting supplier: ${err.message}`);
+  }
+}
+
+async function handleDeleteOpportunity(id, encodedName) {
+  const name = decodeURIComponent(encodedName || 'this tender');
+  if (!confirm(`Are you sure you want to delete tender "${name}"? This will also remove associated line items and bid securities.`)) {
+    return;
+  }
+  try {
+    await API.deleteOpportunity(id);
+    showToast(`✓ Tender "${name}" deleted successfully.`, 'success');
+    await renderActiveView();
+  } catch (err) {
+    alert(`Error deleting tender: ${err.message}`);
   }
 }
 
@@ -8832,10 +9306,11 @@ async function submitCreateUserForm() {
       renderDynamicSidebarNavigation();
     } else {
       // Create mode: Check duplicates & register
-      const existingUsers = State.getStoredUsers ? State.getStoredUsers() : [];
+      const userRes = await API.getUsersWithStats();
+      const existingUsers = (userRes && userRes.data) ? userRes.data : (State.getStoredUsers ? State.getStoredUsers() : []);
       const isDup = existingUsers.some(u => 
-        (effectiveUsername && u.username && u.username.toLowerCase() === effectiveUsername) ||
-        (effectiveEmail && u.email && u.email.toLowerCase() === effectiveEmail)
+        (effectiveUsername && u.username && u.username.toLowerCase().trim() === effectiveUsername.toLowerCase().trim()) ||
+        (effectiveEmail && u.email && u.email.toLowerCase().trim() === effectiveEmail.toLowerCase().trim())
       );
       if (isDup) {
         alert(`⚠️ Duplicate User Error:\nA user with username "${effectiveUsername}" ${effectiveEmail ? `or email "${effectiveEmail}"` : ''} is already registered.`);

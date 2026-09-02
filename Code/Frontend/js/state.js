@@ -215,13 +215,20 @@ const State = {
   saveTenantEntity(entityKey, record, tenantId) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 'system';
     const list = this.getTenantEntityList(entityKey, tid);
-    const existingIdx = list.findIndex(item => item.id === record.id);
+    const existingIdx = list.findIndex(item => String(item.id) === String(record.id));
     if (existingIdx >= 0) {
       list[existingIdx] = { ...list[existingIdx], ...record };
     } else {
       list.unshift(record);
     }
     localStorage.setItem(`mashrue_data_${tid}_${entityKey}`, JSON.stringify(list));
+  },
+
+  deleteTenantEntity(entityKey, id, tenantId) {
+    const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 'system';
+    const list = this.getTenantEntityList(entityKey, tid);
+    const filtered = list.filter(item => String(item.id) !== String(id));
+    localStorage.setItem(`mashrue_data_${tid}_${entityKey}`, JSON.stringify(filtered));
   },
 
   // --------------------------------------------------------------------------
@@ -279,32 +286,57 @@ const State = {
 
   getTenantSubscription(tenantId) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 't1';
+    const curTenant = this.currentUser?.tenant;
+
+    let trialDays = 15;
+    const trialPeriodStr = curTenant?.trialPeriod || curTenant?.trial_period || '15 Days';
+    if (trialPeriodStr === '1 Month') trialDays = 30;
+    else if (trialPeriodStr === '2 Months') trialDays = 60;
+    else if (trialPeriodStr === '3 Months') trialDays = 90;
+
+    const now = new Date();
+    const trialEnd = (curTenant?.trialEndsAt || curTenant?.trial_ends_at)
+      ? new Date(curTenant.trialEndsAt || curTenant.trial_ends_at)
+      : new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+
     const raw = localStorage.getItem(`mashrue_sub_${tid}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Ensure canonical quotas exist for trial / Starter
+      // Sync limits from live tenant context
+      if (curTenant) {
+        if (curTenant.freeCompanyLimit || curTenant.free_business_profile_limit) {
+          parsed.free_companies_limit = curTenant.freeCompanyLimit || curTenant.free_business_profile_limit;
+        }
+        if (curTenant.freeEmployeeLimit || curTenant.free_employee_limit) {
+          parsed.free_users_limit = curTenant.freeEmployeeLimit || curTenant.free_employee_limit;
+        }
+        if (curTenant.trialPeriod || curTenant.trial_period) {
+          parsed.trial_period = curTenant.trialPeriod || curTenant.trial_period;
+          parsed.trial_days = trialDays;
+        }
+        if (curTenant.trialEndsAt || curTenant.trial_ends_at) {
+          parsed.trial_end_date = new Date(curTenant.trialEndsAt || curTenant.trial_ends_at).toISOString().split('T')[0];
+        }
+      }
       if (parsed.trial_tender_limit === undefined) parsed.trial_tender_limit = 5;
       if (parsed.trial_bid_security_limit === undefined) parsed.trial_bid_security_limit = 3;
       return parsed;
     }
 
-    // Default 15-Day Free Trial Setup for newly provisioned tenants
-    const now = new Date();
-    const trialEnd = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000); // 15 Days default trial
-
     const defaultSub = {
       tenant_id: tid,
-      plan_type: 'Advance', // Default feature tier during trial is full Advance access
-      status: 'Trial', // 'Trial', 'Active', 'PendingPayment', 'Suspended'
+      plan_type: curTenant?.subscriptionPlan || curTenant?.subscription_plan || 'Advance',
+      status: 'Trial',
       is_trial: true,
-      trial_days: 15,
+      trial_days: trialDays,
+      trial_period: trialPeriodStr,
       trial_start_date: now.toISOString().split('T')[0],
       trial_end_date: trialEnd.toISOString().split('T')[0],
       current_period_start: now.toISOString().split('T')[0],
       current_period_end: trialEnd.toISOString().split('T')[0],
-      billing_cycle: 'monthly', // 'monthly', 'quarterly', 'bi_annually', 'annually'
-      free_companies_limit: 2,
-      free_users_limit: 3,
+      billing_cycle: 'monthly',
+      free_companies_limit: curTenant?.freeCompanyLimit || curTenant?.free_business_profile_limit || 2,
+      free_users_limit: curTenant?.freeEmployeeLimit || curTenant?.free_employee_limit || 3,
       custom_base_price: 35000,
       custom_extra_company_price: 2500,
       custom_extra_seat_price: 1500,

@@ -15,8 +15,8 @@ const getSuperAdminConfig = () => ({
 async function autoSeedSuperAdmin() {
   const config = getSuperAdminConfig();
 
+  // 1. Ensure migrations for users, tenants & business_profiles tables run seamlessly
   try {
-    // 1. Ensure migrations for users, tenants & business_profiles tables run seamlessly
     await db.query(`
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_business_profile_limit INT DEFAULT 2;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_profile_monthly_fee NUMERIC(10, 2) DEFAULT 2500.00;
@@ -43,7 +43,11 @@ async function autoSeedSuperAdmin() {
       CREATE INDEX IF NOT EXISTS idx_uba_user ON user_business_access(user_id);
       CREATE INDEX IF NOT EXISTS idx_uba_biz ON user_business_access(business_profile_id);
     `);
+  } catch (migErr) {
+    console.warn('⚠️ [AutoSeed] Migration notice (non-fatal):', migErr.message);
+  }
 
+  try {
     // 2. Check if Super Admin user already exists by role, username, or email
     const checkRes = await db.query(
       `SELECT id, username, email, role FROM users WHERE LOWER(username) = $1 OR (email IS NOT NULL AND LOWER(email) = $2) OR role = 'SuperAdmin' LIMIT 1`,

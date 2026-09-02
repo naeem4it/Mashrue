@@ -16,11 +16,10 @@ router.get('/', optionalAuth, async (req, res) => {
              t.company_name as tenant_company_name,
              t.free_business_profile_limit,
              t.additional_profile_monthly_fee,
-             COALESCE(u_created.full_name, u_primary.full_name, 'System') as creator_name,
-             COALESCE(u_created.username, u_primary.username, 'admin') as creator_username
+             COALESCE(u_primary.full_name, 'System') as creator_name,
+             COALESCE(u_primary.username, 'admin') as creator_username
       FROM business_profiles bp
       JOIN tenants t ON bp.tenant_id = t.id
-      LEFT JOIN users u_created ON bp.created_by = u_created.id
       LEFT JOIN LATERAL (
         SELECT u2.id, u2.username, u2.full_name 
         FROM users u2 
@@ -145,30 +144,57 @@ router.post('/', authenticate, async (req, res) => {
       };
     }
 
-    const result = await db.query(
-      `INSERT INTO business_profiles 
-       (tenant_id, business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-       RETURNING *`,
-      [
-        tenantId,
-        business_name,
-        legal_name,
-        abbreviation || null,
-        cleanNtn || null,
-        cleanStrn || null,
-        cnic || null,
-        address || null,
-        city || 'Lahore',
-        email || null,
-        phone || null,
-        Boolean(fbr_enabled),
-        invoice_prefix || 'INV',
-        po_prefix || 'PO',
-        dc_prefix || 'DC',
-        req.user.id
-      ]
-    );
+    let result;
+    try {
+      result = await db.query(
+        `INSERT INTO business_profiles 
+         (tenant_id, business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         RETURNING *`,
+        [
+          tenantId,
+          business_name,
+          legal_name,
+          abbreviation || null,
+          cleanNtn || null,
+          cleanStrn || null,
+          cnic || null,
+          address || null,
+          city || 'Lahore',
+          email || null,
+          phone || null,
+          Boolean(fbr_enabled),
+          invoice_prefix || 'INV',
+          po_prefix || 'PO',
+          dc_prefix || 'DC',
+          req.user.id
+        ]
+      );
+    } catch (insertColErr) {
+      result = await db.query(
+        `INSERT INTO business_profiles 
+         (tenant_id, business_name, legal_name, abbreviation, ntn, strn, cnic, address, city, email, phone, fbr_enabled, invoice_prefix, po_prefix, dc_prefix)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         RETURNING *`,
+        [
+          tenantId,
+          business_name,
+          legal_name,
+          abbreviation || null,
+          cleanNtn || null,
+          cleanStrn || null,
+          cnic || null,
+          address || null,
+          city || 'Lahore',
+          email || null,
+          phone || null,
+          Boolean(fbr_enabled),
+          invoice_prefix || 'INV',
+          po_prefix || 'PO',
+          dc_prefix || 'DC'
+        ]
+      );
+    }
 
     const createdProfile = result.rows[0];
 

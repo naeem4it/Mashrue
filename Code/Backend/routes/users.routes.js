@@ -38,11 +38,11 @@ router.get('/', authenticate, async (req, res) => {
 
     // Enforce Tenant Isolation
     if (req.user.role !== 'SuperAdmin') {
-      params.push(req.user.tenantId);
-      queryText += ` AND u.tenant_id = $${params.length}`;
+      params.push(req.user.tenantId || req.user.id);
+      queryText += ` AND (u.tenant_id::text = $${params.length}::text OR u.tenant_id = (SELECT tenant_id FROM users WHERE id::text = $${params.length}::text))`;
     } else if (tenant_id && tenant_id !== 'all') {
       params.push(tenant_id);
-      queryText += ` AND u.tenant_id = $${params.length}`;
+      queryText += ` AND u.tenant_id::text = $${params.length}::text`;
     }
 
     queryText += `
@@ -52,24 +52,68 @@ router.get('/', authenticate, async (req, res) => {
       ORDER BY u.created_at DESC
     `;
 
-    const result = await db.query(queryText, params);
+    let result;
+    try {
+      result = await db.query(queryText, params);
+    } catch (colErr) {
+      if (colErr.code === '42703') {
+        let fallbackQuery = `
+          SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
+                 u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at,
+                 NULL::uuid as created_by,
+                 'System' as creator_username, 'System' as creator_name,
+                 t.company_name as tenant_name,
+                 COALESCE(
+                   json_agg(
+                     json_build_object('id', bp.id, 'name', bp.business_name, 'legal_name', bp.legal_name, 'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled)
+                   ) FILTER (WHERE bp.id IS NOT NULL),
+                   '[]'
+                 ) as business_access
+          FROM users u
+          LEFT JOIN tenants t ON u.tenant_id = t.id
+          LEFT JOIN user_business_access uba ON u.id = uba.user_id
+          LEFT JOIN business_profiles bp ON uba.business_profile_id = bp.id
+          WHERE 1=1
+        `;
+        if (req.user.role !== 'SuperAdmin') {
+          fallbackQuery += ` AND (u.tenant_id::text = $1::text OR u.tenant_id = (SELECT tenant_id FROM users WHERE id::text = $1::text))`;
+        } else if (tenant_id && tenant_id !== 'all') {
+          fallbackQuery += ` AND u.tenant_id::text = $1::text`;
+        }
+        fallbackQuery += `
+          GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
+                   u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at,
+                   t.company_name
+          ORDER BY u.created_at DESC
+        `;
+        result = await db.query(fallbackQuery, params);
+      } else {
+        throw colErr;
+      }
+    }
 
     // Calculate tenant seat stats
     let seatStats = null;
-    if (req.user.tenantId) {
+    if (req.user.tenantId || req.user.role !== 'SuperAdmin') {
       const tenantRes = await db.query(
-        `SELECT free_employee_limit, additional_employee_monthly_fee FROM tenants WHERE id = $1`,
-        [req.user.tenantId]
+        `SELECT free_employee_limit, free_business_profile_limit, additional_employee_monthly_fee, trial_period, trial_ends_at 
+         FROM tenants 
+         WHERE id::text = $1::text OR id = (SELECT tenant_id FROM users WHERE id::text = $1::text)`,
+        [String(req.user.tenantId || req.user.id)]
       );
       const limit = tenantRes.rows[0]?.free_employee_limit || 2;
+      const compLimit = tenantRes.rows[0]?.free_business_profile_limit || 2;
       const fee = tenantRes.rows[0]?.additional_employee_monthly_fee || 1500.00;
       const employeeCount = result.rows.filter(u => u.role === 'ClientEmployee').length;
 
       seatStats = {
         freeLimit: limit,
+        freeCompanyLimit: compLimit,
         usedEmployees: employeeCount,
         paidEmployees: Math.max(0, employeeCount - limit),
         additionalMonthlyFee: fee,
+        trialPeriod: tenantRes.rows[0]?.trial_period || '15 Days',
+        trialEndsAt: tenantRes.rows[0]?.trial_ends_at || null,
         isOverLimit: employeeCount >= limit
       };
     }
@@ -77,26 +121,49 @@ router.get('/', authenticate, async (req, res) => {
     // If Super Admin, fetch list of tenants with their attached companies and users
     let tenantsList = [];
     if (req.user.role === 'SuperAdmin') {
-      const tenantsRes = await db.query(
-        `SELECT t.id, t.company_name, t.subdomain, t.subscription_plan, t.status,
-                t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
-                (SELECT json_agg(json_build_object(
-                   'id', bp.id, 'business_name', bp.business_name, 'legal_name', bp.legal_name,
-                   'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled, 'created_at', bp.created_at
-                )) FROM business_profiles bp WHERE bp.tenant_id = t.id) as companies,
-                (SELECT json_agg(json_build_object(
-                   'id', tu.id, 'username', tu.username, 'full_name', tu.full_name, 'email', tu.email,
-                   'role', tu.role, 'status', tu.status, 'can_see_bidding_prices', tu.can_see_bidding_prices,
-                   'created_by', tu.created_by, 'created_at', tu.created_at
-                )) FROM users tu WHERE tu.tenant_id = t.id) as tenant_users
-         FROM tenants t
-         ORDER BY t.created_at DESC`
-      );
-      tenantsList = tenantsRes.rows.map(t => ({
-        ...t,
-        company_count: (t.companies || []).length,
-        user_count: (t.tenant_users || []).length
-      }));
+      try {
+        const tenantsRes = await db.query(
+          `SELECT t.id, t.company_name, t.subdomain, t.subscription_plan, t.status,
+                  t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
+                  (SELECT json_agg(json_build_object(
+                     'id', bp.id, 'business_name', bp.business_name, 'legal_name', bp.legal_name,
+                     'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled, 'created_at', bp.created_at
+                  )) FROM business_profiles bp WHERE bp.tenant_id = t.id) as companies,
+                  (SELECT json_agg(json_build_object(
+                     'id', tu.id, 'username', tu.username, 'full_name', tu.full_name, 'email', tu.email,
+                     'role', tu.role, 'status', tu.status, 'can_see_bidding_prices', tu.can_see_bidding_prices,
+                     'created_by', tu.created_by, 'created_at', tu.created_at
+                  )) FROM users tu WHERE tu.tenant_id = t.id) as tenant_users
+           FROM tenants t
+           ORDER BY t.created_at DESC`
+        );
+        tenantsList = tenantsRes.rows.map(t => ({
+          ...t,
+          company_count: (t.companies || []).length,
+          user_count: (t.tenant_users || []).length
+        }));
+      } catch (tErr) {
+        const fallbackTenants = await db.query(
+          `SELECT t.id, t.company_name, t.subdomain, t.subscription_plan, t.status,
+                  t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
+                  (SELECT json_agg(json_build_object(
+                     'id', bp.id, 'business_name', bp.business_name, 'legal_name', bp.legal_name,
+                     'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled, 'created_at', bp.created_at
+                  )) FROM business_profiles bp WHERE bp.tenant_id = t.id) as companies,
+                  (SELECT json_agg(json_build_object(
+                     'id', tu.id, 'username', tu.username, 'full_name', tu.full_name, 'email', tu.email,
+                     'role', tu.role, 'status', tu.status, 'can_see_bidding_prices', tu.can_see_bidding_prices,
+                     'created_at', tu.created_at
+                  )) FROM users tu WHERE tu.tenant_id = t.id) as tenant_users
+           FROM tenants t
+           ORDER BY t.created_at DESC`
+        );
+        tenantsList = fallbackTenants.rows.map(t => ({
+          ...t,
+          company_count: (t.companies || []).length,
+          user_count: (t.tenant_users || []).length
+        }));
+      }
     }
 
     res.json({
@@ -387,6 +454,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
         emailSent = emailResult.success;
         if (!emailResult.success) emailError = emailResult.error;
       } catch (e) {
+        emailError = e.message;
+      }
     }
 
     res.status(201).json({
