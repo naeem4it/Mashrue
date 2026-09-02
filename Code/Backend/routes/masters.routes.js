@@ -7,11 +7,13 @@ const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 // CUSTOMERS (Mandatory: Customer Name and Organization Type)
 // ============================================================================
 
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+
 router.get('/customers', optionalAuth, async (req, res) => {
   try {
     let queryText = `
       SELECT c.*, 
-             COALESCE(t.organization_name, 'Default Org') as tenant_name,
+             COALESCE(t.company_name, 'Default Org') as tenant_name,
              u.full_name as client_admin_name,
              u.username as client_admin_username
       FROM customers c
@@ -27,8 +29,11 @@ router.get('/customers', optionalAuth, async (req, res) => {
 
     if (req.user) {
       if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
-        const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+        const tid = isUuid(req.user.tenantId) ? req.user.tenantId : '00000000-0000-0000-0000-000000000000';
         params.push(tid);
+        queryText += ` AND c.tenant_id::text = $${params.length}`;
+      } else if (req.query.tenant_id && req.query.tenant_id !== 'all' && isUuid(req.query.tenant_id)) {
+        params.push(req.query.tenant_id);
         queryText += ` AND c.tenant_id::text = $${params.length}`;
       }
     } else {
@@ -49,26 +54,67 @@ router.get('/customers', optionalAuth, async (req, res) => {
 });
 
 router.post('/customers', optionalAuth, async (req, res) => {
-  const { business_name, org_type, department_name, ntn, strn, contact_person, email, phone, address, city } = req.body;
+  const {
+    customer_code,
+    business_name,
+    customer_type,
+    org_type,
+    department_name,
+    ntn,
+    strn,
+    contact_person,
+    email,
+    phone,
+    address,
+    city,
+    province,
+    country,
+    delivery_address,
+    payment_terms,
+    credit_limit,
+    status,
+    bank_name,
+    bank_iban,
+    notes,
+    workflow_gates,
+    tenant_id
+  } = req.body;
   
-  if (!business_name || !org_type) {
+  if (!business_name || !business_name.trim()) {
     return res.status(400).json({
       success: false,
-      message: 'Validation Error: Customer Name and Organization Type are mandatory.'
+      message: 'Validation Error: Customer / Organization Name is mandatory.'
     });
   }
 
   try {
-    let tenantId = req.user?.tenantId;
-    if (!tenantId) {
-      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
-      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    let resolvedTenantId = null;
+    if (isUuid(tenant_id)) {
+      resolvedTenantId = tenant_id;
+    }
+    if (!resolvedTenantId && isUuid(req.user?.tenantId)) {
+      resolvedTenantId = req.user.tenantId;
+    }
+    const headerTid = req.headers['x-tenant-id'];
+    if (!resolvedTenantId && isUuid(headerTid)) {
+      resolvedTenantId = headerTid;
+    }
+    if (!resolvedTenantId) {
+      try {
+        const tenantRes = await db.query(`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`);
+        if (tenantRes.rows.length > 0) {
+          resolvedTenantId = tenantRes.rows[0].id;
+        }
+      } catch (e) {}
+    }
+    if (!resolvedTenantId) {
+      resolvedTenantId = 'a0000000-0000-0000-0000-000000000001';
     }
 
-    // Strict duplicate customer check
+    // Strict duplicate customer check within tenant
     const dupCheck = await db.query(
-      `SELECT id FROM customers WHERE LOWER(business_name) = LOWER($1) AND tenant_id = $2`,
-      [business_name.trim(), tenantId]
+      `SELECT id FROM customers WHERE LOWER(TRIM(business_name)) = LOWER(TRIM($1)) AND tenant_id = $2`,
+      [business_name.trim(), resolvedTenantId]
     );
     if (dupCheck.rows.length > 0) {
       return res.status(409).json({
@@ -77,25 +123,67 @@ router.post('/customers', optionalAuth, async (req, res) => {
       });
     }
 
-    const result = await db.query(
-      `INSERT INTO customers 
-       (tenant_id, business_name, org_type, department_name, ntn, strn, contact_person, email, phone, address, city)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
-       RETURNING *`,
-      [
-        tenantId,
-        business_name.trim(),
-        org_type || 'Government',
-        department_name || null,
-        ntn || null,
-        strn || null,
-        contact_person || null,
-        email || null,
-        phone || null,
-        address || null,
-        city || 'Lahore'
-      ]
-    );
+    const cCode = customer_code || ('CUST-' + Math.floor(1000 + Math.random() * 9000));
+    const cType = customer_type || org_type || 'Government Department';
+    const cOrgType = org_type || customer_type || 'Government Department';
+    const cCity = city || 'Lahore';
+    const cProvince = province || 'Punjab';
+    const cCountry = country || 'Pakistan';
+    const cTerms = payment_terms || 'Net 30';
+    const cLimit = parseFloat(credit_limit || 0) || 0;
+    const cStatus = status || 'Active';
+    const cGates = workflow_gates ? (typeof workflow_gates === 'object' ? JSON.stringify(workflow_gates) : workflow_gates) : null;
+
+    // Dynamically query available columns on customers to avoid any column missing crash
+    let cols = new Set();
+    try {
+      const colRes = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'customers'`);
+      cols = new Set(colRes.rows.map(r => r.column_name));
+    } catch (colErr) {
+      cols = new Set(['tenant_id', 'customer_code', 'business_name', 'customer_type', 'city', 'country']);
+    }
+
+    const candidateFields = {
+      tenant_id: resolvedTenantId,
+      customer_code: cCode,
+      business_name: business_name.trim(),
+      customer_type: cType,
+      org_type: cOrgType,
+      department_name: department_name || null,
+      ntn: ntn || null,
+      strn: strn || null,
+      contact_person: contact_person || null,
+      email: email || null,
+      phone: phone || null,
+      address: address || null,
+      city: cCity,
+      province: cProvince,
+      country: cCountry,
+      delivery_address: delivery_address || null,
+      payment_terms: cTerms,
+      credit_limit: cLimit,
+      status: cStatus,
+      bank_name: bank_name || null,
+      bank_iban: bank_iban || null,
+      notes: notes || null,
+      workflow_gates: cGates
+    };
+
+    const insertCols = [];
+    const insertVals = [];
+    const insertPlaceholders = [];
+    let pIdx = 1;
+
+    for (const [colName, val] of Object.entries(candidateFields)) {
+      if (cols.has(colName)) {
+        insertCols.push(colName);
+        insertVals.push(val);
+        insertPlaceholders.push(`$${pIdx++}`);
+      }
+    }
+
+    const insertSql = `INSERT INTO customers (${insertCols.join(', ')}) VALUES (${insertPlaceholders.join(', ')}) RETURNING *`;
+    const result = await db.query(insertSql, insertVals);
     res.status(201).json({ success: true, data: result.rows[0], message: 'Customer registered successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -110,7 +198,7 @@ router.get('/suppliers', optionalAuth, async (req, res) => {
   try {
     let queryText = `
       SELECT s.*,
-             COALESCE(t.organization_name, 'Default Org') as tenant_name,
+             COALESCE(t.company_name, 'Default Org') as tenant_name,
              u.full_name as client_admin_name,
              u.username as client_admin_username
       FROM suppliers s
@@ -126,8 +214,11 @@ router.get('/suppliers', optionalAuth, async (req, res) => {
 
     if (req.user) {
       if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
-        const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+        const tid = isUuid(req.user.tenantId) ? req.user.tenantId : '00000000-0000-0000-0000-000000000000';
         params.push(tid);
+        queryText += ` AND s.tenant_id::text = $${params.length}`;
+      } else if (req.query.tenant_id && req.query.tenant_id !== 'all' && isUuid(req.query.tenant_id)) {
+        params.push(req.query.tenant_id);
         queryText += ` AND s.tenant_id::text = $${params.length}`;
       }
     } else {
@@ -148,23 +239,40 @@ router.get('/suppliers', optionalAuth, async (req, res) => {
 });
 
 router.post('/suppliers', optionalAuth, async (req, res) => {
-  const { supplier_name, origin, country, city, address, ntn, strn, contact_person, email, phone, rating, payment_terms } = req.body;
+  const { supplier_name, origin, country, city, address, ntn, strn, contact_person, email, phone, rating, payment_terms, tenant_id } = req.body;
   
   if (!supplier_name) {
     return res.status(400).json({ success: false, message: 'Supplier Name is mandatory' });
   }
 
   try {
-    let tenantId = req.user?.tenantId;
-    if (!tenantId) {
-      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
-      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    let resolvedTenantId = null;
+    if (isUuid(tenant_id)) {
+      resolvedTenantId = tenant_id;
+    }
+    if (!resolvedTenantId && isUuid(req.user?.tenantId)) {
+      resolvedTenantId = req.user.tenantId;
+    }
+    const headerTid = req.headers['x-tenant-id'];
+    if (!resolvedTenantId && isUuid(headerTid)) {
+      resolvedTenantId = headerTid;
+    }
+    if (!resolvedTenantId) {
+      try {
+        const tenantRes = await db.query(`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`);
+        if (tenantRes.rows.length > 0) {
+          resolvedTenantId = tenantRes.rows[0].id;
+        }
+      } catch (e) {}
+    }
+    if (!resolvedTenantId) {
+      resolvedTenantId = 'a0000000-0000-0000-0000-000000000001';
     }
 
     // Strict duplicate supplier check
     const dupCheck = await db.query(
-      `SELECT id FROM suppliers WHERE LOWER(supplier_name) = LOWER($1) AND tenant_id = $2`,
-      [supplier_name.trim(), tenantId]
+      `SELECT id FROM suppliers WHERE LOWER(TRIM(supplier_name)) = LOWER(TRIM($1)) AND tenant_id = $2`,
+      [supplier_name.trim(), resolvedTenantId]
     );
     if (dupCheck.rows.length > 0) {
       return res.status(409).json({
@@ -179,7 +287,7 @@ router.post('/suppliers', optionalAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
        RETURNING *`,
       [
-        tenantId,
+        resolvedTenantId,
         supplier_name.trim(),
         origin || 'Local',
         country || 'Pakistan',
@@ -208,7 +316,7 @@ router.get('/products', optionalAuth, async (req, res) => {
   try {
     let queryText = `
       SELECT p.*, s.supplier_name, s.origin as supplier_origin,
-             COALESCE(t.organization_name, 'Default Org') as tenant_name,
+             COALESCE(t.company_name, 'Default Org') as tenant_name,
              u.full_name as client_admin_name,
              u.username as client_admin_username
       FROM products_services p
@@ -225,8 +333,11 @@ router.get('/products', optionalAuth, async (req, res) => {
 
     if (req.user) {
       if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
-        const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+        const tid = isUuid(req.user.tenantId) ? req.user.tenantId : '00000000-0000-0000-0000-000000000000';
         params.push(tid);
+        queryText += ` AND p.tenant_id::text = $${params.length}`;
+      } else if (req.query.tenant_id && req.query.tenant_id !== 'all' && isUuid(req.query.tenant_id)) {
+        params.push(req.query.tenant_id);
         queryText += ` AND p.tenant_id::text = $${params.length}`;
       }
     } else {
@@ -252,17 +363,34 @@ router.get('/products', optionalAuth, async (req, res) => {
 });
 
 router.post('/products', optionalAuth, async (req, res) => {
-  const { item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id } = req.body;
+  const { item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id, tenant_id } = req.body;
   
   if (!name) {
     return res.status(400).json({ success: false, message: 'Product/Item name is mandatory' });
   }
 
   try {
-    let tenantId = req.user?.tenantId;
-    if (!tenantId) {
-      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
-      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    let resolvedTenantId = null;
+    if (isUuid(tenant_id)) {
+      resolvedTenantId = tenant_id;
+    }
+    if (!resolvedTenantId && isUuid(req.user?.tenantId)) {
+      resolvedTenantId = req.user.tenantId;
+    }
+    const headerTid = req.headers['x-tenant-id'];
+    if (!resolvedTenantId && isUuid(headerTid)) {
+      resolvedTenantId = headerTid;
+    }
+    if (!resolvedTenantId) {
+      try {
+        const tenantRes = await db.query(`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`);
+        if (tenantRes.rows.length > 0) {
+          resolvedTenantId = tenantRes.rows[0].id;
+        }
+      } catch (e) {}
+    }
+    if (!resolvedTenantId) {
+      resolvedTenantId = 'a0000000-0000-0000-0000-000000000001';
     }
 
     const effectiveSku = (sku || `SKU-${Date.now().toString().slice(-6)}`).trim();
@@ -272,7 +400,7 @@ router.post('/products', optionalAuth, async (req, res) => {
       `SELECT id FROM products_services 
        WHERE (LOWER(sku) = LOWER($1) OR (LOWER(name) = LOWER($2) AND LOWER(COALESCE(description, '')) = LOWER($3))) 
          AND tenant_id = $4`,
-      [effectiveSku, name.trim(), (description || '').trim(), tenantId]
+      [effectiveSku, name.trim(), (description || '').trim(), resolvedTenantId]
     );
     if (dupCheck.rows.length > 0) {
       return res.status(409).json({
@@ -281,52 +409,45 @@ router.post('/products', optionalAuth, async (req, res) => {
       });
     }
 
-    let result;
+    let prodCols = new Set();
     try {
-      result = await db.query(
-        `INSERT INTO products_services 
-         (tenant_id, item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
-         RETURNING *`,
-        [
-          tenantId,
-          item_type || 'Product',
-          effectiveSku,
-          name.trim(),
-          specifications ? specifications.trim() : null,
-          description || '',
-          unit || 'PCS',
-          parseFloat(cost_price || 0),
-          parseFloat(selling_price || 0),
-          tax_category || 'Standard 18%',
-          parseFloat(current_stock || 0),
-          parseFloat(reorder_level || 5),
-          default_supplier_id || null
-        ]
-      );
-    } catch (insErr) {
-      result = await db.query(
-        `INSERT INTO products_services 
-         (tenant_id, item_type, sku, name, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
-         RETURNING *`,
-        [
-          tenantId,
-          item_type || 'Product',
-          effectiveSku,
-          name.trim(),
-          description || (specifications ? `${specifications}` : ''),
-          unit || 'PCS',
-          parseFloat(cost_price || 0),
-          parseFloat(selling_price || 0),
-          tax_category || 'Standard 18%',
-          parseFloat(current_stock || 0),
-          parseFloat(reorder_level || 5),
-          default_supplier_id || null
-        ]
-      );
+      const colRes = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'products_services'`);
+      prodCols = new Set(colRes.rows.map(r => r.column_name));
+    } catch (e) {
+      prodCols = new Set(['tenant_id', 'sku', 'name', 'unit', 'cost_price', 'selling_price', 'current_stock']);
     }
 
+    const candidateFields = {
+      tenant_id: resolvedTenantId,
+      item_type: item_type || 'Product',
+      sku: effectiveSku,
+      name: name.trim(),
+      specifications: specifications ? specifications.trim() : null,
+      description: description ? description.trim() : (specifications ? specifications.trim() : ''),
+      unit: unit || 'PCS',
+      cost_price: parseFloat(cost_price || 0),
+      selling_price: parseFloat(selling_price || 0),
+      tax_category: tax_category || 'Standard 18%',
+      current_stock: parseFloat(current_stock || 0),
+      reorder_level: parseFloat(reorder_level || 5),
+      default_supplier_id: isUuid(default_supplier_id) ? default_supplier_id : null
+    };
+
+    const insertCols = [];
+    const insertVals = [];
+    const insertPlaceholders = [];
+    let pIdx = 1;
+
+    for (const [colName, val] of Object.entries(candidateFields)) {
+      if (prodCols.has(colName)) {
+        insertCols.push(colName);
+        insertVals.push(val);
+        insertPlaceholders.push(`$${pIdx++}`);
+      }
+    }
+
+    const insertSql = `INSERT INTO products_services (${insertCols.join(', ')}) VALUES (${insertPlaceholders.join(', ')}) RETURNING *`;
+    const result = await db.query(insertSql, insertVals);
     res.status(201).json({ success: true, data: result.rows[0], message: 'Item added to Product Catalog successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -356,74 +477,51 @@ router.put('/products/:id', optionalAuth, async (req, res) => {
   }
 
   try {
-    let result;
+    let prodCols = new Set();
     try {
-      result = await db.query(
-        `UPDATE products_services
-         SET sku = COALESCE($1, sku),
-             name = COALESCE($2, name),
-             specifications = COALESCE($3, specifications),
-             description = COALESCE($4, description),
-             item_type = COALESCE($5, item_type),
-             unit = COALESCE($6, unit),
-             cost_price = COALESCE($7, cost_price),
-             selling_price = COALESCE($8, selling_price),
-             tax_category = COALESCE($9, tax_category),
-             current_stock = COALESCE($10, current_stock),
-             reorder_level = COALESCE($11, reorder_level),
-             default_supplier_id = $12,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id::text = $13
-         RETURNING *`,
-        [
-          sku ? sku.trim() : null,
-          name ? name.trim() : null,
-          specifications !== undefined ? specifications : null,
-          description !== undefined ? description : null,
-          item_type || null,
-          unit || null,
-          cost_price !== undefined ? parseFloat(cost_price) : null,
-          selling_price !== undefined ? parseFloat(selling_price) : null,
-          tax_category || null,
-          current_stock !== undefined ? parseFloat(current_stock) : null,
-          reorder_level !== undefined ? parseFloat(reorder_level) : null,
-          default_supplier_id || null,
-          String(id)
-        ]
-      );
-    } catch (colErr) {
-      result = await db.query(
-        `UPDATE products_services
-         SET sku = COALESCE($1, sku),
-             name = COALESCE($2, name),
-             description = COALESCE($3, description),
-             item_type = COALESCE($4, item_type),
-             unit = COALESCE($5, unit),
-             cost_price = COALESCE($6, cost_price),
-             selling_price = COALESCE($7, selling_price),
-             tax_category = COALESCE($8, tax_category),
-             current_stock = COALESCE($9, current_stock),
-             reorder_level = COALESCE($10, reorder_level),
-             default_supplier_id = $11,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id::text = $12
-         RETURNING *`,
-        [
-          sku ? sku.trim() : null,
-          name ? name.trim() : null,
-          description !== undefined ? description : null,
-          item_type || null,
-          unit || null,
-          cost_price !== undefined ? parseFloat(cost_price) : null,
-          selling_price !== undefined ? parseFloat(selling_price) : null,
-          tax_category || null,
-          current_stock !== undefined ? parseFloat(current_stock) : null,
-          reorder_level !== undefined ? parseFloat(reorder_level) : null,
-          default_supplier_id || null,
-          String(id)
-        ]
-      );
+      const colRes = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'products_services'`);
+      prodCols = new Set(colRes.rows.map(r => r.column_name));
+    } catch (e) {
+      prodCols = new Set(['sku', 'name', 'unit', 'cost_price', 'selling_price', 'current_stock']);
     }
+
+    const candidateUpdates = {
+      sku: sku ? sku.trim() : null,
+      name: name ? name.trim() : null,
+      specifications: specifications !== undefined ? specifications : null,
+      description: description !== undefined ? description : null,
+      item_type: item_type || null,
+      unit: unit || null,
+      cost_price: cost_price !== undefined ? parseFloat(cost_price) : null,
+      selling_price: selling_price !== undefined ? parseFloat(selling_price) : null,
+      tax_category: tax_category || null,
+      current_stock: current_stock !== undefined ? parseFloat(current_stock) : null,
+      reorder_level: reorder_level !== undefined ? parseFloat(reorder_level) : null,
+      default_supplier_id: default_supplier_id || null
+    };
+
+    const setClauses = [];
+    const updateVals = [];
+    let pIdx = 1;
+
+    for (const [colName, val] of Object.entries(candidateUpdates)) {
+      if (prodCols.has(colName) && val !== null) {
+        setClauses.push(`${colName} = COALESCE($${pIdx++}, ${colName})`);
+        updateVals.push(val);
+      }
+    }
+
+    if (prodCols.has('updated_at')) {
+      setClauses.push('updated_at = CURRENT_TIMESTAMP');
+    }
+
+    if (setClauses.length === 0) {
+      return res.json({ success: true, message: 'No fields to update.' });
+    }
+
+    updateVals.push(String(id));
+    const updateSql = `UPDATE products_services SET ${setClauses.join(', ')} WHERE id::text = $${pIdx} RETURNING *`;
+    const result = await db.query(updateSql, updateVals);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Item not found in catalog.' });
@@ -515,41 +613,89 @@ router.delete('/suppliers/:id', optionalAuth, async (req, res) => {
 // PUT update customer
 router.put('/customers/:id', optionalAuth, async (req, res) => {
   const { id } = req.params;
-  const { business_name, org_type, department_name, ntn, strn, contact_person, email, phone, address, city, status, notes } = req.body;
+  const {
+    customer_code,
+    business_name,
+    customer_type,
+    org_type,
+    department_name,
+    ntn,
+    strn,
+    contact_person,
+    email,
+    phone,
+    address,
+    city,
+    province,
+    country,
+    delivery_address,
+    payment_terms,
+    credit_limit,
+    status,
+    bank_name,
+    bank_iban,
+    notes,
+    workflow_gates
+  } = req.body;
+
   try {
-    const result = await db.query(
-      `UPDATE customers
-       SET business_name = COALESCE($1, business_name),
-           org_type = COALESCE($2, org_type),
-           department_name = COALESCE($3, department_name),
-           ntn = COALESCE($4, ntn),
-           strn = COALESCE($5, strn),
-           contact_person = COALESCE($6, contact_person),
-           email = COALESCE($7, email),
-           phone = COALESCE($8, phone),
-           address = COALESCE($9, address),
-           city = COALESCE($10, city),
-           status = COALESCE($11, status),
-           notes = COALESCE($12, notes),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id::text = $13
-       RETURNING *`,
-      [
-        business_name ? business_name.trim() : null,
-        org_type || null,
-        department_name || null,
-        ntn || null,
-        strn || null,
-        contact_person || null,
-        email || null,
-        phone || null,
-        address || null,
-        city || null,
-        status || null,
-        notes || null,
-        String(id)
-      ]
-    );
+    const cGates = workflow_gates ? (typeof workflow_gates === 'object' ? JSON.stringify(workflow_gates) : workflow_gates) : null;
+
+    let cols = new Set();
+    try {
+      const colRes = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'customers'`);
+      cols = new Set(colRes.rows.map(r => r.column_name));
+    } catch (colErr) {
+      cols = new Set(['tenant_id', 'customer_code', 'business_name', 'customer_type', 'city', 'country']);
+    }
+
+    const candidateUpdates = {
+      customer_code: customer_code || null,
+      business_name: business_name ? business_name.trim() : null,
+      customer_type: customer_type || org_type || null,
+      org_type: org_type || customer_type || null,
+      department_name: department_name || null,
+      ntn: ntn || null,
+      strn: strn || null,
+      contact_person: contact_person || null,
+      email: email || null,
+      phone: phone || null,
+      address: address || null,
+      city: city || null,
+      province: province || null,
+      country: country || null,
+      delivery_address: delivery_address || null,
+      payment_terms: payment_terms || null,
+      credit_limit: credit_limit !== undefined && credit_limit !== null ? parseFloat(credit_limit) : null,
+      status: status || null,
+      bank_name: bank_name || null,
+      bank_iban: bank_iban || null,
+      notes: notes || null,
+      workflow_gates: cGates
+    };
+
+    const setClauses = [];
+    const updateVals = [];
+    let pIdx = 1;
+
+    for (const [colName, val] of Object.entries(candidateUpdates)) {
+      if (cols.has(colName)) {
+        setClauses.push(`${colName} = COALESCE($${pIdx++}, ${colName})`);
+        updateVals.push(val);
+      }
+    }
+
+    if (cols.has('updated_at')) {
+      setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+    }
+
+    if (setClauses.length === 0) {
+      return res.json({ success: true, message: 'No changes provided.' });
+    }
+
+    updateVals.push(String(id));
+    const updateSql = `UPDATE customers SET ${setClauses.join(', ')} WHERE id::text = $${pIdx} RETURNING *`;
+    const result = await db.query(updateSql, updateVals);
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Customer not found.' });
     }

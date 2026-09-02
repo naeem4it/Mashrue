@@ -119,7 +119,7 @@ const State = {
           const tEl = document.getElementById('quota-upgrade-title');
           const dEl = document.getElementById('quota-upgrade-desc');
           if (tEl) tEl.innerText = '🏢 Business Entity Limit Reached';
-          if (dEl) dEl.innerHTML = `Your current plan includes up to <strong>${freeLimit} Business Entities</strong>. Additional company profiles require an active subscription upgrade (PKR 2,500/mo) or Advance Plan.`;
+          if (dEl) dEl.innerHTML = `Your current plan includes up to <strong>${freeLimit} Business Entities</strong>. Additional company profiles require an active subscription upgrade (PKR 4,500/mo) or Advance Plan.`;
           if (typeof openModal === 'function') {
             openModal('modal-quota-upgrade');
           } else {
@@ -338,7 +338,7 @@ const State = {
       free_companies_limit: curTenant?.freeCompanyLimit || curTenant?.free_business_profile_limit || 2,
       free_users_limit: curTenant?.freeEmployeeLimit || curTenant?.free_employee_limit || 3,
       custom_base_price: 35000,
-      custom_extra_company_price: 2500,
+      custom_extra_company_price: 4500,
       custom_extra_seat_price: 1500,
       trial_tender_limit: 5,
       trial_bid_security_limit: 3,
@@ -524,5 +524,33 @@ const State = {
     const diffTime = end.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return Math.max(0, diffDays);
+  },
+
+  isApplicationStopped(tenantId) {
+    if (this.isSuperAdmin()) return false;
+    const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id;
+    if (this.currentUser?.tenant?.pendingPaidCompanyPayment || this.currentUser?.tenant?.applicationStopped) {
+      return true;
+    }
+    const sub = this.getTenantSubscription(tid);
+    if (sub?.pending_paid_company_payment || sub?.status === 'Payment_Pending') {
+      return true;
+    }
+    return false;
+  },
+
+  setApplicationStopped(stopped, amountDue) {
+    if (this.currentUser?.tenant) {
+      this.currentUser.tenant.pendingPaidCompanyPayment = Boolean(stopped);
+      this.currentUser.tenant.applicationStopped = Boolean(stopped);
+      if (amountDue) this.currentUser.tenant.pendingPaidCompanyAmount = amountDue;
+    }
+    const tid = this.currentUser?.tenant?.id || this.currentUser?.tenant_id;
+    if (tid) {
+      this.saveTenantSubscription(tid, {
+        pending_paid_company_payment: Boolean(stopped),
+        status: stopped ? 'Payment_Pending' : 'Active'
+      });
+    }
   }
 };

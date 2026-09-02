@@ -42,6 +42,9 @@ router.post('/login', async (req, res) => {
               t.free_employee_limit,
               t.trial_period,
               t.trial_ends_at,
+              t.pending_paid_company_payment,
+              t.pending_paid_company_amount,
+              t.paid_companies_count,
               (SELECT COUNT(*) FROM business_profiles bp WHERE bp.tenant_id = u.tenant_id) as company_count,
               (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count
        FROM users u
@@ -63,49 +66,51 @@ router.post('/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    if (user.status !== 'Active') {
-      return res.status(403).json({ success: false, message: 'Account is inactive. Please contact your system administrator.' });
-    }
-
-    // Verify password with bcrypt
-    let isMatch = false;
-    if (user.password_hash && (user.password_hash.startsWith('$2a$') || user.password_hash.startsWith('$2b$'))) {
-      isMatch = await bcrypt.compare(password, user.password_hash);
-    } else if (user.password_hash) {
-      isMatch = (user.password_hash === password);
-    }
-
-    if (!isMatch) {
+    // 3. Verify password hash using bcrypt
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
       return res.status(401).json({ success: false, message: 'Invalid username/email or password.' });
     }
 
-    // Fetch assigned business profiles
-    const bpAccessRes = await db.query(
-      `SELECT business_profile_id FROM user_business_access WHERE user_id = $1`,
-      [user.id]
-    );
-    const assignedBusinessProfiles = bpAccessRes.rows.map(r => r.business_profile_id);
+    // 4. Verify user status
+    if (user.status !== 'Active') {
+      return res.status(403).json({ success: false, message: 'Your account is inactive or suspended. Please contact administrator.' });
+    }
 
-    // Sign JWT Token
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        tenantId: user.tenant_id,
-        username: user.username,
-        role: user.role
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    // 5. Generate JWT Token
+    const tokenPayload = {
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      tenantId: user.tenant_id
+    };
 
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+
+    // 6. Fetch user's assigned business profiles
+    let assignedBusinessProfiles = [];
+    try {
+      const accessRes = await db.query(
+        `SELECT business_profile_id FROM user_business_access WHERE user_id = $1`,
+        [user.id]
+      );
+      assignedBusinessProfiles = accessRes.rows.map(r => r.business_profile_id);
+    } catch (e) {}
+
+    // 7. Update last login timestamp
+    try {
+      await db.query(`UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1`, [user.id]);
+    } catch (e) {}
+
+    // 8. Return successful response with clean user object
     res.json({
       success: true,
-      message: 'Login successful',
+      message: 'Login successful.',
       data: {
         token,
         user: {
           id: user.id,
-          username: user.username || (user.email ? user.email.split('@')[0] : (user.full_name ? user.full_name.toLowerCase().replace(/[^a-z0-9]/g, '') : 'user')),
+          username: user.username,
           fullName: user.full_name,
           email: user.email || null,
           role: user.role,
@@ -123,6 +128,10 @@ router.post('/login', async (req, res) => {
             freeEmployeeLimit: parseInt(user.free_employee_limit || 2, 10),
             trialPeriod: user.trial_period || '15 Days',
             trialEndsAt: user.trial_ends_at || null,
+            pendingPaidCompanyPayment: Boolean(user.pending_paid_company_payment),
+            pendingPaidCompanyAmount: parseFloat(user.pending_paid_company_amount || 0),
+            paidCompaniesCount: parseInt(user.paid_companies_count || 0, 10),
+            applicationStopped: Boolean(user.pending_paid_company_payment),
             companyCount: parseInt(user.company_count || 0, 10),
             employeeCount: parseInt(user.employee_count || 0, 10)
           } : null
@@ -231,6 +240,7 @@ router.get('/me', authenticate, async (req, res) => {
               u.must_change_password, u.can_see_bidding_prices, u.permissions,
               t.company_name as tenant_name, t.subdomain, t.subscription_plan,
               t.free_business_profile_limit, t.free_employee_limit,
+              t.pending_paid_company_payment, t.pending_paid_company_amount, t.paid_companies_count,
               (SELECT COUNT(*) FROM business_profiles bp WHERE bp.tenant_id = u.tenant_id) as company_count,
               (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count,
               COALESCE(
@@ -246,7 +256,8 @@ router.get('/me', authenticate, async (req, res) => {
        GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                 u.must_change_password, u.can_see_bidding_prices, u.permissions,
                 t.company_name, t.subdomain, t.subscription_plan,
-                t.free_business_profile_limit, t.free_employee_limit`,
+                t.free_business_profile_limit, t.free_employee_limit,
+                t.pending_paid_company_payment, t.pending_paid_company_amount, t.paid_companies_count`,
       [req.user.id]
     );
 
@@ -275,6 +286,10 @@ router.get('/me', authenticate, async (req, res) => {
           subscriptionPlan: user.subscription_plan,
           freeCompanyLimit: parseInt(user.free_business_profile_limit || 2, 10),
           freeEmployeeLimit: parseInt(user.free_employee_limit || 2, 10),
+          pendingPaidCompanyPayment: Boolean(user.pending_paid_company_payment),
+          pendingPaidCompanyAmount: parseFloat(user.pending_paid_company_amount || 0),
+          paidCompaniesCount: parseInt(user.paid_companies_count || 0, 10),
+          applicationStopped: Boolean(user.pending_paid_company_payment),
           companyCount: parseInt(user.company_count || 0, 10),
           employeeCount: parseInt(user.employee_count || 0, 10)
         } : null

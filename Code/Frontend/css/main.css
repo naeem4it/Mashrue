@@ -731,22 +731,48 @@ body {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
 }
 
-/* Modern Glassmorphic Modals */
+/* Modern Glassmorphic Modals - Complete Popup Scrolling */
 .modal-backdrop {
   position: fixed;
   top: 0;
   left: 0;
+  right: 0;
+  bottom: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(15, 23, 42, 0.65);
+  background: rgba(15, 23, 42, 0.70);
   backdrop-filter: blur(8px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 100;
   opacity: 0;
   pointer-events: none;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  padding: 30px 16px 60px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #64748b rgba(15, 23, 42, 0.2);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-backdrop::-webkit-scrollbar {
+  width: 12px;
+}
+
+.modal-backdrop::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.modal-backdrop::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 6px;
+  border: 3px solid rgba(15, 23, 42, 0.3);
+}
+
+.modal-backdrop::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .modal-backdrop.open {
@@ -756,7 +782,7 @@ body {
 
 .modal-backdrop.modal-nested {
   z-index: 1050;
-  background: rgba(15, 23, 42, 0.80);
+  background: rgba(15, 23, 42, 0.85);
 }
 
 .modal-card {
@@ -766,10 +792,8 @@ body {
   max-width: 680px;
   box-shadow: var(--shadow-modal);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  overflow: hidden;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
+  margin: auto;
+  position: relative;
   transform: scale(0.96) translateY(10px);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -939,7 +963,35 @@ body {
 
 .modal-body {
   padding: 24px;
-  overflow-y: auto;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  overscroll-behavior: contain;
+  scrollbar-width: thin !important;
+  scrollbar-color: #475569 #f1f5f9 !important;
+}
+
+/* Prominent custom scrollbars for all modals */
+.modal-body::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+  display: block !important;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 8px !important;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: #64748b !important;
+  border-radius: 8px !important;
+  border: 2px solid #f1f5f9 !important;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: #1e293b !important;
 }
 
 .modal-footer {
@@ -949,6 +1001,7 @@ body {
   justify-content: flex-end;
   gap: 12px;
   background: #f8fafc;
+  flex-shrink: 0;
 }
 
 /* Modern Form Controls */

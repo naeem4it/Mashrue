@@ -6,6 +6,16 @@
 let pendingPaidCompanyPayload = null;
 let pendingPaidEmployeePayload = null;
 
+function initCustomDateTimePickers() {
+  try {
+    if (typeof flatpickr !== 'undefined') {
+      flatpickr('.datetime-picker', { enableTime: true, dateFormat: 'Y-m-d H:i' });
+      flatpickr('.date-picker', { dateFormat: 'Y-m-d' });
+    }
+  } catch (e) {}
+}
+window.initCustomDateTimePickers = initCustomDateTimePickers;
+
 // Enterprise Non-blocking Toast Notification Engine
 function showToast(message, type = 'info', duration = 4000) {
   const container = document.getElementById('toast-container');
@@ -1113,6 +1123,25 @@ async function renderActiveView() {
     'settings': 'settings'
   };
 
+  if (State.isApplicationStopped()) {
+    openModal('modal-trial-paid-company-stop');
+    viewTitle.innerText = '🛑 Application Access Paused';
+    viewSubtitle.innerText = 'Paid Company Add-on Payment Required';
+    contentArea.innerHTML = `
+      <div class="card" style="text-align:center; padding:50px 24px; max-width:600px; margin:40px auto; border-top:5px solid #dc2626; border-radius:12px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.08);">
+        <div style="font-size:3.5rem; margin-bottom:12px;">🛑</div>
+        <h3 style="font-size:1.35rem; font-weight:800; color:#0f172a; margin-bottom:8px;">Application Access Paused</h3>
+        <p style="font-size:0.92rem; color:#475569; line-height:1.6; margin-bottom:20px;">
+          You added an additional company profile (PKR 4,500/month) while on your Free Trial. Because your organization is on a trial period, application access is paused until payment for this company profile is completed.
+        </p>
+        <button class="primary-btn" onclick="openModal('modal-trial-paid-company-stop')" style="margin:0 auto; padding:12px 24px; font-weight:700; background:#059669;">
+          💳 Submit Payment & Resume Access
+        </button>
+      </div>
+    `;
+    return;
+  }
+
   const reqPerm = viewPermMap[State.activeView];
   if (reqPerm && !State.hasPermission(reqPerm, 'view')) {
     viewTitle.innerText = '⛔ Access Restricted';
@@ -1492,7 +1521,7 @@ async function renderDashboardHTML() {
               <tr>
                 <td>
                   <strong>${o.tender_name || o.title}</strong><br>
-                  <span style="font-size:0.75rem; color:var(--text-muted);">${o.opportunity_number} | ${o.external_tender_number || 'Direct'}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted);">${o.opportunity_number || ('TND-' + (o.id ? String(o.id).slice(-4) : '2026'))} | ${o.external_tender_number || 'Direct Sales / RFP'}</span>
                 </td>
                 <td><span class="pill-source">${o.tender_source || 'PPRA'}</span></td>
                 <td><strong>${o.customer_name || 'Govt Department / Client'}</strong><br><span style="font-size:0.72rem; color:var(--text-muted);">${o.customer_org_type || o.customer_type || 'Government Department'}</span></td>
@@ -3821,13 +3850,16 @@ async function renderProductsHTML() {
 // --------------------------------------------------------------------------
 async function renderBusinessProfilesHTML() {
   const profiles = await API.getBusinessProfiles();
+  const isSuper = State.isSuperAdmin();
+  const allowedLimit = (profiles[0] && profiles[0].free_business_profile_limit) ? parseInt(profiles[0].free_business_profile_limit, 10) : (State.currentUser?.tenant?.freeCompanyLimit || 2);
 
   return `
-    <div class="company-limit-banner">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
       <div>
-        <strong>Multi-Company Policy:</strong> You can configure up to <strong>2 companies for free</strong>. Additional company profiles incur <strong>PKR 2,500/month</strong>.
+        <h2 style="font-size:1.35rem; font-weight:800; color:#0f172a; margin:0;">🏢 Companies & Business Profiles</h2>
+        <p style="font-size:0.85rem; color:#64748b; margin:4px 0 0 0;">Manage your registered legal entities, NTN/STRN, and invoicing business units.</p>
       </div>
-      <button class="secondary-btn" style="background:white;" onclick="openModal('modal-add-company')">+ Add Company Profile</button>
+      <button class="primary-btn" onclick="openNewCompanyModal()">+ Add Company Profile</button>
     </div>
 
     <div class="card">
@@ -3838,6 +3870,7 @@ async function renderBusinessProfilesHTML() {
         <table class="data-table">
           <thead>
             <tr>
+              ${isSuper ? '<th>Client Workspace</th>' : ''}
               <th>Business Name & Abbrev</th>
               <th>Legal Entity Name</th>
               <th>NTN</th>
@@ -3851,13 +3884,14 @@ async function renderBusinessProfilesHTML() {
           <tbody>
             ${profiles.length === 0 ? `
               <tr>
-                <td colspan="8" style="text-align:center; padding:36px 20px; color:#64748b;">
+                <td colspan="${isSuper ? 9 : 8}" style="text-align:center; padding:36px 20px; color:#64748b;">
                   🏢 <strong>No business entities configured yet.</strong><br>
                   <span style="font-size:0.85rem;">Click the <strong>+ Add Company Profile</strong> button above to register your organization's first company profile.</span>
                 </td>
               </tr>
             ` : profiles.map((p, idx) => `
               <tr>
+                ${isSuper ? `<td><span class="badge" style="background:#f1f5f9; color:#475569; font-weight:600;">${p.tenant_company_name || 'Primary Workspace'}</span></td>` : ''}
                 <td>
                   <strong>${p.business_name}</strong>
                   ${p.abbreviation ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-size:0.75rem; margin-left:6px;">${p.abbreviation}</span>` : ''}
@@ -3868,7 +3902,7 @@ async function renderBusinessProfilesHTML() {
                 <td>${p.city || 'Lahore'}</td>
                 <td><span class="badge ${p.fbr_enabled ? 'badge-fbr' : 'badge-withdraw'}">${p.fbr_enabled ? 'Enabled' : 'Disabled'}</span></td>
                 <td>
-                  ${idx < 2 ? `<span class="badge badge-won">Free Tier Included</span>` : `<span class="badge badge-hold">Paid Add-on (PKR 2,500/mo)</span>`}
+                  ${idx < allowedLimit ? `<span class="badge badge-won">Plan Included</span>` : `<span class="badge badge-hold">Add-on (PKR 4,500/mo)</span>`}
                 </td>
                 <td>
                   <div style="display:flex; gap:6px;">
@@ -5245,16 +5279,44 @@ async function handleQuickAddCompletion(entityType, createdItem) {
 
   // 1. Refresh all matching customer select dropdowns in DOM
   if (entityType === 'customer') {
-    const customers = await API.getCustomers();
+    let customers = [];
+    try {
+      customers = await API.getCustomers();
+    } catch (e) {
+      console.warn('handleQuickAddCompletion getCustomers error:', e);
+    }
+    if (!Array.isArray(customers)) customers = [];
+
+    if (createdItem && createdItem.id) {
+      const idx = customers.findIndex(c => String(c.id) === String(createdItem.id));
+      if (idx >= 0) {
+        customers[idx] = { ...customers[idx], ...createdItem };
+      } else {
+        customers.unshift(createdItem);
+      }
+    }
     State.customers = customers;
-    document.querySelectorAll('select[id*="customer"]').forEach(sel => {
-      const curVal = (sel.id === targetSelectId || sel.id === 'tender-customer') ? createdItem.id : sel.value;
-      sel.innerHTML = `<option value="">-- Select Customer / Department --</option>` + customers.map(c => `<option value="${c.id}">${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
+
+    const allSelects = document.querySelectorAll('select[id*="customer"], select#tender-customer');
+    allSelects.forEach(sel => {
+      const isTarget = (sel.id === targetSelectId || sel.id === 'tender-customer');
+      const curVal = isTarget ? createdItem.id : (sel.value || '');
+
+      sel.innerHTML = `<option value="">-- Select Customer / Department --</option>` + 
+        customers.map(c => {
+          const cName = c.business_name || c.name || 'Registered Customer';
+          const cType = c.customer_type || c.org_type || 'Customer';
+          const isSel = (String(c.id) === String(curVal)) ? 'selected' : '';
+          return `<option value="${c.id}" ${isSel}>${cName} (${cType})</option>`;
+        }).join('');
+
       if (curVal) sel.value = curVal;
     });
+
     const tenderCustSelect = document.getElementById('tender-customer');
-    if (tenderCustSelect) {
+    if (tenderCustSelect && createdItem && createdItem.id) {
       tenderCustSelect.value = createdItem.id;
+      tenderCustSelect.dispatchEvent(new Event('change', { bubbles: true }));
     }
   } else if (entityType === 'supplier') {
     const suppliers = await API.getSuppliers();
@@ -5272,11 +5334,13 @@ async function handleQuickAddCompletion(entityType, createdItem) {
     // Update all product select dropdowns across the application and in tender line items
     document.querySelectorAll('select.tnd-item-product, select[id*="item-select"], select[id*="product-select"], .tender-item-sku-select').forEach(sel => {
       const prevVal = sel.value;
-      sel.innerHTML = `<option value="">-- Custom Scope Item --</option>` + products.map(p => `
-        <option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}">
-          ${p.name} (Stock: ${p.current_stock || 0})
-        </option>
-      `).join('');
+      sel.innerHTML = `<option value="">-- Custom Scope Item --</option>` + products.map(p => {
+        const stockVal = parseFloat(p.current_stock || 0);
+        const stockText = stockVal % 1 === 0 ? stockVal : stockVal.toFixed(2);
+        return `<option value="${p.id}" data-name="${p.name}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}">
+          ${p.name} (Stock: ${stockText})
+        </option>`;
+      }).join('');
       if (prevVal) sel.value = prevVal;
     });
 
@@ -5307,6 +5371,47 @@ async function handleQuickAddCompletion(entityType, createdItem) {
       sel.innerHTML = `<option value="">-- Select Warehouse --</option>` + warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city || 'Location'})</option>`).join('');
       if (curVal) sel.value = curVal;
     });
+  } else if (entityType === 'company' || entityType === 'businessProfile') {
+    let profiles = [];
+    try {
+      profiles = await API.getBusinessProfiles();
+    } catch (e) {
+      console.warn('handleQuickAddCompletion getBusinessProfiles error:', e);
+    }
+    if (!Array.isArray(profiles)) profiles = [];
+
+    if (createdItem && createdItem.id) {
+      const idx = profiles.findIndex(p => String(p.id) === String(createdItem.id));
+      if (idx >= 0) {
+        profiles[idx] = { ...profiles[idx], ...createdItem };
+      } else {
+        profiles.unshift(createdItem);
+      }
+    }
+    State.businessProfiles = profiles;
+    populateBusinessSwitcher();
+
+    // Update all business profile select dropdowns in DOM and tender modal
+    const allCompSelects = document.querySelectorAll('select#tender-business-profile, select[id*="business-profile"]');
+    allCompSelects.forEach(sel => {
+      sel.innerHTML = profiles.map(p => {
+        const isSel = (createdItem && String(p.id) === String(createdItem.id)) ? 'selected' : '';
+        return `<option value="${p.id}" ${isSel}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`;
+      }).join('');
+
+      if (createdItem && createdItem.id) {
+        sel.value = createdItem.id;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    const tenderBizSelect = document.getElementById('tender-business-profile');
+    if (tenderBizSelect && createdItem && createdItem.id) {
+      tenderBizSelect.value = createdItem.id;
+      tenderBizSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    _quickAddContext = null;
   }
 }
 window.handleQuickAddCompletion = handleQuickAddCompletion;
@@ -5339,7 +5444,7 @@ function openQuotaUpgradeModal(type = 'tender') {
   const descEl = document.getElementById('quota-upgrade-desc');
   if (type === 'company' || type === 'entity') {
     if (titleEl) titleEl.innerText = '🏢 Business Entity Limit Reached';
-    if (descEl) descEl.innerHTML = 'You have reached the free limit of <strong>2 Business Profiles</strong>. Additional company entities can be added for PKR 2,500/month or with an Advance Plan upgrade.';
+    if (descEl) descEl.innerHTML = 'You have reached your allowed company limit. Additional company entities can be added for PKR 4,500/month or with a plan upgrade.';
   } else {
     if (titleEl) titleEl.innerText = '⚡ Monthly Limit Reached';
     if (descEl) descEl.innerHTML = 'You have reached the limit of <strong>10 Tenders / Quotes</strong> included in your <strong>Basic Plan</strong> this month.';
@@ -5477,9 +5582,14 @@ async function openNewTenderModal() {
         : customers.map(c => `<option value="${c.id}">${c.business_name || c.name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
     }
     if (profSelect) {
-      profSelect.innerHTML = profiles.length === 0 
-        ? '<option value="">-- No Business Profiles --</option>' 
-        : profiles.map(p => `<option value="${p.id}" ${String(p.id) === String(State.currentBusinessProfileId) ? 'selected' : ''}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
+      if (profiles.length === 0) {
+        profSelect.innerHTML = '<option value="">-- No Business Profiles (Click + to Add) --</option>';
+      } else {
+        profSelect.innerHTML = profiles.map(p => {
+          const isSel = (String(p.id) === String(State.currentBusinessProfileId) || profiles.length === 1) ? 'selected' : '';
+          return `<option value="${p.id}" ${isSel}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`;
+        }).join('');
+      }
     }
     if (currSelect) {
       currSelect.value = 'PKR';
@@ -5608,7 +5718,7 @@ async function openEditTenderModal(id) {
 
   recalculateTenderItemsSum();
   calculateTenderBidSecurityFromPct();
-  initCustomDateTimePickers();
+  try { initCustomDateTimePickers(); } catch (e) {}
 
   openModal('modal-add-tender');
 }
@@ -5625,7 +5735,11 @@ function addTenderItemRow(initialData = null) {
       <td>
         <select class="form-select tnd-item-product" style="font-size:0.78rem; padding:4px 6px;" onchange="onTenderProductSelect(${rowIndex}, this.value)">
           <option value="">-- Custom Scope Item --</option>
-          ${products.map(p => `<option value="${p.id}" ${(initialData && (initialData.product_service_id === p.id || initialData.product_id === p.id)) ? 'selected' : ''} data-name="${p.name}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${p.current_stock || 0})</option>`).join('')}
+          ${products.map(p => {
+            const stockVal = parseFloat(p.current_stock || 0);
+            const stockText = stockVal % 1 === 0 ? stockVal : stockVal.toFixed(2);
+            return `<option value="${p.id}" ${(initialData && (initialData.product_service_id === p.id || initialData.product_id === p.id)) ? 'selected' : ''} data-name="${p.name}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${stockText})</option>`;
+          }).join('')}
         </select>
       </td>
       <td>
@@ -5876,7 +5990,7 @@ async function submitNewTenderForm() {
     const payload = {
       tender_name: tenderName,
       title: tenderName,
-      opportunity_number: oppNo || undefined,
+      opportunity_number: oppNo || ('TND-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000)),
       external_tender_number: extNo || undefined,
       tender_source: source,
       currency: currency,
@@ -6009,7 +6123,7 @@ function selectTenderForSecurity(oppId, tenderNameEnc, oppNo, estVal, customerNa
 
 function promptAttachBidSecurity(oppId, tenderNameDecoded, oppNo = '', estVal = 0, custNameDecoded = '') {
   selectTenderForSecurity(oppId, tenderNameDecoded, oppNo, estVal, custNameDecoded);
-  initCustomDateTimePickers();
+  try { initCustomDateTimePickers(); } catch (e) {}
   openModal('modal-add-bid-security');
 }
 
@@ -7245,7 +7359,7 @@ async function submitPaymentForm() {
 // --------------------------------------------------------------------------
 
 // 1. CUSTOMER CONTROLLERS
-function openNewCustomerModal() {
+async function openNewCustomerModal() {
   const form = document.getElementById('form-add-customer');
   if (form) form.reset();
   const editEl = document.getElementById('cust-edit-id');
@@ -7257,6 +7371,14 @@ function openNewCustomerModal() {
   const delBtn = document.getElementById('btn-delete-customer-modal');
   if (delBtn) delBtn.style.display = 'none';
 
+  // Reset workflow gate checkboxes to standard defaults
+  if (document.getElementById('cust-gate-bid-security')) document.getElementById('cust-gate-bid-security').checked = true;
+  if (document.getElementById('cust-gate-performance-guarantee')) document.getElementById('cust-gate-performance-guarantee').checked = true;
+  if (document.getElementById('cust-gate-stamp-duty')) document.getElementById('cust-gate-stamp-duty').checked = true;
+  if (document.getElementById('cust-gate-dtl-inspection')) document.getElementById('cust-gate-dtl-inspection').checked = false;
+  if (document.getElementById('cust-gate-fbr-e-invoice')) document.getElementById('cust-gate-fbr-e-invoice').checked = true;
+  if (document.getElementById('cust-gate-diary-tracking')) document.getElementById('cust-gate-diary-tracking').checked = true;
+
   const modal = document.getElementById('modal-add-customer');
   if (modal) {
     const title = modal.querySelector('h2');
@@ -7267,11 +7389,11 @@ function openNewCustomerModal() {
 
 async function openEditCustomerModal(id) {
   const customers = await API.getCustomers();
-  const c = customers.find(item => item.id === id);
+  const c = customers.find(item => String(item.id) === String(id));
   if (!c) return;
 
   document.getElementById('cust-edit-id').value = c.id;
-  document.getElementById('cust-code').value = c.customer_code || 'CUST-PK-' + c.id.slice(0, 4);
+  document.getElementById('cust-code').value = c.customer_code || 'CUST-PK-' + String(c.id).slice(0, 4);
   document.getElementById('cust-name').value = c.business_name || '';
   document.getElementById('cust-org-type').value = c.customer_type || c.org_type || 'Government Department';
   document.getElementById('cust-department').value = c.department_name || c.department || '';
@@ -7304,6 +7426,17 @@ async function openEditCustomerModal(id) {
   document.getElementById('cust-bank-name').value = c.bank_name || '';
   document.getElementById('cust-bank-iban').value = c.bank_iban || '';
   document.getElementById('cust-notes').value = c.notes || '';
+
+  // Populate workflow gate checkboxes if configured
+  if (c.workflow_gates) {
+    const g = typeof c.workflow_gates === 'string' ? JSON.parse(c.workflow_gates) : c.workflow_gates;
+    if (document.getElementById('cust-gate-bid-security')) document.getElementById('cust-gate-bid-security').checked = g.requires_bid_security !== false;
+    if (document.getElementById('cust-gate-performance-guarantee')) document.getElementById('cust-gate-performance-guarantee').checked = g.requires_performance_guarantee !== false;
+    if (document.getElementById('cust-gate-stamp-duty')) document.getElementById('cust-gate-stamp-duty').checked = g.requires_stamp_duty !== false;
+    if (document.getElementById('cust-gate-dtl-inspection')) document.getElementById('cust-gate-dtl-inspection').checked = g.requires_dtl_inspection === true;
+    if (document.getElementById('cust-gate-fbr-e-invoice')) document.getElementById('cust-gate-fbr-e-invoice').checked = g.requires_fbr_e_invoice !== false;
+    if (document.getElementById('cust-gate-diary-tracking')) document.getElementById('cust-gate-diary-tracking').checked = g.requires_diary_tracking !== false;
+  }
 
   const delBtn = document.getElementById('btn-delete-customer-modal');
   if (delBtn) delBtn.style.display = 'inline-block';
@@ -7378,6 +7511,23 @@ async function submitNewCustomerForm() {
       return;
     }
 
+    let chosenTenantId = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+    if (typeof State.isSuperAdmin === 'function' && State.isSuperAdmin()) {
+      const activeProfile = typeof State.getCurrentBusinessProfile === 'function' ? State.getCurrentBusinessProfile() : null;
+      if (activeProfile && activeProfile.tenant_id) {
+        chosenTenantId = activeProfile.tenant_id;
+      }
+    }
+
+    const workflowGates = {
+      requires_bid_security: document.getElementById('cust-gate-bid-security')?.checked !== false,
+      requires_performance_guarantee: document.getElementById('cust-gate-performance-guarantee')?.checked !== false,
+      requires_stamp_duty: document.getElementById('cust-gate-stamp-duty')?.checked !== false,
+      requires_dtl_inspection: document.getElementById('cust-gate-dtl-inspection')?.checked === true,
+      requires_fbr_e_invoice: document.getElementById('cust-gate-fbr-e-invoice')?.checked !== false,
+      requires_diary_tracking: document.getElementById('cust-gate-diary-tracking')?.checked !== false
+    };
+
     const payload = {
       customer_code: code || 'CUST-' + Math.floor(1000 + Math.random() * 9000),
       business_name: name,
@@ -7386,8 +7536,9 @@ async function submitNewCustomerForm() {
       department_name: dept,
       ntn: ntn,
       strn: strn,
-      city: city,
-      province: province,
+      city: city || 'Lahore',
+      province: province || 'Punjab',
+      country: 'Pakistan',
       address: address,
       delivery_address: delAddress,
       contact_person: contact,
@@ -7398,25 +7549,38 @@ async function submitNewCustomerForm() {
       status: status,
       bank_name: bankName,
       bank_iban: bankIban,
-      notes: notes
+      notes: notes,
+      workflow_gates: workflowGates
     };
+
+    if (chosenTenantId) {
+      payload.tenant_id = chosenTenantId;
+    }
 
     let created = null;
     if (editId) {
-      await API.updateEntity('customer', editId, payload);
-      created = { id: editId, ...payload };
-      showToast('✓ Customer record updated successfully.', 'success');
-    } else {
-      const res = await API.createCustomer(payload);
-      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
-        alert(`⚠️ ${res.message}`);
+      const updateRes = await API.updateEntity('customer', editId, payload);
+      if (updateRes && updateRes.success === false) {
+        alert(`⚠️ Failed to update customer: ${updateRes.message || updateRes.error || 'Server error'}`);
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = '<span>💾 Save Customer Master</span>';
         }
         return;
       }
-      created = (res && res.data) ? res.data : { id: 'cust-' + Date.now(), ...payload };
+      created = { id: editId, ...payload };
+      showToast('✓ Customer record updated successfully.', 'success');
+    } else {
+      const res = await API.createCustomer(payload);
+      if (!res || res.success === false) {
+        alert(`⚠️ Failed to save customer: ${res?.message || res?.error || 'Validation or server error'}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Customer Master</span>';
+        }
+        return;
+      }
+      created = res.data || { id: 'c-' + Date.now(), ...payload };
       showToast('✓ Customer registered successfully.', 'success');
     }
 
@@ -7766,7 +7930,7 @@ async function openNewProductModal() {
   if (stockEl) stockEl.value = '0';
   const reorderEl = document.getElementById('prod-reorder-level');
   if (reorderEl) reorderEl.value = '5';
-  const costEl = document.getElementById('prod-cost-price');
+  const costEl = document.getElementById('prod-cost-pkr') || document.getElementById('prod-cost-price');
   if (costEl) costEl.value = '';
   const sellEl = document.getElementById('prod-selling-price');
   if (sellEl) sellEl.value = '';
@@ -7820,10 +7984,10 @@ async function openEditProductModal(id) {
   if (stockEl) stockEl.value = (p.current_stock !== undefined && p.current_stock !== null) ? p.current_stock : 0;
   const reorderEl = document.getElementById('prod-reorder-level');
   if (reorderEl) reorderEl.value = (p.reorder_level !== undefined && p.reorder_level !== null) ? p.reorder_level : 5;
-  const costEl = document.getElementById('prod-cost-price');
-  if (costEl) costEl.value = p.cost_price ? Number(p.cost_price) : '';
+  const costEl = document.getElementById('prod-cost-pkr') || document.getElementById('prod-cost-price');
+  if (costEl) costEl.value = p.cost_price ? Number(p.cost_price).toLocaleString() : '';
   const sellEl = document.getElementById('prod-selling-price');
-  if (sellEl) sellEl.value = p.selling_price ? Number(p.selling_price) : '';
+  if (sellEl) sellEl.value = p.selling_price ? Number(p.selling_price).toLocaleString() : '';
   const expEl = document.getElementById('prod-expiry-date');
   if (expEl) expEl.value = p.expiry_date || '';
   const descEl = document.getElementById('prod-description');
@@ -7864,8 +8028,10 @@ async function submitNewProductForm() {
   const supplierId = document.getElementById('prod-supplier')?.value || null;
   const currentStock = parseFloat(document.getElementById('prod-current-stock')?.value || 0);
   const reorder = parseFloat(document.getElementById('prod-reorder-level')?.value || 5);
-  const cost = parseFloat(document.getElementById('prod-cost-price')?.value || 0);
-  const price = parseFloat(document.getElementById('prod-selling-price')?.value || 0);
+  const costInput = document.getElementById('prod-cost-pkr') || document.getElementById('prod-cost-price');
+  const cost = parseCurrency(costInput?.value || 0);
+  const priceInput = document.getElementById('prod-selling-price');
+  const price = parseCurrency(priceInput?.value || 0);
   const expDate = document.getElementById('prod-expiry-date')?.value || null;
   const desc = document.getElementById('prod-description')?.value?.trim() || '';
 
@@ -7937,6 +8103,8 @@ async function submitNewProductForm() {
     }
 
     closeModal('modal-add-product');
+    window._cachedProducts = null;
+    State.products = await API.getProducts();
     await handleQuickAddCompletion('product', created);
     await renderActiveView();
   } catch (err) {
@@ -8414,12 +8582,7 @@ function openNewCompanyModal() {
   if (prefixEl) prefixEl.value = '';
   const titleEl = document.getElementById('modal-add-company-title');
   if (titleEl) titleEl.innerText = '🏢 Configure Company / Business Profile';
-  const currentCount = State.businessProfiles?.length || 0;
-  const freeLimit = State.currentUser?.tenant?.freeCompanyLimit || 2;
-  const limitAlert = document.getElementById('company-limit-alert');
-  if (limitAlert) {
-    limitAlert.style.display = (currentCount >= freeLimit) ? 'block' : 'none';
-  }
+
   openModal('modal-add-company');
 }
 
@@ -8435,8 +8598,6 @@ async function openEditCompanyModal(id) {
   if (editEl) editEl.value = p.id;
   const titleEl = document.getElementById('modal-add-company-title');
   if (titleEl) titleEl.innerText = `✏️ Edit Business Profile: ${p.business_name}`;
-  const limitAlert = document.getElementById('company-limit-alert');
-  if (limitAlert) limitAlert.style.display = 'none';
 
   document.getElementById('comp-name').value = p.business_name || '';
   document.getElementById('comp-abbrev').value = p.abbreviation || '';
@@ -8496,6 +8657,15 @@ async function submitNewCompanyForm() {
     fbr_enabled: fbr === 'true'
   };
 
+  let targetTenantId = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+  if (typeof State.isSuperAdmin === 'function' && State.isSuperAdmin()) {
+    const activeProfile = typeof State.getCurrentBusinessProfile === 'function' ? State.getCurrentBusinessProfile() : null;
+    if (activeProfile && activeProfile.tenant_id) {
+      targetTenantId = activeProfile.tenant_id;
+    }
+  }
+  if (targetTenantId) payload.tenant_id = targetTenantId;
+
   try {
     if (editId) {
       await API.updateEntity('business-profile', editId, payload);
@@ -8511,14 +8681,32 @@ async function submitNewCompanyForm() {
     
     if (res && res.requires_payment_confirmation) {
       pendingPaidCompanyPayload = payload;
+      const warningMsgEl = document.getElementById('paid-company-warning-msg');
+      if (warningMsgEl) {
+        warningMsgEl.innerText = res.message || 'You are exceeding your limit. Are you sure you want to create a company for 4,500/month?';
+      }
       openModal('modal-paid-company-warning');
+      return;
+    }
+
+    if (res && res.success === false) {
+      alert(`⚠️ ${res.message || res.error || 'Failed to create business profile.'}`);
+      return;
+    }
+
+    closeModal('modal-add-company');
+
+    if (res && res.application_stopped) {
+      // Created paid company while on trial: Stop application until paid!
+      State.setApplicationStopped(true, res.amount_due || 4500);
+      openModal('modal-trial-paid-company-stop');
+      showToast('⚠️ Application access paused. Payment of PKR 4,500 required for the additional company profile.', 'error');
       return;
     }
 
     const created = (res && res.data) ? res.data : { id: 'bp-' + Date.now(), ...payload };
 
-    closeModal('modal-add-company');
-    if (res.billingNotice) {
+    if (res && res.billingNotice) {
       showToast(`${res.billingNotice.notice} (Plan: ${res.billingNotice.chargePerMonth})`, 'info');
     } else {
       showToast(`✓ Business profile registered! Verification link automatically dispatched to ${email}`, 'success');
@@ -8534,6 +8722,87 @@ async function submitNewCompanyForm() {
     }
   } catch (err) {
     showToast(`Error creating company profile: ${err.message}`, 'error');
+  }
+}
+
+async function confirmAndCreatePaidCompany() {
+  if (!pendingPaidCompanyPayload) {
+    closeModal('modal-paid-company-warning');
+    return;
+  }
+  const payload = { ...pendingPaidCompanyPayload, confirm_paid: true };
+  pendingPaidCompanyPayload = null;
+  closeModal('modal-paid-company-warning');
+
+  try {
+    const res = await API.createBusinessProfile(payload);
+    if (res && res.success === false) {
+      alert(`⚠️ ${res.message || res.error || 'Failed to create business profile.'}`);
+      return;
+    }
+
+    closeModal('modal-add-company');
+
+    if (res && res.application_stopped) {
+      // Created paid company while on trial: Stop application until paid!
+      State.setApplicationStopped(true, res.amount_due || 4500);
+      openModal('modal-trial-paid-company-stop');
+      showToast('⚠️ Application access paused. Payment of PKR 4,500 required for the additional company profile.', 'error');
+      return;
+    }
+
+    const created = (res && res.data) ? res.data : { id: 'bp-' + Date.now(), ...payload };
+    if (res && res.billingNotice) {
+      showToast(`✓ Company registered! Added to subscription billing: ${res.billingNotice.chargePerMonth}`, 'info');
+    } else {
+      showToast('✓ Business profile registered successfully!', 'success');
+    }
+
+    State.businessProfiles = await API.getBusinessProfiles();
+    populateBusinessSwitcher();
+
+    if (_quickAddContext && (_quickAddContext.entityType === 'company' || _quickAddContext.entityType === 'businessProfile')) {
+      await handleQuickAddCompletion('company', created);
+    } else {
+      navigateToView('business-profiles');
+    }
+  } catch (err) {
+    showToast(`Error creating paid company profile: ${err.message}`, 'error');
+  }
+}
+
+async function submitAddonPaymentSlip() {
+  const method = document.getElementById('pay-addon-method')?.value;
+  const ref = document.getElementById('pay-addon-ref')?.value?.trim();
+
+  if (!ref) {
+    alert('Please enter a valid transaction reference number or slip ID.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit-addon-pay');
+  if (btn) btn.innerText = 'Submitting...';
+
+  try {
+    const res = await API.submitAddonPaymentSlip({
+      reference_number: ref,
+      payment_method: method,
+      remarks: 'Paid company profile add-on payment slip submitted by client'
+    });
+
+    if (res && res.success) {
+      closeModal('modal-trial-paid-company-stop');
+      State.setApplicationStopped(false);
+      showToast('✓ Payment verified! Application access resumed.', 'success');
+      await renderActiveView();
+      updateHeaderUserProfile();
+    } else {
+      alert(res.message || 'Payment submission failed. Please check details.');
+    }
+  } catch (e) {
+    alert(`Error submitting payment: ${e.message}`);
+  } finally {
+    if (btn) btn.innerText = '✓ Submit Payment Proof & Resume Access';
   }
 }
 
@@ -8993,34 +9262,6 @@ async function submitUniversalEdit() {
 // --------------------------------------------------------------------------
 // PAID LIMIT ACTION HANDLERS
 // --------------------------------------------------------------------------
-
-async function confirmAndCreatePaidCompany() {
-  if (!pendingPaidCompanyPayload) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/business-profiles`, {
-      method: 'POST',
-      headers: API.getHeaders(),
-      body: JSON.stringify({ ...pendingPaidCompanyPayload, confirm_paid: true })
-    });
-    const data = await res.json();
-
-    closeModal('modal-paid-company-warning');
-    closeModal('modal-add-company');
-    pendingPaidCompanyPayload = null;
-
-    if (data.success) {
-      alert('✓ 3rd Company Profile created with paid add-on billing applied!');
-      State.businessProfiles = await API.getBusinessProfiles();
-      populateBusinessSwitcher();
-      await renderActiveView();
-    } else {
-      alert(`Error: ${data.message}`);
-    }
-  } catch (err) {
-    alert(`Error: ${err.message}`);
-  }
-}
 
 // --------------------------------------------------------------------------
 // RBAC USER & EMPLOYEE ACTION HANDLERS
@@ -9939,7 +10180,7 @@ function openConfigureSubscriptionModal(tenantId) {
 
   // Set Custom Prices
   document.getElementById('sub-custom-base-price').value = sub.custom_base_price !== undefined ? sub.custom_base_price : (normalizedPlan === 'Starter' ? 14000 : 35000);
-  document.getElementById('sub-custom-extra-company').value = sub.custom_extra_company_price !== undefined ? sub.custom_extra_company_price : 2500;
+  document.getElementById('sub-custom-extra-company').value = sub.custom_extra_company_price !== undefined ? sub.custom_extra_company_price : 4500;
   document.getElementById('sub-custom-extra-seat').value = sub.custom_extra_seat_price !== undefined ? sub.custom_extra_seat_price : 1500;
 
   // Set Trial Duration & Expiry Date
@@ -10092,7 +10333,7 @@ async function submitConfigureSubscriptionForm() {
   const incUsers = parseInt(document.getElementById('sub-included-users')?.value, 10) || (selectedPlan === 'Advance' ? 3 : 1);
 
   const basePrice = Number(document.getElementById('sub-custom-base-price')?.value || (selectedPlan === 'Starter' ? 14000 : 35000));
-  const extraCoPrice = Number(document.getElementById('sub-custom-extra-company')?.value || 2500);
+  const extraCoPrice = Number(document.getElementById('sub-custom-extra-company')?.value || 4500);
   const extraSeatPrice = Number(document.getElementById('sub-custom-extra-seat')?.value || 1500);
 
   const trialDuration = document.getElementById('sub-trial-duration')?.value;

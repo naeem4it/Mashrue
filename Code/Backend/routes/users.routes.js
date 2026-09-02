@@ -984,4 +984,92 @@ router.put('/tenants/:id/subscription', authenticate, requireRoles('SuperAdmin')
   }
 });
 
+/**
+ * POST /api/users/tenant/pay-addon
+ * Client submits payment proof for paid company add-on during trial
+ */
+router.post('/tenant/pay-addon', authenticate, async (req, res) => {
+  const { reference_number, payment_method, remarks } = req.body;
+  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+  const tenantId = req.user.tenantId;
+
+  if (!isUuid(tenantId)) {
+    return res.status(400).json({ success: false, message: 'Valid tenant context required.' });
+  }
+
+  if (!reference_number) {
+    return res.status(400).json({ success: false, message: 'Transaction reference number is required.' });
+  }
+
+  try {
+    // Record payment in tenant_subscription_payments
+    await db.query(
+      `INSERT INTO tenant_subscription_payments 
+         (tenant_id, amount, payment_type, payment_method, reference_number, status, remarks)
+       VALUES ($1, $2, 'company_addon', $3, $4, 'Verified', $5)`,
+      [tenantId, 4500.00, payment_method || 'Bank Transfer', reference_number.trim(), remarks || 'Paid company profile add-on payment']
+    );
+
+    // Unpause the tenant application
+    const updateRes = await db.query(
+      `UPDATE tenants 
+       SET pending_paid_company_payment = FALSE,
+           pending_paid_company_amount = 0.00,
+           status = 'Active',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [tenantId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Payment received and verified. Application access has been resumed successfully!',
+      data: updateRes.rows[0]
+    });
+  } catch (err) {
+    console.error('Pay Addon Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/users/tenant/verify-addon-payment
+ * Super Admin marks paid company add-on verified
+ */
+router.post('/tenant/verify-addon-payment', authenticate, requireRoles('SuperAdmin'), async (req, res) => {
+  const { tenant_id } = req.body;
+  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+
+  if (!isUuid(tenant_id)) {
+    return res.status(400).json({ success: false, message: 'Valid tenant ID required.' });
+  }
+
+  try {
+    await db.query(
+      `UPDATE tenants 
+       SET pending_paid_company_payment = FALSE,
+           pending_paid_company_amount = 0.00,
+           status = 'Active',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [tenant_id]
+    );
+
+    await db.query(
+      `UPDATE tenant_subscription_payments 
+       SET status = 'Verified'
+       WHERE tenant_id = $1 AND status = 'Pending_Payment'`,
+      [tenant_id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Tenant company add-on verified and tenant unblocked successfully.'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

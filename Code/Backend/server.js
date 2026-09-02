@@ -195,4 +195,42 @@ app.listen(PORT, '0.0.0.0', async () => {
   } catch (seedErr) {
     console.error('SuperAdmin auto-seed error:', seedErr.message);
   }
+
+  // Auto-migrate schema additions safely on startup
+  try {
+    await db.query(`
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_type VARCHAR(100) DEFAULT 'Government Department';
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS org_type VARCHAR(100) DEFAULT 'Government Department';
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS workflow_gates JSONB DEFAULT '{"requires_bid_security":true,"requires_performance_guarantee":true,"requires_stamp_duty":true,"requires_dtl_inspection":false,"requires_fbr_e_invoice":true,"requires_diary_tracking":true}'::jsonb;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+      ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS abbreviation VARCHAR(50);
+      ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_business_profile_limit INT DEFAULT 2;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_profile_monthly_fee NUMERIC(10,2) DEFAULT 4500.00;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS pending_paid_company_payment BOOLEAN DEFAULT FALSE;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS pending_paid_company_amount NUMERIC(10,2) DEFAULT 0.00;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS paid_companies_count INT DEFAULT 0;
+      UPDATE tenants SET additional_profile_monthly_fee = 4500.00 WHERE additional_profile_monthly_fee = 2500.00 OR additional_profile_monthly_fee IS NULL;
+
+      CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        amount NUMERIC(10, 2) NOT NULL,
+        payment_type VARCHAR(50) DEFAULT 'company_addon',
+        payment_method VARCHAR(50) DEFAULT 'Bank Transfer',
+        reference_number VARCHAR(100),
+        status VARCHAR(30) DEFAULT 'Verified',
+        payment_date DATE DEFAULT CURRENT_DATE,
+        remarks TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, tenants, subscription_payments).');
+  } catch (schemaErr) {
+    console.warn('Schema auto-migration warning:', schemaErr.message);
+  }
 });

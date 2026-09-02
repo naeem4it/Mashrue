@@ -15,7 +15,13 @@ const API = {
       if (State.token) {
         headers['Authorization'] = `Bearer ${State.token}`;
       }
-      const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+      let tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+      if (typeof State.isSuperAdmin === 'function' && State.isSuperAdmin()) {
+        const activeProfile = typeof State.getCurrentBusinessProfile === 'function' ? State.getCurrentBusinessProfile() : null;
+        if (activeProfile && activeProfile.tenant_id) {
+          tid = activeProfile.tenant_id;
+        }
+      }
       if (tid) {
         headers['x-tenant-id'] = tid;
       }
@@ -489,10 +495,36 @@ const API = {
   },
 
   async createBusinessProfile(payload) {
-    const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || ('t-' + Date.now());
+    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+    let tid = payload.tenant_id;
+    if (!isUuid(tid)) {
+      tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+    }
+    if (!isUuid(tid) && window._adminSelectedClientFilter && isUuid(window._adminSelectedClientFilter)) {
+      tid = window._adminSelectedClientFilter;
+    }
+    const cleanTid = isUuid(tid) ? tid : undefined;
+
+    try {
+      const res = await fetch(`${API_BASE}/business-profiles`, {
+        method: 'POST',
+        headers: this.getHeaders(cleanTid ? { 'x-tenant-id': cleanTid } : {}),
+        body: JSON.stringify({ ...payload, tenant_id: cleanTid })
+      });
+      const json = await res.json();
+      if (json) {
+        if (json.success && json.data) {
+          State.saveTenantCompany(json.data, cleanTid);
+        }
+        return json;
+      }
+    } catch (e) {
+      console.warn('createBusinessProfile fallback:', e.message);
+    }
+
     const newCompany = {
       id: 'b-' + Date.now(),
-      tenant_id: tid,
+      tenant_id: cleanTid || 'local',
       business_name: payload.business_name,
       legal_name: payload.legal_name || payload.business_name,
       abbreviation: payload.abbreviation || '',
@@ -504,21 +536,7 @@ const API = {
       fbr_enabled: Boolean(payload.fbr_enabled)
     };
 
-    // Save strictly under this tenant's namespace
-    State.saveTenantCompany(newCompany, tid);
-
-    try {
-      const res = await fetch(`${API_BASE}/business-profiles`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({ ...payload, tenant_id: tid })
-      });
-      const json = await res.json();
-      if (json && json.success) return json;
-    } catch (e) {
-      console.warn('createBusinessProfile fallback:', e.message);
-    }
-
+    State.saveTenantCompany(newCompany, cleanTid || 'local');
     return { success: true, data: newCompany, message: 'Company profile created successfully.' };
   },
 
@@ -531,6 +549,39 @@ const API = {
       return await res.json();
     } catch (e) {
       return { success: false, message: e.message || 'Failed to delete business profile.' };
+    }
+  },
+
+  async submitAddonPaymentSlip(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/users/tenant/pay-addon`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json && json.success) {
+        State.setApplicationStopped(false);
+        return json;
+      }
+      return json || { success: false, message: 'Server error' };
+    } catch (e) {
+      console.warn('submitAddonPaymentSlip error:', e.message);
+      State.setApplicationStopped(false);
+      return { success: true, message: 'Payment recorded in local session.' };
+    }
+  },
+
+  async verifyAddonPayment(tenantId) {
+    try {
+      const res = await fetch(`${API_BASE}/users/tenant/verify-addon-payment`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ tenant_id: tenantId })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
     }
   },
 
@@ -610,12 +661,21 @@ const API = {
   },
 
   async createCustomer(payload) {
-    const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
+    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+    let tid = payload.tenant_id;
+    if (!isUuid(tid)) {
+      tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+    }
+    if (!isUuid(tid) && window._adminSelectedClientFilter && isUuid(window._adminSelectedClientFilter)) {
+      tid = window._adminSelectedClientFilter;
+    }
+    const cleanTid = isUuid(tid) ? tid : undefined;
+
     try {
       const res = await fetch(`${API_BASE}/masters/customers`, {
         method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({ ...payload, tenant_id: tid })
+        headers: this.getHeaders(cleanTid ? { 'x-tenant-id': cleanTid } : {}),
+        body: JSON.stringify({ ...payload, tenant_id: cleanTid })
       });
       const json = await res.json();
       if (res.status === 409 || !json.success) {
@@ -631,7 +691,7 @@ const API = {
 
     const newCustomer = {
       id: 'c-' + Date.now(),
-      tenant_id: tid,
+      tenant_id: cleanTid || 'local',
       ...payload,
       created_at: new Date().toISOString()
     };
@@ -748,7 +808,6 @@ const API = {
 
   async updateProduct(id, payload) {
     const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
-    State.saveTenantEntity('products', { id: id, ...payload });
 
     try {
       const res = await fetch(`${API_BASE}/masters/products/${id}`, {
@@ -757,13 +816,16 @@ const API = {
         body: JSON.stringify(payload)
       });
       const json = await res.json();
-      if (json && json.success && json.data) {
-        State.saveTenantEntity('products', json.data);
+      if (json) {
+        if (json.success && json.data) {
+          State.saveTenantEntity('products', json.data);
+        }
         return json;
       }
     } catch (e) {
       console.warn('updateProduct API error/fallback:', e.message);
     }
+    State.saveTenantEntity('products', { id: id, ...payload });
     return { success: true, data: { id, ...payload }, message: 'Product updated successfully.' };
   },
 
@@ -906,14 +968,18 @@ const API = {
       };
     }
 
+    const genOppNo = payload.opportunity_number || ('TND-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
+    const cleanPayload = { ...payload };
+    if (!cleanPayload.opportunity_number) cleanPayload.opportunity_number = genOppNo;
+
     const newOpp = {
       id: 'f-' + Date.now(),
       tenant_id: tid,
-      opportunity_number: 'TND-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000),
+      opportunity_number: genOppNo,
       status: 'New',
       selection_status: 'Pending',
       active_bid_securities_count: 0,
-      ...payload,
+      ...cleanPayload,
       created_at: new Date().toISOString()
     };
     State.saveTenantEntity('opportunities', newOpp);
@@ -926,7 +992,13 @@ const API = {
         body: JSON.stringify({ ...payload, tenant_id: tid })
       });
       const json = await res.json();
-      if (json && json.success) return json;
+      if (json && json.success) {
+        if (json.data) {
+          State.removeTenantEntity('opportunities', newOpp.id);
+          State.saveTenantEntity('opportunities', json.data);
+        }
+        return json;
+      }
     } catch (e) {}
 
     return { success: true, data: newOpp, message: 'Tender created successfully.' };
@@ -1966,7 +2038,7 @@ const API = {
       const paidUsers = Math.max(0, users.length - freeUsersLimit);
       
       let totalMonthly = sub.custom_base_price !== undefined ? Number(sub.custom_base_price) : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic' ? 14000 : sub.plan_type === 'Advance' ? 35000 : 3000);
-      totalMonthly += paidCompanies * (sub.custom_extra_company_price !== undefined ? Number(sub.custom_extra_company_price) : 2500);
+    totalMonthly += paidCompanies * (sub.custom_extra_company_price !== undefined ? Number(sub.custom_extra_company_price) : 4500);
       totalMonthly += paidUsers * (sub.custom_extra_seat_price !== undefined ? Number(sub.custom_extra_seat_price) : 1500);
       
       if (sub.plan_type === 'Custom' && Array.isArray(sub.active_modules)) {
@@ -2051,7 +2123,7 @@ const API = {
     const paidUsers = Math.max(0, users.length - freeUsersLimit);
 
     let totalMonthly = sub.custom_base_price !== undefined ? Number(sub.custom_base_price) : (sub.plan_type === 'Basic' ? 4000 : sub.plan_type === 'Advance' ? 14000 : 3000);
-    totalMonthly += paidCompanies * (sub.custom_extra_company_price !== undefined ? Number(sub.custom_extra_company_price) : 2500);
+    totalMonthly += paidCompanies * (sub.custom_extra_company_price !== undefined ? Number(sub.custom_extra_company_price) : 4500);
     totalMonthly += paidUsers * (sub.custom_extra_seat_price !== undefined ? Number(sub.custom_extra_seat_price) : 1500);
 
     if (sub.plan_type === 'Custom' && Array.isArray(sub.active_modules)) {

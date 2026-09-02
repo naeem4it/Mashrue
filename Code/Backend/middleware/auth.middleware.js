@@ -53,6 +53,7 @@ async function authenticate(req, res, next) {
         `SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                 u.must_change_password, u.can_see_bidding_prices, u.permissions,
                 t.company_name as tenant_name, t.subscription_plan,
+                t.pending_paid_company_payment, t.pending_paid_company_amount, t.status as tenant_status,
                 COALESCE(
                   json_agg(uba.business_profile_id) FILTER (WHERE uba.business_profile_id IS NOT NULL),
                   '[]'
@@ -65,12 +66,15 @@ async function authenticate(req, res, next) {
             OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER($2)) 
          GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                   u.must_change_password, u.can_see_bidding_prices, u.permissions,
-                  t.company_name, t.subscription_plan`,
+                  t.company_name, t.subscription_plan,
+                  t.pending_paid_company_payment, t.pending_paid_company_amount, t.status`,
         [String(decoded.userId || ''), String(decoded.username || '')]
       );
     } catch (dbErr) {
       console.warn('User auth DB query fallback:', dbErr.message);
     }
+
+    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
 
     if (userRes.rows.length === 0) {
       if (decoded.role === 'SuperAdmin') {
@@ -92,15 +96,17 @@ async function authenticate(req, res, next) {
       }
 
       // Handle newly created local/offline users or valid client session
-      const reqTenantId = decoded.tenantId || req.headers['x-tenant-id'] || 't-default';
+      const rawTid = decoded.tenantId || req.headers['x-tenant-id'];
+      const reqTenantId = isUuid(rawTid) ? rawTid : null;
       req.user = {
         id: decoded.userId || req.headers['x-user-id'] || ('u-' + Date.now()),
         tenantId: reqTenantId,
         tenantName: req.headers['x-tenant-name'] || 'Organization',
         username: decoded.username || req.headers['x-username'] || 'clientuser',
-        fullName: decoded.fullName || req.headers['x-username'] || 'User',
-        email: decoded.email || `${decoded.username || 'user'}@tenant.com`,
+        fullName: req.headers['x-full-name'] || 'User',
+        email: req.headers['x-email'] || null,
         role: decoded.role || req.headers['x-user-role'] || 'ClientAdmin',
+        status: 'Active',
         mustChangePassword: false,
         canSeeBiddingPrices: true,
         permissions: {},
@@ -117,10 +123,14 @@ async function authenticate(req, res, next) {
       return res.status(403).json({ success: false, message: 'User account is inactive or suspended.' });
     }
 
+    const rawHeaderTid = req.headers['x-tenant-id'];
+    const validHeaderTid = isUuid(rawHeaderTid) ? rawHeaderTid : null;
+    const validDecodedTid = isUuid(decoded.tenantId) ? decoded.tenantId : null;
+
     // Attach user to request object
     req.user = {
       id: user.id,
-      tenantId: user.tenant_id || decoded.tenantId || req.headers['x-tenant-id'] || null,
+      tenantId: user.tenant_id || validDecodedTid || validHeaderTid || null,
       tenantName: user.tenant_name,
       username: user.username,
       fullName: user.full_name,
@@ -132,8 +142,31 @@ async function authenticate(req, res, next) {
       assignedBusinessProfiles: user.assigned_business_profiles || [],
       isSuperAdmin: user.role === 'SuperAdmin' || user.role === 'LimitedSuperAdmin',
       isClientAdmin: user.role === 'ClientAdmin' || user.role === 'CompanyAdmin',
-      isClientEmployee: user.role === 'ClientEmployee' || user.role === 'BidManager'
+      isClientEmployee: user.role === 'ClientEmployee' || user.role === 'BidManager',
+      applicationStopped: Boolean(user.pending_paid_company_payment),
+      pendingPaidCompanyAmount: parseFloat(user.pending_paid_company_amount || 4500.00)
     };
+
+    // If client user and application access is stopped pending payment on trial
+    if (req.user.applicationStopped && !req.user.isSuperAdmin) {
+      const exemptRoutes = [
+        '/api/auth',
+        '/api/users/tenant/pay-addon',
+        '/api/users/profile',
+        '/api/subscriptions/my',
+        '/api/business-profiles'
+      ];
+      const isExempt = exemptRoutes.some(route => req.originalUrl.startsWith(route));
+      if (!isExempt && req.method !== 'GET') {
+        return res.status(402).json({
+          success: false,
+          application_stopped: true,
+          requires_payment: true,
+          amount_due: req.user.pendingPaidCompanyAmount || 4500,
+          message: 'Application access is paused. Payment of PKR 4,500 for the additional company profile is required to resume access.'
+        });
+      }
+    }
 
     next();
   } catch (err) {

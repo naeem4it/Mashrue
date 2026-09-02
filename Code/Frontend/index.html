@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=5.3">
+  <link rel="stylesheet" href="css/main.css?v=5.6">
 </head>
 <body>
 
@@ -316,7 +316,7 @@
   <!-- 1. Add New Tender / Opportunity Modal (with item auto-population & quick add customer) -->
   <!-- 1. Add New Tender / Opportunity Modal (with dynamic multi-item builder, currency & PPRA updates) -->
   <div class="modal-backdrop" id="modal-add-tender">
-    <div class="modal-card modal-lg" style="max-width: 900px;">
+    <div class="modal-card modal-lg" style="max-width: 920px;">
       <div class="modal-header">
         <h2 style="font-size: 1.15rem; font-weight: 700;">📑 Register New Tender / Opportunity</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-tender')">&times;</button>
@@ -758,8 +758,8 @@
               <input type="text" class="form-input" id="cust-contact" placeholder="e.g. Engr. Tariq Mahmood (Chief Engineer)">
             </div>
             <div class="form-group">
-              <label class="form-label">Official Phone *</label>
-              <input type="tel" class="form-input" id="cust-phone" required placeholder="e.g. +92 300 1234567 / 042-35870011" oninput="formatPhoneNumberInput(this)">
+              <label class="form-label">Official Phone</label>
+              <input type="tel" class="form-input" id="cust-phone" placeholder="e.g. +92 300 1234567 / 042-35870011" oninput="formatPhoneNumberInput(this)">
             </div>
             <div class="form-group">
               <label class="form-label">Official Email</label>
@@ -2005,12 +2005,6 @@
         <h2 id="modal-add-company-title" style="font-size: 1.15rem; font-weight: 700;">🏢 Configure Company / Business Profile</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-company')">&times;</button>
       </div>
-      <div class="modal-body">
-        <div id="company-limit-alert" class="company-limit-banner" style="display: none;">
-          <div>
-            <strong>Tier Limit Notice:</strong> Up to 2 companies can be configured for free. Additional profiles incur PKR 2,500/month.
-          </div>
-        </div>
         <form id="form-add-company" onsubmit="event.preventDefault(); submitNewCompanyForm();">
           <input type="hidden" id="comp-edit-id">
           <div class="form-row">
@@ -2258,19 +2252,16 @@
   <!-- 14. Paid Company Limit Warning Modal -->
   <div class="modal-backdrop" id="modal-paid-company-warning" style="z-index: 10001;">
     <div class="modal-card" style="max-width: 480px;">
-      <div class="modal-body" style="padding: 24px;">
-        <div class="warning-icon-box">🏢</div>
-        <h3 class="warning-title">Free Company Limit Reached</h3>
-        <p class="warning-desc">
-          You have reached your limit of <strong>2 Free Companies</strong>. Creating an additional company profile will incur an add-on subscription fee.
+      <div class="modal-body" style="padding: 28px 24px; text-align: center;">
+        <div class="warning-icon-box" style="font-size: 2.2rem; margin-bottom: 12px;">🏢</div>
+        <h3 class="warning-title" style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 12px;">Company Limit Exceeded</h3>
+        <p class="warning-desc" id="paid-company-warning-msg" style="font-size: 0.95rem; color: #334155; line-height: 1.6; margin-bottom: 24px;">
+          You are exceeding your limit. Are you sure you want to create a company for 4,500/month?
         </p>
-        <div class="fee-highlight-badge">
-          💰 Additional Monthly Charge: PKR 2,500 / month
-        </div>
-        <div style="display: flex; gap: 10px; justify-content: center;">
-          <button type="button" class="secondary-btn" onclick="closeModal('modal-paid-company-warning')">Cancel</button>
-          <button type="button" class="primary-btn" id="btn-confirm-paid-company" onclick="confirmAndCreatePaidCompany()">
-            ✅ Accept & Create 3rd Company
+        <div style="display: flex; gap: 14px; justify-content: center;">
+          <button type="button" class="secondary-btn" style="min-width: 100px; padding: 9px 20px;" onclick="closeModal('modal-paid-company-warning'); pendingPaidCompanyPayload = null;">No</button>
+          <button type="button" class="primary-btn" id="btn-confirm-paid-company" style="min-width: 100px; padding: 9px 20px;" onclick="confirmAndCreatePaidCompany()">
+            Yes
           </button>
         </div>
       </div>
@@ -2909,7 +2900,7 @@
               </div>
               <div class="form-group">
                 <label class="form-label">Extra Company Surcharge (PKR/mo)</label>
-                <input type="number" class="form-input" id="sub-custom-extra-company" value="2500" min="0" oninput="recalcSubscriptionBillPreview()">
+                <input type="number" class="form-input" id="sub-custom-extra-company" value="4500" min="0" oninput="recalcSubscriptionBillPreview()">
               </div>
               <div class="form-group">
                 <label class="form-label">Extra Employee Seat (PKR/mo)</label>
@@ -3466,12 +3457,73 @@
     </div>
   </div>
 
+  <!-- 32. Trial Paid Company Lock / Application Access Paused Modal -->
+  <div class="modal-backdrop" id="modal-trial-paid-company-stop" style="z-index: 10005; backdrop-filter: blur(10px); background: rgba(15, 23, 42, 0.88);">
+    <div class="modal-card" style="max-width: 580px; border-top: 6px solid #dc2626; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);">
+      <div class="modal-body" style="padding: 30px 26px; text-align: center;">
+        <div style="font-size: 3.2rem; margin-bottom: 12px; line-height: 1;">🛑</div>
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: #0f172a; margin-bottom: 8px;">Application Access Paused</h2>
+        <div style="font-size: 0.86rem; color: #64748b; margin-bottom: 18px;">Subscription Add-on Payment Required</div>
+
+        <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 14px 16px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+          <div style="color: #991b1b; font-size: 0.9rem; font-weight: 600; line-height: 1.55;">
+            ⚠️ <strong>Notice:</strong> You registered an additional company profile (PKR 4,500/month) while on your Free Trial. Because your organization is on a trial period, application access is paused until payment for this company profile is completed.
+          </div>
+        </div>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px; margin-bottom: 10px;">
+            <span style="font-size: 0.88rem; color: #64748b; font-weight: 600;">Plan Add-on Item:</span>
+            <span style="font-size: 0.95rem; font-weight: 700; color: #0f172a;">Additional Company Profile</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px; margin-bottom: 10px;">
+            <span style="font-size: 0.88rem; color: #64748b; font-weight: 600;">Amount Due:</span>
+            <span style="font-size: 1.2rem; font-weight: 800; color: #dc2626;">PKR 4,500 / month</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #475569; line-height: 1.6; margin-top: 8px;">
+            <strong>Official Bank Details:</strong><br>
+            Bank Name: <strong>Meezan Bank Limited</strong><br>
+            Account Title: <strong>Mashrue Enterprise BMS (Pvt) Ltd</strong><br>
+            IBAN: <strong>PK12MEZN0001234567890123</strong> | JazzCash/EasyPaisa: <strong>0300-1234567</strong>
+          </div>
+        </div>
+
+        <form id="form-pay-addon-slip" onsubmit="event.preventDefault(); submitAddonPaymentSlip();" style="text-align: left; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+          <div style="font-weight: 700; font-size: 0.92rem; color: #0f172a; margin-bottom: 10px;">📥 Submit Bank Transfer / Deposit Slip Reference:</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Payment Method *</label>
+              <select class="form-select" id="pay-addon-method" required>
+                <option value="Online Bank Transfer (IBFT)" selected>Online Bank Transfer (IBFT)</option>
+                <option value="JazzCash / EasyPaisa">JazzCash / EasyPaisa</option>
+                <option value="Cheque / Pay Order">Cheque / Pay Order</option>
+                <option value="Cash Deposit Slip">Cash Deposit Slip</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Transaction Reference # / Slip ID *</label>
+              <input type="text" class="form-input" id="pay-addon-ref" required placeholder="e.g. IBFT-771928014">
+            </div>
+          </div>
+          <button type="submit" class="primary-btn" id="btn-submit-addon-pay" style="width: 100%; padding: 12px; font-weight: 700; background: #059669; font-size: 0.95rem;">
+            ✓ Submit Payment Proof & Resume Access
+          </button>
+        </form>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: #64748b; margin-top: 10px;">
+          <span>Need billing support? Contact <strong>billing@mashrue.com</strong></span>
+          <button type="button" class="secondary-btn" style="padding: 5px 12px; font-size: 0.8rem;" onclick="logout()">Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Enterprise Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=7.9"></script>
-  <script src="js/state.js?v=7.9"></script>
-  <script src="js/app.js?v=7.9"></script>
+  <script src="js/api.js?v=9.0"></script>
+  <script src="js/state.js?v=9.0"></script>
+  <script src="js/app.js?v=9.0"></script>
 </body>
 </html>
