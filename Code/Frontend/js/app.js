@@ -5861,139 +5861,158 @@ window.openNewTenderModal = openNewTenderModal;
 
 async function openEditTenderModal(id) {
   if (!id) {
-    alert('Invalid Tender ID.');
+    showToast('Invalid Tender ID.', 'danger');
     return;
   }
 
-  // 1. Fetch full opportunity record with line items from API or fallback
-  let o = null;
   try {
-    const res = await API.getOpportunityById(id);
-    if (res && res.data) o = res.data;
-  } catch (e) {
-    console.warn('API.getOpportunityById fallback:', e.message);
+    // 1. Fetch full opportunity record with line items from API or fallback
+    let o = null;
+    try {
+      const res = await API.getOpportunityById(id);
+      if (res && res.data) o = res.data;
+    } catch (e) {
+      console.warn('API.getOpportunityById fallback:', e.message);
+    }
+
+    if (!o) {
+      const opps = await API.getOpportunities(State.currentBusinessProfileId || 'all');
+      o = opps.find(item => String(item.id) === String(id));
+    }
+
+    if (!o) {
+      const allOpps = await API.getOpportunities('all');
+      o = allOpps.find(item => String(item.id) === String(id));
+    }
+
+    if (!o) {
+      showToast('Tender record could not be found.', 'warning');
+      return;
+    }
+
+    let customers = [], profiles = [];
+    try {
+      const [cRes, pRes, prRes] = await Promise.all([
+        API.getCustomers(),
+        API.getBusinessProfiles(),
+        API.getProducts()
+      ]);
+      customers = cRes || [];
+      profiles = pRes || [];
+      window._cachedProducts = prRes || [];
+    } catch (refErr) {
+      console.warn('Edit modal references warning:', refErr.message);
+    }
+
+    const form = document.getElementById('form-add-tender');
+    if (form) form.reset();
+
+    let editIdEl = document.getElementById('tender-edit-id');
+    if (!editIdEl) {
+      editIdEl = document.createElement('input');
+      editIdEl.type = 'hidden';
+      editIdEl.id = 'tender-edit-id';
+      if (form) form.appendChild(editIdEl);
+    }
+    editIdEl.value = o.id;
+
+    const modal = document.getElementById('modal-add-tender');
+    if (modal) {
+      const title = modal.querySelector('h2');
+      if (title) title.innerHTML = `✏️ Edit Tender: ${o.opportunity_number || ''} - ${o.tender_name || o.title || ''}`;
+    }
+
+    const nameEl = document.getElementById('tender-name');
+    if (nameEl) nameEl.value = o.tender_name || o.title || '';
+    
+    const srcSelect = document.getElementById('tender-source');
+    const otherContainer = document.getElementById('tender-source-other-container');
+    const otherInput = document.getElementById('tender-source-other');
+    
+    const standardSources = ['PPRA (Federal)', 'PPRA (Punjab)', 'DGP', 'RFQ', 'LPQ', 'OTHER', 'DIRECT SALES'];
+    if (standardSources.includes(o.tender_source)) {
+      if (srcSelect) srcSelect.value = o.tender_source;
+      if (otherContainer) otherContainer.style.display = (o.tender_source === 'OTHER') ? 'block' : 'none';
+    } else {
+      if (srcSelect) srcSelect.value = 'OTHER';
+      if (otherContainer) otherContainer.style.display = 'block';
+      if (otherInput) otherInput.value = (o.tender_source || '').replace(/^OTHER:\s*/, '');
+    }
+
+    const oppNoEl = document.getElementById('tender-opp-no');
+    if (oppNoEl) oppNoEl.value = o.opportunity_number || '';
+
+    const extNoEl = document.getElementById('tender-ext-no');
+    if (extNoEl) extNoEl.value = o.external_tender_number || '';
+    
+    const currSelect = document.getElementById('tender-currency');
+    if (currSelect) {
+      currSelect.value = o.currency || 'PKR';
+    }
+    if (typeof updateTenderCurrencyLabels === 'function') {
+      updateTenderCurrencyLabels(o.currency || 'PKR');
+    }
+
+    const custSelect = document.getElementById('tender-customer');
+    if (custSelect && customers.length > 0) {
+      custSelect.innerHTML = customers.map(c => `<option value="${c.id}" ${String(c.id) === String(o.customer_id) ? 'selected' : ''}>${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
+    }
+
+    const profSelect = document.getElementById('tender-business-profile');
+    if (profSelect && profiles.length > 0) {
+      profSelect.innerHTML = profiles.map(p => `<option value="${p.id}" ${String(p.id) === String(o.business_profile_id) ? 'selected' : ''}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
+    }
+
+    const estValEl = document.getElementById('tender-est-value');
+    if (estValEl) estValEl.value = o.estimated_value ? Number(o.estimated_value).toLocaleString() : '0';
+
+    const closingDateVal = (o.closing_date && o.closing_date !== 'N/A') ? formatDateDDMMYYYY(o.closing_date) : '';
+    const openingDateVal = (o.opening_date && o.opening_date !== 'N/A') ? formatDateDDMMYYYY(o.opening_date) : '';
+    
+    const closingEl = document.getElementById('tender-closing-date');
+    if (closingEl) closingEl.value = (closingDateVal === 'N/A' ? '' : closingDateVal);
+
+    const openingEl = document.getElementById('tender-opening-date');
+    if (openingEl) openingEl.value = (openingDateVal === 'N/A' ? '' : openingDateVal);
+
+    const descEl = document.getElementById('tender-description');
+    if (descEl) descEl.value = o.description || '';
+
+    const exemptEl = document.getElementById('tender-gst-exempt');
+    const inclusiveEl = document.getElementById('tender-gst-inclusive');
+    const rateEl = document.getElementById('tender-gst-rate');
+    if (exemptEl) exemptEl.checked = Boolean(o.is_gst_exempt);
+    if (inclusiveEl) inclusiveEl.checked = Boolean(o.is_gst_inclusive);
+    if (rateEl) rateEl.value = o.gst_rate_pct !== undefined ? o.gst_rate_pct : 18;
+
+    _tenderLineItems = [];
+    const tbody = document.getElementById('tender-items-tbody');
+    if (tbody) tbody.innerHTML = '';
+    
+    const items = o.items || o.tender_items || [];
+    if (Array.isArray(items) && items.length > 0) {
+      items.forEach(itm => {
+        addTenderItemRow(itm);
+      });
+    } else {
+      addTenderItemRow({
+        item_description: o.tender_name || o.title || 'Scope Item',
+        quantity: 1,
+        unit: 'LOT',
+        estimated_unit_price: o.estimated_value || 0
+      });
+    }
+
+    try { recalculateTenderItemsSum(); } catch (e) {}
+    try { calculateTenderBidSecurityFromPct(); } catch (e) {}
+    try { initCustomDateTimePickers(); } catch (e) {}
+
+    openModal('modal-add-tender');
+  } catch (modalErr) {
+    console.error('Error opening Edit Tender modal:', modalErr);
+    showToast('Notice opening edit modal: ' + modalErr.message, 'warning');
+    openModal('modal-add-tender');
   }
-
-  if (!o) {
-    const opps = await API.getOpportunities(State.currentBusinessProfileId || 'all');
-    o = opps.find(item => String(item.id) === String(id));
-  }
-
-  if (!o) {
-    const allOpps = await API.getOpportunities('all');
-    o = allOpps.find(item => String(item.id) === String(id));
-  }
-
-  if (!o) {
-    alert('Tender record not found.');
-    return;
-  }
-
-  const customers = await API.getCustomers();
-  const profiles = await API.getBusinessProfiles();
-  window._cachedProducts = await API.getProducts();
-
-  const form = document.getElementById('form-add-tender');
-  if (form) form.reset();
-
-  let editIdEl = document.getElementById('tender-edit-id');
-  if (!editIdEl) {
-    editIdEl = document.createElement('input');
-    editIdEl.type = 'hidden';
-    editIdEl.id = 'tender-edit-id';
-    if (form) form.appendChild(editIdEl);
-  }
-  editIdEl.value = o.id;
-
-  const modal = document.getElementById('modal-add-tender');
-  if (modal) {
-    const title = modal.querySelector('h2');
-    if (title) title.innerHTML = `✏️ Edit Tender: ${o.opportunity_number || ''} - ${o.tender_name || o.title || ''}`;
-  }
-
-  const nameEl = document.getElementById('tender-name');
-  if (nameEl) nameEl.value = o.tender_name || o.title || '';
-  
-  const srcSelect = document.getElementById('tender-source');
-  const otherContainer = document.getElementById('tender-source-other-container');
-  const otherInput = document.getElementById('tender-source-other');
-  
-  const standardSources = ['PPRA (Federal)', 'PPRA (Punjab)', 'DGP', 'RFQ', 'LPQ', 'OTHER', 'DIRECT SALES'];
-  if (standardSources.includes(o.tender_source)) {
-    if (srcSelect) srcSelect.value = o.tender_source;
-    if (otherContainer) otherContainer.style.display = (o.tender_source === 'OTHER') ? 'block' : 'none';
-  } else {
-    if (srcSelect) srcSelect.value = 'OTHER';
-    if (otherContainer) otherContainer.style.display = 'block';
-    if (otherInput) otherInput.value = (o.tender_source || '').replace(/^OTHER:\s*/, '');
-  }
-
-  const oppNoEl = document.getElementById('tender-opp-no');
-  if (oppNoEl) oppNoEl.value = o.opportunity_number || '';
-
-  const extNoEl = document.getElementById('tender-ext-no');
-  if (extNoEl) extNoEl.value = o.external_tender_number || '';
-  
-  const currSelect = document.getElementById('tender-currency');
-  if (currSelect) {
-    currSelect.value = o.currency || 'PKR';
-  }
-  updateTenderCurrencyLabels(o.currency || 'PKR');
-
-  const custSelect = document.getElementById('tender-customer');
-  if (custSelect) {
-    custSelect.innerHTML = customers.map(c => `<option value="${c.id}" ${String(c.id) === String(o.customer_id) ? 'selected' : ''}>${c.business_name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
-  }
-
-  const profSelect = document.getElementById('tender-business-profile');
-  if (profSelect) {
-    profSelect.innerHTML = profiles.map(p => `<option value="${p.id}" ${String(p.id) === String(o.business_profile_id) ? 'selected' : ''}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
-  }
-
-  const estValEl = document.getElementById('tender-est-value');
-  if (estValEl) estValEl.value = o.estimated_value ? Number(o.estimated_value).toLocaleString() : '0';
-
-  const closingDateVal = (o.closing_date && o.closing_date !== 'N/A') ? formatDateDDMMYYYY(o.closing_date) : '';
-  const openingDateVal = (o.opening_date && o.opening_date !== 'N/A') ? formatDateDDMMYYYY(o.opening_date) : '';
-  
-  const closingEl = document.getElementById('tender-closing-date');
-  if (closingEl) closingEl.value = (closingDateVal === 'N/A' ? '' : closingDateVal);
-
-  const openingEl = document.getElementById('tender-opening-date');
-  if (openingEl) openingEl.value = (openingDateVal === 'N/A' ? '' : openingDateVal);
-
-  const descEl = document.getElementById('tender-description');
-  if (descEl) descEl.value = o.description || '';
-
-  const exemptEl = document.getElementById('tender-gst-exempt');
-  const inclusiveEl = document.getElementById('tender-gst-inclusive');
-  const rateEl = document.getElementById('tender-gst-rate');
-  if (exemptEl) exemptEl.checked = Boolean(o.is_gst_exempt);
-  if (inclusiveEl) inclusiveEl.checked = Boolean(o.is_gst_inclusive);
-  if (rateEl) rateEl.value = o.gst_rate_pct !== undefined ? o.gst_rate_pct : 18;
-
-  _tenderLineItems = [];
-  const tbody = document.getElementById('tender-items-tbody');
-  if (tbody) tbody.innerHTML = '';
-  
-  if (o.items && Array.isArray(o.items) && o.items.length > 0) {
-    o.items.forEach(itm => {
-      addTenderItemRow(itm);
-    });
-  } else {
-    addTenderItemRow({
-      item_description: o.tender_name || o.title || 'Scope Item',
-      quantity: 1,
-      unit: 'LOT',
-      estimated_unit_price: o.estimated_value || 0
-    });
-  }
-
-  recalculateTenderItemsSum();
-  calculateTenderBidSecurityFromPct();
-  try { initCustomDateTimePickers(); } catch (e) {}
-
-  openModal('modal-add-tender');
 }
 
 function addTenderItemRow(initialData = null) {

@@ -14,7 +14,7 @@ router.get('/', optionalAuth, async (req, res) => {
              bp.business_name as business_name, 
              c.business_name as customer_name,
              c.org_type as customer_org_type,
-             COALESCE(t.organization_name, 'Default Org') as tenant_name,
+             COALESCE(t.company_name, 'Default Org') as tenant_name,
              u.full_name as client_admin_name,
              u.username as client_admin_username,
              (SELECT COUNT(*) FROM tender_items ti WHERE ti.opportunity_id = o.id) as item_count,
@@ -95,8 +95,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
        FROM opportunities o
        LEFT JOIN business_profiles bp ON o.business_profile_id = bp.id
        LEFT JOIN customers c ON o.customer_id = c.id
-       WHERE o.id = $1`;
-    const params = [req.params.id];
+       WHERE o.id::text = $1`;
+    const params = [String(req.params.id)];
 
     if (req.user && req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
       const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
@@ -115,9 +115,9 @@ router.get('/:id', optionalAuth, async (req, res) => {
       `SELECT ti.*, p.sku, p.current_stock
        FROM tender_items ti
        LEFT JOIN products_services p ON ti.product_service_id = p.id
-       WHERE ti.opportunity_id = $1 
+       WHERE ti.opportunity_id::text = $1 
        ORDER BY ti.created_at ASC`,
-      [req.params.id]
+      [String(req.params.id)]
     );
 
     // Filter pricing if not CompanyAdmin or SuperAdmin
@@ -136,14 +136,14 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
     // Fetch Bid Securities
     const secRes = await db.query(
-      `SELECT * FROM bid_securities WHERE opportunity_id = $1 ORDER BY created_at DESC`,
-      [req.params.id]
+      `SELECT * FROM bid_securities WHERE opportunity_id::text = $1 ORDER BY created_at DESC`,
+      [String(req.params.id)]
     );
 
     // Fetch Requirements
     const reqRes = await db.query(
-      `SELECT * FROM opportunity_requirements WHERE opportunity_id = $1 ORDER BY created_at ASC`,
-      [req.params.id]
+      `SELECT * FROM opportunity_requirements WHERE opportunity_id::text = $1 ORDER BY created_at ASC`,
+      [String(req.params.id)]
     );
 
     res.json({
