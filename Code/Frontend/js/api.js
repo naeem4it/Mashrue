@@ -1155,10 +1155,12 @@ const API = {
   },
 
   // 7. Bids & Evaluation (STRICT ZERO-TRUST TENANT ISOLATION)
-  async getBids(businessProfileId = 'all') {
+  async getBids(businessProfileId = 'all', opportunityId = null) {
     let apiData = [];
     try {
-      const res = await fetch(`${API_BASE}/bids?business_profile_id=${businessProfileId}`, { headers: this.getHeaders() });
+      let url = `${API_BASE}/bids?business_profile_id=${businessProfileId}`;
+      if (opportunityId) url += `&opportunity_id=${encodeURIComponent(opportunityId)}`;
+      const res = await fetch(url, { headers: this.getHeaders() });
       const json = await res.json();
       if (json && Array.isArray(json.data)) apiData = json.data;
     } catch (e) {
@@ -1170,7 +1172,11 @@ const API = {
     for (const b of localList) {
       if (!merged.some(m => m.id === b.id)) merged.push(b);
     }
-    return this.filterTenantData(merged, businessProfileId);
+    let filtered = this.filterTenantData(merged, businessProfileId);
+    if (opportunityId) {
+      filtered = filtered.filter(b => String(b.opportunity_id) === String(opportunityId));
+    }
+    return filtered;
   },
 
   async saveCosting(payload) {

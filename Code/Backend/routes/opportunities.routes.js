@@ -233,6 +233,10 @@ router.post('/', optionalAuth, async (req, res) => {
       };
     }
 
+    const safeClosing = parseSafeDate(closing_date) || new Date(Date.now() + 20 * 86400000);
+    const safeSubmission = parseSafeDate(submission_deadline) || safeClosing;
+    const safeOpening = parseSafeDate(opening_date);
+
     const result = await db.query(
       `INSERT INTO opportunities 
        (tenant_id, business_profile_id, opportunity_number, external_tender_number, tender_name, title, tender_source, tender_type, description, customer_id, department, publication_date, closing_date, submission_deadline, opening_date, estimated_value, currency, location, status, selection_status, workflow_gates)
@@ -251,9 +255,9 @@ router.post('/', optionalAuth, async (req, res) => {
         customer_id || null,
         department || null,
         publication_date || new Date(),
-        closing_date || new Date(Date.now() + 20 * 86400000),
-        submission_deadline || closing_date || new Date(Date.now() + 20 * 86400000),
-        opening_date || null,
+        safeClosing,
+        safeSubmission,
+        safeOpening,
         parseFloat(estimated_value || 0),
         currency || 'PKR',
         location || 'Pakistan',
@@ -368,6 +372,32 @@ router.post('/:id/items', async (req, res) => {
   }
 });
 
+function parseSafeDate(dStr) {
+  if (!dStr || dStr === 'N/A' || dStr === 'null' || dStr === 'undefined') return null;
+  if (dStr instanceof Date) return isNaN(dStr.getTime()) ? null : dStr;
+  if (typeof dStr === 'string' && dStr.includes('/')) {
+    const parts = dStr.trim().split(/[\s,]+/);
+    const dateParts = parts[0].split('/');
+    if (dateParts.length === 3) {
+      const day = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const year = parseInt(dateParts[2], 10);
+      let d = new Date(year, month, day);
+      if (parts[1]) {
+        const timeParts = parts[1].split(':');
+        let hours = parseInt(timeParts[0], 10);
+        const mins = parseInt(timeParts[1] || 0, 10);
+        if (parts[2] && parts[2].toUpperCase() === 'PM' && hours < 12) hours += 12;
+        if (parts[2] && parts[2].toUpperCase() === 'AM' && hours === 12) hours = 0;
+        d.setHours(hours, mins);
+      }
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  const parsed = new Date(dStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 // PUT update opportunity / tender / quotation details
 router.put('/:id', optionalAuth, async (req, res) => {
   const {
@@ -376,6 +406,8 @@ router.put('/:id', optionalAuth, async (req, res) => {
     tender_source,
     tender_type,
     external_tender_number,
+    business_profile_id,
+    currency,
     customer_id,
     department,
     closing_date,
@@ -384,10 +416,15 @@ router.put('/:id', optionalAuth, async (req, res) => {
     estimated_value,
     status,
     description,
-    workflow_gates
+    workflow_gates,
+    items
   } = req.body;
 
   try {
+    const safeClosing = parseSafeDate(closing_date);
+    const safeSubmission = parseSafeDate(submission_deadline) || safeClosing;
+    const safeOpening = parseSafeDate(opening_date);
+
     let queryText = `
       UPDATE opportunities
        SET tender_name = COALESCE($1, tender_name),
@@ -404,8 +441,10 @@ router.put('/:id', optionalAuth, async (req, res) => {
            status = COALESCE($12, status),
            description = COALESCE($13, description),
            workflow_gates = COALESCE($14::jsonb, workflow_gates),
+           business_profile_id = COALESCE($15, business_profile_id),
+           currency = COALESCE($16, currency),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $15
+       WHERE id = $17
     `;
     const params = [
       tender_name || null,
@@ -415,13 +454,15 @@ router.put('/:id', optionalAuth, async (req, res) => {
       external_tender_number || null,
       customer_id || null,
       department || null,
-      closing_date || null,
-      submission_deadline || null,
-      opening_date || null,
+      safeClosing || null,
+      safeSubmission || null,
+      safeOpening || null,
       estimated_value !== undefined ? parseFloat(estimated_value) : null,
       status || null,
       description || null,
       workflow_gates ? JSON.stringify(workflow_gates) : null,
+      business_profile_id || null,
+      currency || null,
       req.params.id
     ];
 
@@ -439,10 +480,55 @@ router.put('/:id', optionalAuth, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Tender / Opportunity not found or unauthorized' });
     }
 
+    // Synchronize tender items if passed
+    if (items && Array.isArray(items)) {
+      try {
+        await db.query(`DELETE FROM tender_items WHERE opportunity_id = $1`, [req.params.id]);
+        for (const itm of items) {
+          try {
+            await db.query(
+              `INSERT INTO tender_items 
+               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [
+                req.params.id,
+                itm.product_service_id || null,
+                itm.item_name || itm.item_description || 'Scope Item',
+                itm.item_description || itm.item_name || '',
+                parseFloat(itm.quantity || 1),
+                itm.unit || 'PCS',
+                parseFloat(itm.estimated_unit_price || 0),
+                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
+                itm.item_size || itm.size || null
+              ]
+            );
+          } catch (colErr) {
+            await db.query(
+              `INSERT INTO tender_items 
+               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                req.params.id,
+                itm.product_service_id || null,
+                itm.item_name || itm.item_description || 'Scope Item',
+                (itm.item_size ? `${itm.item_description || itm.item_name || ''} (Size: ${itm.item_size})` : (itm.item_description || itm.item_name)) || '',
+                parseFloat(itm.quantity || 1),
+                itm.unit || 'PCS',
+                parseFloat(itm.estimated_unit_price || 0),
+                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
+              ]
+            );
+          }
+        }
+      } catch (itemErr) {
+        console.warn('Error synchronizing tender items on update:', itemErr.message);
+      }
+    }
+
     res.json({
       success: true,
       data: result.rows[0],
-      message: 'Tender record updated successfully'
+      message: 'Tender record and scope items updated successfully'
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

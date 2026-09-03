@@ -4743,6 +4743,16 @@ async function renderCostingCalculatorHTML() {
       </div>
     </div>
 
+    <!-- Selected Tender Scope & Telemetry Card (Shown upon selection) -->
+    <div id="costing-selected-tender-details" style="display:none; margin-bottom: 20px;"></div>
+
+    <!-- Empty State Guide -->
+    <div id="costing-empty-state" style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:var(--radius-md); padding:24px 20px; text-align:center; margin-bottom:20px;">
+      <div style="font-size:1.8rem; margin-bottom:8px;">👈 📑</div>
+      <strong style="font-size:0.95rem; color:#1e293b; display:block; margin-bottom:4px;">Please Select a Tender Above</strong>
+      <span style="font-size:0.84rem; color:#64748b;">Choose an active tender or quotation from the dropdown above to load its commercial scope, itemized lines, and calculate landed direct costs & margins.</span>
+    </div>
+
     <!-- Live Landed Price Warning Alert -->
     <div id="costing-loss-warning" style="display:none; background:#fef2f2; border:1px solid #f87171; color:#991b1b; border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px;">
       ⚠️ <strong>Loss Alert:</strong> Recommended Bid Submission Price is lower than Landed Direct Cost. Negative profit margin detected!
@@ -4756,24 +4766,24 @@ async function renderCostingCalculatorHTML() {
         </div>
         <div class="card-body">
           <div class="form-group">
-            <label class="form-label">Supplier / Product Cost (PKR)</label>
-            <input type="text" class="form-input cost-calc-input" id="calc-sup-cost" value="10,000,000" oninput="formatCurrencyInput(this)">
+            <label class="form-label">Supplier / Product Cost (<span class="calc-currency-label">PKR</span>)</label>
+            <input type="text" class="form-input cost-calc-input" id="calc-sup-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
-            <label class="form-label">Logistics & 3PL Freight (PKR)</label>
-            <input type="text" class="form-input cost-calc-input" id="calc-log-cost" value="800,000" oninput="formatCurrencyInput(this)">
+            <label class="form-label">Logistics & 3PL Freight (<span class="calc-currency-label">PKR</span>)</label>
+            <input type="text" class="form-input cost-calc-input" id="calc-log-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
-            <label class="form-label">Labor & Site Commissioning (PKR)</label>
-            <input type="text" class="form-input cost-calc-input" id="calc-lab-cost" value="700,000" oninput="formatCurrencyInput(this)">
+            <label class="form-label">Labor & Site Commissioning (<span class="calc-currency-label">PKR</span>)</label>
+            <input type="text" class="form-input cost-calc-input" id="calc-lab-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
-            <label class="form-label">Allocated Overhead (PKR)</label>
-            <input type="text" class="form-input cost-calc-input" id="calc-ovh-cost" value="500,000" oninput="formatCurrencyInput(this)">
+            <label class="form-label">Allocated Overhead (<span class="calc-currency-label">PKR</span>)</label>
+            <input type="text" class="form-input cost-calc-input" id="calc-ovh-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
-            <label class="form-label">Tender Expenses & Bid Security (PKR)</label>
-            <input type="text" class="form-input cost-calc-input" id="calc-exp-cost" value="290,000" oninput="formatCurrencyInput(this)">
+            <label class="form-label">Tender Expenses & Bid Security (<span class="calc-currency-label">PKR</span>)</label>
+            <input type="text" class="form-input cost-calc-input" id="calc-exp-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
             <label class="form-label">Desired Markup (%)</label>
@@ -4787,7 +4797,7 @@ async function renderCostingCalculatorHTML() {
           <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">Live Margin & Price Summary</h3>
           <div class="calc-row">
             <span>Total Direct Landed Cost:</span>
-            <strong id="disp-total-cost">PKR 12,290,000</strong>
+            <strong id="disp-total-cost">PKR 0</strong>
           </div>
           <div class="calc-row">
             <span>Markup Rate:</span>
@@ -4795,7 +4805,7 @@ async function renderCostingCalculatorHTML() {
           </div>
           <div class="calc-row">
             <span>Projected Gross Profit:</span>
-            <strong id="disp-profit-amt" style="color:#10b981;">PKR 2,273,650</strong>
+            <strong id="disp-profit-amt" style="color:#10b981;">PKR 0</strong>
           </div>
           <div class="calc-row">
             <span>Gross Profit Margin %:</span>
@@ -4805,7 +4815,7 @@ async function renderCostingCalculatorHTML() {
 
         <div class="calc-total-box">
           <span style="font-size:0.85rem; text-transform:uppercase; color:#94a3b8;">Recommended Bid Submission Price</span>
-          <div class="calc-final-price" id="disp-final-bid-price">PKR 14,563,650</div>
+          <div class="calc-final-price" id="disp-final-bid-price">PKR 0</div>
         </div>
 
         <div style="margin-top: 14px;">
@@ -4920,15 +4930,49 @@ function onCostingCustomerChanged(customerId) {
 
 async function onCostingTenderChanged(tenderId) {
   const badge = document.getElementById('costing-tender-title-badge');
-  if (tenderId === 'all') {
+  const emptyState = document.getElementById('costing-empty-state');
+  const detailsContainer = document.getElementById('costing-selected-tender-details');
+
+  if (!tenderId || tenderId === 'all') {
     _selectedCostingOpportunity = null;
     if (badge) badge.style.display = 'none';
+    if (emptyState) emptyState.style.display = 'block';
+    if (detailsContainer) {
+      detailsContainer.style.display = 'none';
+      detailsContainer.innerHTML = '';
+    }
+    // Reset inputs
+    ['calc-sup-cost', 'calc-log-cost', 'calc-lab-cost', 'calc-ovh-cost', 'calc-exp-cost'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '0';
+    });
+    const markupEl = document.getElementById('calc-markup-pct');
+    if (markupEl) markupEl.value = '18.5';
+    recalculateCostSheet();
     return;
   }
 
-  const opps = await API.getOpportunities(State.currentBusinessProfileId);
-  const target = opps.find(o => o.id === tenderId);
-  if (!target) return;
+  // Fetch full opportunity with items, securities, etc.
+  let target = null;
+  try {
+    const res = await API.getOpportunityById(tenderId);
+    if (res && res.data) target = res.data;
+  } catch (e) {}
+
+  if (!target) {
+    const opps = await API.getOpportunities(State.currentBusinessProfileId || 'all');
+    target = opps.find(o => String(o.id) === String(tenderId));
+  }
+
+  if (!target) {
+    const allOpps = await API.getOpportunities('all');
+    target = allOpps.find(o => String(o.id) === String(tenderId));
+  }
+
+  if (!target) {
+    showToast('Tender details could not be retrieved', 'warning');
+    return;
+  }
 
   _selectedCostingOpportunity = target;
 
@@ -4936,23 +4980,206 @@ async function onCostingTenderChanged(tenderId) {
     badge.innerText = `Selected: [${target.opportunity_number || 'TND'}] ${target.tender_name || target.title}`;
     badge.style.display = 'inline-block';
   }
+  if (emptyState) emptyState.style.display = 'none';
 
-  // Auto-populate direct costs based on estimated value
-  const estVal = parseFloat(target.estimated_value || 0);
-  if (estVal > 0) {
-    const supEl = document.getElementById('calc-sup-cost');
-    const logEl = document.getElementById('calc-log-cost');
-    const labEl = document.getElementById('calc-lab-cost');
-    const ovhEl = document.getElementById('calc-ovh-cost');
-    const expEl = document.getElementById('calc-exp-cost');
+  // Update currency labels
+  const currency = target.currency || 'PKR';
+  document.querySelectorAll('.calc-currency-label').forEach(el => el.innerText = currency);
 
-    if (supEl) supEl.value = Math.round(estVal * 0.70).toLocaleString();
+  // Retrieve customer name, business profile name
+  let customerName = target.customer_name || '';
+  let profileName = target.business_name || '';
+  try {
+    const [customers, profiles] = await Promise.all([
+      API.getCustomers(),
+      API.getBusinessProfiles()
+    ]);
+    const cust = customers.find(c => String(c.id) === String(target.customer_id));
+    const prof = profiles.find(p => String(p.id) === String(target.business_profile_id));
+    if (cust) customerName = cust.business_name;
+    if (prof) profileName = prof.business_name;
+  } catch (e) {}
+  if (!customerName) customerName = target.customer_name || 'Customer Organization';
+  if (!profileName) profileName = target.business_name || 'Submitting Entity';
+
+  // Check for saved costing (bids)
+  let savedCosting = null;
+  try {
+    const bids = await API.getBids(State.currentBusinessProfileId || 'all', target.id);
+    if (Array.isArray(bids) && bids.length > 0) {
+      savedCosting = bids[0];
+    }
+  } catch (e) {}
+
+  // Check for bid securities
+  let securities = [];
+  try {
+    securities = (await API.getBidSecurities(State.currentBusinessProfileId || 'all', target.id)) || [];
+  } catch (e) {}
+  const activeSec = securities.find(s => s.status === 'Active' || s.status === 'Submitted') || securities[0];
+  const secAmount = activeSec ? parseFloat(activeSec.amount || 0) : 0;
+
+  // Retrieve line items
+  const items = target.items || target.tender_items || [];
+  const itemsTotalSum = items.reduce((sum, itm) => {
+    const qty = parseFloat(itm.quantity || 1);
+    const up = parseFloat(itm.estimated_unit_price || itm.unit_price || 0);
+    return sum + (parseFloat(itm.estimated_total_price || (qty * up)) || 0);
+  }, 0);
+
+  const estVal = parseFloat(target.estimated_value || itemsTotalSum || 0);
+
+  // Render Selected Tender Scope & Telemetry Card
+  if (detailsContainer) {
+    detailsContainer.style.display = 'block';
+    detailsContainer.innerHTML = `
+      <div class="card" style="border: 1px solid #93c5fd; background: linear-gradient(to bottom, #ffffff, #f0f7ff); box-shadow: 0 4px 15px -3px rgba(59, 130, 246, 0.08); margin-bottom: 20px;">
+        <div class="card-header" style="background: rgba(239, 246, 255, 0.6); padding: 12px 18px; border-bottom: 1px solid #dbeafe; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:1.4rem;">📑</span>
+            <div>
+              <div style="font-size: 1.05rem; font-weight: 800; color: #1e3a8a;">
+                ${target.opportunity_number ? `[${target.opportunity_number}] ` : ''}${target.tender_name || target.title}
+              </div>
+              <div style="font-size: 0.78rem; color: #475569; display:flex; gap:12px; flex-wrap:wrap; margin-top:2px;">
+                <span><strong>Customer:</strong> ${customerName}</span>
+                <span>•</span>
+                <span><strong>Submitting Entity:</strong> ${profileName}</span>
+                <span>•</span>
+                <span><strong>Source:</strong> ${target.tender_source || 'PPRA'}</span>
+                ${target.external_tender_number ? `<span>•</span><span><strong>Ref:</strong> ${target.external_tender_number}</span>` : ''}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="badge badge-${(target.status || 'new').toLowerCase().replace(/\s+/g, '')}" style="font-size:0.8rem; padding:4px 10px;">
+              ${target.status || 'New'}
+            </span>
+            ${savedCosting ? `
+              <span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #86efac; font-size:0.75rem; padding:4px 8px; font-weight:700;">
+                ✓ Saved Costing Loaded (${savedCosting.bid_number || 'Sheet'})
+              </span>
+            ` : `
+              <span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.75rem; padding:4px 8px; font-weight:600;">
+                ✨ New Costing Estimation
+              </span>
+            `}
+          </div>
+        </div>
+
+        <div class="card-body" style="padding: 16px 18px;">
+          <!-- Telemetry Chips -->
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px;">
+              <div style="font-size:0.72rem; text-transform:uppercase; color:#64748b; font-weight:700;">Estimated Tender Value</div>
+              <div style="font-size:1.1rem; font-weight:800; color:#0f172a; margin-top:2px;">
+                ${currency} ${estVal.toLocaleString()}
+              </div>
+            </div>
+
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px;">
+              <div style="font-size:0.72rem; text-transform:uppercase; color:#64748b; font-weight:700;">Submission Deadline</div>
+              <div style="font-size:0.92rem; font-weight:700; color:#1e293b; margin-top:3px;">
+                📅 ${formatDateDDMMYYYY(target.closing_date)}
+              </div>
+            </div>
+
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px;">
+              <div style="font-size:0.72rem; text-transform:uppercase; color:#64748b; font-weight:700;">Bid Security / CDR</div>
+              <div style="font-size:0.92rem; font-weight:700; color:${secAmount > 0 ? '#0284c7' : '#64748b'}; margin-top:3px;">
+                🛡️ ${secAmount > 0 ? `${currency} ${secAmount.toLocaleString()} (${activeSec.bank_name || 'Bank CDR'})` : 'No CDR Attached'}
+              </div>
+            </div>
+
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px;">
+              <div style="font-size:0.72rem; text-transform:uppercase; color:#64748b; font-weight:700;">Scope Breakdown</div>
+              <div style="font-size:0.92rem; font-weight:700; color:#0f172a; margin-top:3px;">
+                📦 ${items.length > 0 ? `${items.length} Scope Line Item(s)` : 'Lump Sum Scope'}
+              </div>
+            </div>
+          </div>
+
+          <!-- Itemized Scope Table -->
+          ${items.length > 0 ? `
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+              <div style="padding:8px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.82rem; font-weight:700; color:#334155;">📦 Tender Scope & Technical Items (${items.length}):</span>
+                <span style="font-size:0.78rem; color:#64748b;">Items Total: <strong>${currency} ${itemsTotalSum.toLocaleString()}</strong></span>
+              </div>
+              <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                <table class="data-table" style="font-size:0.8rem; margin-bottom:0;">
+                  <thead>
+                    <tr style="background:#f8fafc;">
+                      <th style="width:40px;">#</th>
+                      <th>Item Scope / Description</th>
+                      <th>Specification / Size</th>
+                      <th style="text-align:right;">Quantity</th>
+                      <th>Unit</th>
+                      <th style="text-align:right;">Est. Unit Price</th>
+                      <th style="text-align:right;">Total (${currency})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${items.map((itm, idx) => {
+                      const q = parseFloat(itm.quantity || 1);
+                      const up = parseFloat(itm.estimated_unit_price || itm.unit_price || 0);
+                      const tot = parseFloat(itm.estimated_total_price || (q * up)) || 0;
+                      return `
+                        <tr>
+                          <td style="color:#64748b;">${idx + 1}</td>
+                          <td><strong>${itm.item_name || itm.item_description || 'Scope Item'}</strong></td>
+                          <td style="color:#64748b;">${itm.item_size || itm.size || itm.specifications || '-'}</td>
+                          <td style="text-align:right; font-weight:600;">${q.toLocaleString()}</td>
+                          <td>${itm.unit || 'PCS'}</td>
+                          <td style="text-align:right;">${up > 0 ? up.toLocaleString() : '-'}</td>
+                          <td style="text-align:right; font-weight:700;">${tot > 0 ? tot.toLocaleString() : '-'}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : `
+            <div style="font-size:0.82rem; color:#64748b; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px;">
+              ℹ️ Lump-sum tender opportunity: <strong>${target.tender_name || target.title}</strong> (Est. Value: ${currency} ${estVal.toLocaleString()})
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }
+
+  // Populate Direct Cost Breakdown inputs
+  const supEl = document.getElementById('calc-sup-cost');
+  const logEl = document.getElementById('calc-log-cost');
+  const labEl = document.getElementById('calc-lab-cost');
+  const ovhEl = document.getElementById('calc-ovh-cost');
+  const expEl = document.getElementById('calc-exp-cost');
+  const markupEl = document.getElementById('calc-markup-pct');
+
+  if (savedCosting) {
+    if (supEl) supEl.value = Math.round(parseFloat(savedCosting.supplier_cost_total || 0)).toLocaleString();
+    if (logEl) logEl.value = Math.round(parseFloat(savedCosting.logistics_cost_total || 0)).toLocaleString();
+    if (labEl) labEl.value = Math.round(parseFloat(savedCosting.labor_cost_total || 0)).toLocaleString();
+    if (ovhEl) ovhEl.value = Math.round(parseFloat(savedCosting.overhead_cost_total || 0)).toLocaleString();
+    if (expEl) expEl.value = Math.round(parseFloat(savedCosting.tender_expense_total || 0)).toLocaleString();
+    if (markupEl) markupEl.value = parseFloat(savedCosting.desired_markup_pct || 18.5);
+  } else {
+    // Determine supplier cost: use items total if available, otherwise 70% of estimated value
+    const calculatedSupCost = itemsTotalSum > 0 ? itemsTotalSum : Math.round(estVal * 0.70);
+    const calculatedExp = (secAmount > 0 ? secAmount : Math.round(estVal * 0.02));
+
+    if (supEl) supEl.value = calculatedSupCost.toLocaleString();
     if (logEl) logEl.value = Math.round(estVal * 0.06).toLocaleString();
     if (labEl) labEl.value = Math.round(estVal * 0.05).toLocaleString();
     if (ovhEl) ovhEl.value = Math.round(estVal * 0.03).toLocaleString();
-    if (expEl) expEl.value = Math.round(estVal * 0.02).toLocaleString();
-    recalculateCostSheet();
+    if (expEl) expEl.value = calculatedExp.toLocaleString();
+    if (markupEl) markupEl.value = '18.5';
   }
+
+  recalculateCostSheet();
+  showToast(`✓ Loaded data for ${target.opportunity_number || 'Tender'} (${currency} ${estVal.toLocaleString()})`, 'info');
 }
 
 function filterCostingTendersByDate() {
@@ -5511,6 +5738,16 @@ function applyTenderBidSecurityPct(val) {
   calculateTenderBidSecurityFromPct();
 }
 
+function updateTenderCurrencyLabels(currency = 'PKR') {
+  const cleanCurr = currency || 'PKR';
+  window._currentTenderCurrency = cleanCurr;
+  const labels = document.querySelectorAll('#modal-add-tender .currency-label, .tender-currency-label');
+  labels.forEach(el => {
+    el.innerText = cleanCurr;
+  });
+}
+window.updateTenderCurrencyLabels = updateTenderCurrencyLabels;
+
 function applyBidSecurityModalPct(pct) {
   const oppId = document.getElementById('sec-opportunity-id')?.value;
   let estVal = 0;
@@ -5569,7 +5806,7 @@ async function openNewTenderModal() {
       profiles = pRes || [];
       window._cachedProducts = prRes || [];
     } catch (e) {
-      console.warn('Tender modal reference fetch warning:', e.message);
+      console.warn('Fallback loading options:', e.message);
     }
 
     const custSelect = document.getElementById('tender-customer');
@@ -5593,7 +5830,7 @@ async function openNewTenderModal() {
     }
     if (currSelect) {
       currSelect.value = 'PKR';
-      if (typeof updateTenderCurrencyLabels === 'function') updateTenderCurrencyLabels('PKR');
+      updateTenderCurrencyLabels('PKR');
     }
 
     _tenderLineItems = [];
@@ -5623,10 +5860,32 @@ async function openNewTenderModal() {
 window.openNewTenderModal = openNewTenderModal;
 
 async function openEditTenderModal(id) {
-  const opps = await API.getOpportunities('all');
-  const o = opps.find(item => String(item.id) === String(id));
+  if (!id) {
+    alert('Invalid Tender ID.');
+    return;
+  }
+
+  // 1. Fetch full opportunity record with line items from API or fallback
+  let o = null;
+  try {
+    const res = await API.getOpportunityById(id);
+    if (res && res.data) o = res.data;
+  } catch (e) {
+    console.warn('API.getOpportunityById fallback:', e.message);
+  }
+
   if (!o) {
-    alert('Tender not found.');
+    const opps = await API.getOpportunities(State.currentBusinessProfileId || 'all');
+    o = opps.find(item => String(item.id) === String(id));
+  }
+
+  if (!o) {
+    const allOpps = await API.getOpportunities('all');
+    o = allOpps.find(item => String(item.id) === String(id));
+  }
+
+  if (!o) {
+    alert('Tender record not found.');
     return;
   }
 
@@ -5649,10 +5908,11 @@ async function openEditTenderModal(id) {
   const modal = document.getElementById('modal-add-tender');
   if (modal) {
     const title = modal.querySelector('h2');
-    if (title) title.innerHTML = `✏️ Edit Tender: ${o.opportunity_number || ''} - ${o.tender_name || o.title}`;
+    if (title) title.innerHTML = `✏️ Edit Tender: ${o.opportunity_number || ''} - ${o.tender_name || o.title || ''}`;
   }
 
-  document.getElementById('tender-name').value = o.tender_name || o.title || '';
+  const nameEl = document.getElementById('tender-name');
+  if (nameEl) nameEl.value = o.tender_name || o.title || '';
   
   const srcSelect = document.getElementById('tender-source');
   const otherContainer = document.getElementById('tender-source-other-container');
@@ -5665,17 +5925,20 @@ async function openEditTenderModal(id) {
   } else {
     if (srcSelect) srcSelect.value = 'OTHER';
     if (otherContainer) otherContainer.style.display = 'block';
-    if (otherInput) otherInput.value = o.tender_source || '';
+    if (otherInput) otherInput.value = (o.tender_source || '').replace(/^OTHER:\s*/, '');
   }
 
-  document.getElementById('tender-opp-no').value = o.opportunity_number || '';
-  document.getElementById('tender-ext-no').value = o.external_tender_number || '';
+  const oppNoEl = document.getElementById('tender-opp-no');
+  if (oppNoEl) oppNoEl.value = o.opportunity_number || '';
+
+  const extNoEl = document.getElementById('tender-ext-no');
+  if (extNoEl) extNoEl.value = o.external_tender_number || '';
   
   const currSelect = document.getElementById('tender-currency');
   if (currSelect) {
     currSelect.value = o.currency || 'PKR';
-    updateTenderCurrencyLabels(o.currency || 'PKR');
   }
+  updateTenderCurrencyLabels(o.currency || 'PKR');
 
   const custSelect = document.getElementById('tender-customer');
   if (custSelect) {
@@ -5687,10 +5950,20 @@ async function openEditTenderModal(id) {
     profSelect.innerHTML = profiles.map(p => `<option value="${p.id}" ${String(p.id) === String(o.business_profile_id) ? 'selected' : ''}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`).join('');
   }
 
-  document.getElementById('tender-est-value').value = o.estimated_value ? Number(o.estimated_value).toLocaleString() : '0';
-  document.getElementById('tender-closing-date').value = formatDateDDMMYYYY(o.closing_date);
-  document.getElementById('tender-opening-date').value = formatDateDDMMYYYY(o.opening_date);
-  document.getElementById('tender-description').value = o.description || '';
+  const estValEl = document.getElementById('tender-est-value');
+  if (estValEl) estValEl.value = o.estimated_value ? Number(o.estimated_value).toLocaleString() : '0';
+
+  const closingDateVal = (o.closing_date && o.closing_date !== 'N/A') ? formatDateDDMMYYYY(o.closing_date) : '';
+  const openingDateVal = (o.opening_date && o.opening_date !== 'N/A') ? formatDateDDMMYYYY(o.opening_date) : '';
+  
+  const closingEl = document.getElementById('tender-closing-date');
+  if (closingEl) closingEl.value = (closingDateVal === 'N/A' ? '' : closingDateVal);
+
+  const openingEl = document.getElementById('tender-opening-date');
+  if (openingEl) openingEl.value = (openingDateVal === 'N/A' ? '' : openingDateVal);
+
+  const descEl = document.getElementById('tender-description');
+  if (descEl) descEl.value = o.description || '';
 
   const exemptEl = document.getElementById('tender-gst-exempt');
   const inclusiveEl = document.getElementById('tender-gst-inclusive');
@@ -10702,6 +10975,7 @@ async function openTender360Cockpit(oppId) {
           <option value="Technical Disqualified" ${opp.status === 'Technical Disqualified' ? 'selected' : ''}>Disqualified</option>
           <option value="Withdrawn" ${opp.status === 'Withdrawn' ? 'selected' : ''}>Withdrawn</option>
         </select>
+        <button type="button" class="secondary-btn" style="padding:4px 10px; font-size:0.8rem; background:#ffffff; color:#0f172a; border:1px solid #cbd5e1; font-weight:600;" onclick="closeModal('modal-tender-360-cockpit'); openEditTenderModal('${opp.id}')" title="Edit Tender Scope & Line Items">✏️ Edit Tender</button>
         <button type="button" class="primary-btn" style="padding:4px 10px; font-size:0.8rem; background:#059669;" onclick="handleUpdateTenderStatus('${opp.id}', 'Won', '${encodeURIComponent(opp.tender_name || opp.title)}')">🏆 Mark Won</button>
         <button type="button" class="danger-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="handleUpdateTenderStatus('${opp.id}', 'Lost', '${encodeURIComponent(opp.tender_name || opp.title)}', ${parseFloat(opp.estimated_value || 0)})">❌ Mark Lost</button>
       </div>
