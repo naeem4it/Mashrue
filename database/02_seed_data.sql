@@ -8,7 +8,7 @@
 INSERT INTO tenants (id, company_name, subdomain, subscription_plan, max_users, free_business_profile_limit, additional_profile_monthly_fee)
 VALUES (
     'a0000000-0000-0000-0000-000000000001',
-    'Alpha Group Enterprises PK',
+    'Mashrue Internal',
     'alphagroup',
     'Standard',
     15,

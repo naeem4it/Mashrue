@@ -1,10 +1,11 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // GET Executive Dashboard KPIs
-router.get('/dashboard-kpis', optionalAuth, async (req, res) => {
+router.get('/dashboard-kpis', authenticate, requirePermission('reports', 'view'), async (req, res) => {
   const { business_profile_id } = req.query;
 
   try {
@@ -52,8 +53,8 @@ router.get('/dashboard-kpis', optionalAuth, async (req, res) => {
     // 2. Bid Security Summary
     const secSummaryRes = await db.query(`
       SELECT 
-        COUNT(*) FILTER (WHERE status = 'Active') as active_securities_count,
-        COALESCE(SUM(amount) FILTER (WHERE status = 'Active'), 0) as active_securities_amount,
+        COUNT(*) FILTER (WHERE status IN ('Active', 'Submitted')) as active_securities_count,
+        COALESCE(SUM(amount) FILTER (WHERE status IN ('Active', 'Submitted')), 0) as active_securities_amount,
         COUNT(*) FILTER (WHERE status = 'Released') as released_securities_count,
         COUNT(*) FILTER (WHERE status = 'Pending') as pending_securities_count
       FROM bid_securities ${filterClause}
@@ -101,7 +102,7 @@ router.get('/dashboard-kpis', optionalAuth, async (req, res) => {
 });
 
 // GET Contract-Wise Profitability Report
-router.get('/contract-profitability', optionalAuth, async (req, res) => {
+router.get('/contract-profitability', authenticate, requirePermission('reports', 'view'), async (req, res) => {
   try {
     let query = `
       SELECT 
@@ -161,7 +162,7 @@ router.get('/contract-profitability', optionalAuth, async (req, res) => {
 });
 
 // GET Pending Bills & Aging Report
-router.get('/pending-bills', optionalAuth, async (req, res) => {
+router.get('/pending-bills', authenticate, requirePermission('reports', 'view'), async (req, res) => {
   try {
     let query = `
       SELECT 

@@ -1,10 +1,11 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // GET all bids
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('bids', 'view'), async (req, res) => {
   const { opportunity_id, business_profile_id } = req.query;
   try {
     let queryText = `
@@ -55,7 +56,7 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // GET single bid with items and supplier quotes
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', authenticate, requirePermission('bids', 'view'), async (req, res) => {
   try {
     let queryText = `SELECT b.*, o.title as opportunity_title, o.tender_name, o.opportunity_number, o.status as opportunity_status, bp.business_name
        FROM bids b
@@ -105,7 +106,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 });
 
 // POST save or update costing sheet
-router.post('/save-costing', optionalAuth, async (req, res) => {
+router.post('/save-costing', authenticate, requirePermission('bids', 'edit'), async (req, res) => {
   const {
     opportunity_id,
     business_profile_id,
@@ -193,7 +194,7 @@ router.post('/save-costing', optionalAuth, async (req, res) => {
 
 // POST submit bid
 // Handles both bid.id and opportunity.id
-router.post('/:id/submit', optionalAuth, async (req, res) => {
+router.post('/:id/submit', authenticate, requirePermission('bids', 'edit'), async (req, res) => {
   const { submission_method, submission_reference, portal_url, remarks } = req.body;
 
   try {
@@ -273,7 +274,7 @@ router.post('/:id/submit', optionalAuth, async (req, res) => {
 });
 
 // POST approve bid
-router.post('/:id/approve', optionalAuth, async (req, res) => {
+router.post('/:id/approve', authenticate, requirePermission('bids', 'edit'), async (req, res) => {
   const { comments } = req.body;
   try {
     let bidRes = await db.query(`SELECT * FROM bids WHERE id = $1`, [req.params.id]);

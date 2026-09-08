@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate } = require('../middleware/auth.middleware');
+const { requirePermission, resolveTenantId } = require('../middleware/rbac.middleware');
 
 // ============================================================================
 // CUSTOMERS (Mandatory: Customer Name and Organization Type)
@@ -9,7 +10,7 @@ const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
 
-router.get('/customers', optionalAuth, async (req, res) => {
+router.get('/customers', authenticate, requirePermission('customers', 'view'), async (req, res) => {
   try {
     let queryText = `
       SELECT c.*, 
@@ -53,7 +54,7 @@ router.get('/customers', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/customers', optionalAuth, async (req, res) => {
+router.post('/customers', authenticate, requirePermission('customers', 'add'), async (req, res) => {
   const {
     customer_code,
     business_name,
@@ -88,27 +89,12 @@ router.post('/customers', optionalAuth, async (req, res) => {
   }
 
   try {
-    let resolvedTenantId = null;
-    if (isUuid(tenant_id)) {
+    let resolvedTenantId = resolveTenantId(req);
+    if (req.user.role === 'SuperAdmin' && isUuid(tenant_id)) {
       resolvedTenantId = tenant_id;
     }
-    if (!resolvedTenantId && isUuid(req.user?.tenantId)) {
-      resolvedTenantId = req.user.tenantId;
-    }
-    const headerTid = req.headers['x-tenant-id'];
-    if (!resolvedTenantId && isUuid(headerTid)) {
-      resolvedTenantId = headerTid;
-    }
     if (!resolvedTenantId) {
-      try {
-        const tenantRes = await db.query(`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`);
-        if (tenantRes.rows.length > 0) {
-          resolvedTenantId = tenantRes.rows[0].id;
-        }
-      } catch (e) {}
-    }
-    if (!resolvedTenantId) {
-      resolvedTenantId = 'a0000000-0000-0000-0000-000000000001';
+      resolvedTenantId = req.user?.tenantId || 'a0000000-0000-0000-0000-000000000001';
     }
 
     // Strict duplicate customer check within tenant
@@ -194,7 +180,7 @@ router.post('/customers', optionalAuth, async (req, res) => {
 // SUPPLIERS (Fields: Supplier Name, Origin Local/International, Rating)
 // ============================================================================
 
-router.get('/suppliers', optionalAuth, async (req, res) => {
+router.get('/suppliers', authenticate, requirePermission('suppliers', 'view'), async (req, res) => {
   try {
     let queryText = `
       SELECT s.*,
@@ -238,7 +224,7 @@ router.get('/suppliers', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/suppliers', optionalAuth, async (req, res) => {
+router.post('/suppliers', authenticate, requirePermission('suppliers', 'add'), async (req, res) => {
   const { supplier_name, origin, country, city, address, ntn, strn, contact_person, email, phone, rating, payment_terms, tenant_id } = req.body;
   
   if (!supplier_name) {
@@ -312,7 +298,7 @@ router.post('/suppliers', optionalAuth, async (req, res) => {
 // PRODUCTS & SKU CATALOG (Item auto-population source)
 // ============================================================================
 
-router.get('/products', optionalAuth, async (req, res) => {
+router.get('/products', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   try {
     let queryText = `
       SELECT p.*, s.supplier_name, s.origin as supplier_origin,
@@ -362,7 +348,7 @@ router.get('/products', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/products', optionalAuth, async (req, res) => {
+router.post('/products', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
   const { item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id, tenant_id } = req.body;
   
   if (!name) {
@@ -455,7 +441,7 @@ router.post('/products', optionalAuth, async (req, res) => {
 });
 
 // PUT update existing product / item
-router.put('/products/:id', optionalAuth, async (req, res) => {
+router.put('/products/:id', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
   const { id } = req.params;
   const {
     sku,
@@ -538,10 +524,18 @@ router.put('/products/:id', optionalAuth, async (req, res) => {
 });
 
 // DELETE product / item
-router.delete('/products/:id', optionalAuth, async (req, res) => {
+router.delete('/products/:id', authenticate, requirePermission('inventory', 'delete'), async (req, res) => {
   const { id } = req.params;
   try {
-    await db.query(`DELETE FROM products_services WHERE id::text = $1`, [String(id)]);
+    const targetTid = resolveTenantId(req);
+    if (req.user.role === 'SuperAdmin') {
+      await db.query(`DELETE FROM products_services WHERE id::text = $1`, [String(id)]);
+    } else {
+      const delCheck = await db.query(`DELETE FROM products_services WHERE id::text = $1 AND tenant_id::text = $2`, [String(id), String(targetTid)]);
+      if (delCheck.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Item not found or unauthorized.' });
+      }
+    }
     res.json({ success: true, message: 'Item deleted from catalog successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -549,7 +543,7 @@ router.delete('/products/:id', optionalAuth, async (req, res) => {
 });
 
 // PUT update supplier
-router.put('/suppliers/:id', optionalAuth, async (req, res) => {
+router.put('/suppliers/:id', authenticate, requirePermission('suppliers', 'edit'), async (req, res) => {
   const { id } = req.params;
   const { supplier_name, origin, country, origin_port_city, city, address, ntn, strn, contact_person, email, phone, rating, payment_terms, status, notes } = req.body;
   try {
@@ -600,10 +594,18 @@ router.put('/suppliers/:id', optionalAuth, async (req, res) => {
 });
 
 // DELETE supplier
-router.delete('/suppliers/:id', optionalAuth, async (req, res) => {
+router.delete('/suppliers/:id', authenticate, requirePermission('suppliers', 'delete'), async (req, res) => {
   const { id } = req.params;
   try {
-    await db.query(`DELETE FROM suppliers WHERE id::text = $1`, [String(id)]);
+    const targetTid = resolveTenantId(req);
+    if (req.user.role === 'SuperAdmin') {
+      await db.query(`DELETE FROM suppliers WHERE id::text = $1`, [String(id)]);
+    } else {
+      const delCheck = await db.query(`DELETE FROM suppliers WHERE id::text = $1 AND tenant_id::text = $2`, [String(id), String(targetTid)]);
+      if (delCheck.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Supplier not found or unauthorized.' });
+      }
+    }
     res.json({ success: true, message: 'Supplier deleted successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -611,7 +613,7 @@ router.delete('/suppliers/:id', optionalAuth, async (req, res) => {
 });
 
 // PUT update customer
-router.put('/customers/:id', optionalAuth, async (req, res) => {
+router.put('/customers/:id', authenticate, requirePermission('customers', 'edit'), async (req, res) => {
   const { id } = req.params;
   const {
     customer_code,
@@ -706,10 +708,18 @@ router.put('/customers/:id', optionalAuth, async (req, res) => {
 });
 
 // DELETE customer
-router.delete('/customers/:id', optionalAuth, async (req, res) => {
+router.delete('/customers/:id', authenticate, requirePermission('customers', 'delete'), async (req, res) => {
   const { id } = req.params;
   try {
-    await db.query(`DELETE FROM customers WHERE id::text = $1`, [String(id)]);
+    const targetTid = resolveTenantId(req);
+    if (req.user.role === 'SuperAdmin') {
+      await db.query(`DELETE FROM customers WHERE id::text = $1`, [String(id)]);
+    } else {
+      const delCheck = await db.query(`DELETE FROM customers WHERE id::text = $1 AND tenant_id::text = $2`, [String(id), String(targetTid)]);
+      if (delCheck.rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'Customer not found or unauthorized.' });
+      }
+    }
     res.json({ success: true, message: 'Customer deleted successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -717,7 +727,7 @@ router.delete('/customers/:id', optionalAuth, async (req, res) => {
 });
 
 // Seed Initial Catalog helper
-router.post('/products/seed-default', optionalAuth, async (req, res) => {
+router.post('/products/seed-default', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
   try {
     let tenantId = req.user?.tenantId;
     if (!tenantId) {

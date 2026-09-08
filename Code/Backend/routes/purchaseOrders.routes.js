@@ -1,10 +1,11 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // GET all purchase orders
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('purchase_orders', 'view'), async (req, res) => {
   const { business_profile_id, customer_id, status } = req.query;
 
   try {
@@ -63,7 +64,7 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // GET single PO with items
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', authenticate, requirePermission('purchase_orders', 'view'), async (req, res) => {
   try {
     let queryText = `SELECT po.*, c.business_name as customer_name, c.ntn as customer_ntn, bp.business_name
        FROM purchase_orders po
@@ -105,7 +106,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 });
 
 // POST create new Purchase Order
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', authenticate, requirePermission('purchase_orders', 'add'), async (req, res) => {
   const {
     business_profile_id,
     contract_id,
@@ -189,7 +190,7 @@ router.post('/', optionalAuth, async (req, res) => {
 });
 
 // PUT update Purchase Order
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, requirePermission('purchase_orders', 'edit'), async (req, res) => {
   const { po_number, po_date, delivery_deadline, payment_terms, total_amount, tax_amount, net_amount, status } = req.body;
   try {
     const sub = total_amount !== undefined ? parseFloat(total_amount) : null;

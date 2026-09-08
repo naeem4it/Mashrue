@@ -59,6 +59,45 @@ const State = {
     return this.currentUser && (this.currentUser.role === 'ClientAdmin' || this.currentUser.role === 'CompanyAdmin');
   },
 
+  isPrimaryAdmin() {
+    if (!this.currentUser) return false;
+    if (this.isSuperAdmin()) return true;
+    if (this.currentUser.isPrimaryAdmin !== undefined) {
+      return Boolean(this.currentUser.isPrimaryAdmin);
+    }
+    if (this.currentUser.is_primary_admin !== undefined) {
+      return Boolean(this.currentUser.is_primary_admin);
+    }
+    return this.isCreatedBySuperAdmin();
+  },
+
+  isCreatedBySuperAdmin() {
+    if (!this.currentUser) return false;
+    if (this.isSuperAdmin()) return true;
+    if (this.currentUser.isPrimaryAdmin !== undefined) {
+      return Boolean(this.currentUser.isPrimaryAdmin);
+    }
+    if (this.currentUser.is_primary_admin !== undefined) {
+      return Boolean(this.currentUser.is_primary_admin);
+    }
+    if (this.currentUser.role === 'ClientEmployee' || this.currentUser.role === 'ReadOnly') {
+      return false;
+    }
+    if (this.currentUser.isCreatedBySuperAdmin !== undefined) {
+      return Boolean(this.currentUser.isCreatedBySuperAdmin);
+    }
+    if (this.currentUser.is_created_by_super_admin !== undefined) {
+      return Boolean(this.currentUser.is_created_by_super_admin);
+    }
+    const creatorRole = this.currentUser.creatorRole || this.currentUser.creator_role;
+    if (creatorRole === 'SuperAdmin') return true;
+    const cb = this.currentUser.createdBy || this.currentUser.created_by;
+    if (!cb && (this.currentUser.role === 'ClientAdmin' || this.currentUser.role === 'CompanyAdmin')) {
+      return true;
+    }
+    return false;
+  },
+
   isClientEmployee() {
     return this.currentUser && (this.currentUser.role === 'ClientEmployee' || this.currentUser.role === 'BidManager' || this.currentUser.role === 'ReadOnly');
   },
@@ -67,6 +106,15 @@ const State = {
     if (!this.currentUser) return false;
     if (this.isSuperAdmin() || this.isClientAdmin()) return false;
     return this.currentUser.role === 'ReadOnly' || this.currentUser.is_read_only === true;
+  },
+
+  hasPermission(module, action = 'view') {
+    if (!this.currentUser) return false;
+    if (this.isSuperAdmin() || this.isClientAdmin()) return true;
+    const cleanMod = String(module).toLowerCase().replace(/-/g, '_');
+    const perms = this.currentUser.permissions || {};
+    const modPerms = perms[cleanMod] || perms[module] || perms[module.replace(/_/g, '-')] || {};
+    return Boolean(modPerms[action]);
   },
 
   canSeeBiddingPrices() {
@@ -110,7 +158,7 @@ const State = {
       const tenant = this.currentUser?.tenant;
       const sub = this.getTenantSubscription(tenant?.id || this.currentUser?.tenant_id);
       const companyCount = this.businessProfiles ? this.businessProfiles.length : 0;
-      const freeLimit = sub.free_companies_limit !== undefined ? Number(sub.free_companies_limit) : ((tenant && (tenant.free_business_profile_limit || tenant.freeCompanyLimit)) || (sub.plan_type === 'Advance' ? 2 : 1));
+      const freeLimit = sub.free_companies_limit !== undefined ? Number(sub.free_companies_limit) : ((tenant && (tenant.free_business_profile_limit || tenant.freeCompanyLimit)) || (sub.plan_type === 'Advance' ? 3 : 1));
 
       if (!this.isSuperAdmin() && companyCount >= freeLimit) {
         if (typeof openQuotaUpgradeModal === 'function') {
@@ -165,6 +213,25 @@ const State = {
     localStorage.setItem('mashrue_tenants_store', JSON.stringify(list));
   },
 
+  deleteTenant(tenantId) {
+    if (!tenantId) return;
+    const list = this.getTenants();
+    const filtered = list.filter(t => t.id !== tenantId && t.company_name?.toLowerCase() !== String(tenantId).toLowerCase());
+    localStorage.setItem('mashrue_tenants_store', JSON.stringify(filtered));
+
+    // Also clean up any cached entities for this tenant
+    localStorage.removeItem(`mashrue_companies_${tenantId}`);
+    localStorage.removeItem(`mashrue_subscription_${tenantId}`);
+    localStorage.removeItem(`mashrue_quota_${tenantId}`);
+    const prefix = `mashrue_data_${tenantId}_`;
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) {
+        localStorage.removeItem(key);
+      }
+    }
+  },
+
   getStoredUsers() {
     const raw = localStorage.getItem('mashrue_users_store');
     return raw ? JSON.parse(raw) : [];
@@ -209,7 +276,9 @@ const State = {
   getTenantEntityList(entityKey, tenantId) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 'system';
     const raw = localStorage.getItem(`mashrue_data_${tid}_${entityKey}`);
-    return raw ? JSON.parse(raw) : [];
+    const list = raw ? JSON.parse(raw) : [];
+    // Automatically filter out any legacy unconfirmed ghost items
+    return list.filter(item => item && item.id && !String(item.id).startsWith('f-') && !String(item.id).startsWith('bs-'));
   },
 
   saveTenantEntity(entityKey, record, tenantId) {
@@ -231,6 +300,10 @@ const State = {
     localStorage.setItem(`mashrue_data_${tid}_${entityKey}`, JSON.stringify(filtered));
   },
 
+  removeTenantEntity(entityKey, id, tenantId) {
+    return this.deleteTenantEntity(entityKey, id, tenantId);
+  },
+
   // --------------------------------------------------------------------------
   // SUBSCRIPTION & TRIAL PERIOD ENGINE
   // --------------------------------------------------------------------------
@@ -248,7 +321,7 @@ const State = {
     ADVANCE: {
       key: 'Advance',
       name: 'Advance Plan',
-      includedCompanies: 2,
+      includedCompanies: 3,
       includedUsers: 3,
       includedBids: 'Unlimited',
       bidsModel: 'Unlimited Bids',
@@ -258,7 +331,7 @@ const State = {
         bi_annually: { key: 'bi_annually', name: 'Bi-Annually (6 Months)', months: 6, price: 195500, effectivePerMonth: 32583, savings: 14500, savingsPct: '6.9%' },
         annually: { key: 'annually', name: 'Annually (12 Months)', months: 12, price: 390000, effectivePerMonth: 32500, savings: 30000, savingsPct: '7.1%', isBestValue: true }
       },
-      features: ['Unlimited Bids & Tenders', '2 Company Profiles Included', '3 User Seats Included', 'Full Commercial Bidding Hub', 'Bid Securities & CDR Registry', 'Costing Sheets & Margin Control', 'Supply Chain, POs & Delivery Challans', 'Multi-Warehouse Inventory & SKUs', 'FBR Digital Invoicing & PRAL POS', 'Financial KPIs & Expense Management', 'Save up to PKR 30,000 on Annual Billing']
+      features: ['Unlimited Bids & Tenders', '3 Company Profiles Included', '3 User Seats Included', 'Full Commercial Bidding Hub', 'Bid Securities & CDR Registry', 'Costing Sheets & Margin Control', 'Supply Chain, POs & Delivery Challans', 'Multi-Warehouse Inventory & SKUs', 'FBR Digital Invoicing & PRAL POS', 'Financial KPIs & Expense Management', 'Save up to PKR 30,000 on Annual Billing']
     },
     TRIAL_15: {
       key: 'Trial_15',
@@ -284,68 +357,131 @@ const State = {
     { key: 'mod_finance_kpi', name: 'Payments, Expenses & Financial KPIs', benchmarkFee: 2000, icon: '📊', desc: 'Cheque vouchers, 13-category expenses, profit analytics' }
   ],
 
-  getTenantSubscription(tenantId) {
+  getTenantSubscription(tenantId, tenantObj = null) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 't1';
-    const curTenant = this.currentUser?.tenant;
+    const curTenant = (this.currentUser?.tenant && (this.currentUser.tenant.id === tid || !tenantId)) 
+      ? this.currentUser.tenant 
+      : null;
+    const tData = tenantObj || (this.getTenants ? this.getTenants().find(t => t.id === tid) : null) || curTenant;
+
+    const rawPlan = tData?.subscriptionPlan || tData?.subscription_plan || curTenant?.subscriptionPlan || curTenant?.subscription_plan || 'Advance';
+    const planType = (rawPlan === 'Standard' || rawPlan === 'Basic') ? 'Starter' : rawPlan;
+    const tenantDbStatus = tData?.status || curTenant?.status || 'Active';
+    const isSuspended = (tenantDbStatus === 'Suspended');
+    const isTrial = (tenantDbStatus === 'Trial' || (!isSuspended && (tData?.is_trial === true || tData?.isTrial === true)));
+
+    // Dynamic leveraged limits extracted directly from organization data (DB / live tenant contract)
+    const dynamicFreeCompanies = (tData?.freeCompanyLimit !== undefined && tData?.freeCompanyLimit !== null)
+      ? Number(tData.freeCompanyLimit)
+      : (tData?.free_business_profile_limit !== undefined && tData?.free_business_profile_limit !== null
+        ? Number(tData.free_business_profile_limit)
+        : (planType === 'Advance' ? 3 : 1));
+
+    const dynamicFreeUsers = (tData?.freeEmployeeLimit !== undefined && tData?.freeEmployeeLimit !== null)
+      ? Number(tData.freeEmployeeLimit)
+      : (tData?.free_employee_limit !== undefined && tData?.free_employee_limit !== null
+        ? Number(tData.free_employee_limit)
+        : (planType === 'Advance' ? 3 : 1));
+
+    const dynamicTenderLimit = (tData?.tenderLimit !== undefined && tData?.tenderLimit !== null)
+      ? tData.tenderLimit
+      : (tData?.tender_limit !== undefined && tData?.tender_limit !== null
+        ? tData.tender_limit
+        : (planType === 'Advance' || planType === 'Enterprise' ? 'unlimited' : 5));
+
+    const dynamicBidSecurityLimit = (tData?.bidSecurityLimit !== undefined && tData?.bidSecurityLimit !== null)
+      ? tData.bidSecurityLimit
+      : (tData?.bid_security_limit !== undefined && tData?.bid_security_limit !== null
+        ? tData.bid_security_limit
+        : (planType === 'Advance' || planType === 'Enterprise' ? 'unlimited' : 10));
+
+    const isUnlimitedTenders = (
+      dynamicTenderLimit === 'unlimited' || 
+      dynamicTenderLimit === -1 || 
+      dynamicTenderLimit === 'Unlimited' ||
+      (dynamicTenderLimit === null && (planType === 'Advance' || planType === 'Enterprise'))
+    );
+    const isUnlimitedCdrs = (
+      dynamicBidSecurityLimit === 'unlimited' || 
+      dynamicBidSecurityLimit === -1 || 
+      dynamicBidSecurityLimit === 'Unlimited' ||
+      (dynamicBidSecurityLimit === null && (planType === 'Advance' || planType === 'Enterprise'))
+    );
+
+    const dynamicModules = Array.isArray(tData?.activeModules || tData?.active_modules)
+      ? (tData.activeModules || tData.active_modules)
+      : ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'];
+
+    const dynamicBillingCycle = tData?.billingCycle || tData?.billing_cycle || 'monthly';
+    const dynamicBasePrice = Number(tData?.customBasePrice || tData?.custom_base_price || (planType === 'Starter' ? 14000 : 35000));
 
     let trialDays = 15;
-    const trialPeriodStr = curTenant?.trialPeriod || curTenant?.trial_period || '15 Days';
+    const trialPeriodStr = tData?.trialPeriod || tData?.trial_period || curTenant?.trialPeriod || curTenant?.trial_period || '15 Days';
     if (trialPeriodStr === '1 Month') trialDays = 30;
     else if (trialPeriodStr === '2 Months') trialDays = 60;
     else if (trialPeriodStr === '3 Months') trialDays = 90;
 
+    const rawTrialEndsAt = tData?.trialEndsAt || tData?.trial_ends_at || curTenant?.trialEndsAt || curTenant?.trial_ends_at;
     const now = new Date();
-    const trialEnd = (curTenant?.trialEndsAt || curTenant?.trial_ends_at)
-      ? new Date(curTenant.trialEndsAt || curTenant.trial_ends_at)
+    const trialEnd = rawTrialEndsAt
+      ? new Date(rawTrialEndsAt)
       : new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+    const trialEndStr = trialEnd.toISOString().split('T')[0];
 
     const raw = localStorage.getItem(`mashrue_sub_${tid}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Sync limits from live tenant context
-      if (curTenant) {
-        if (curTenant.freeCompanyLimit || curTenant.free_business_profile_limit) {
-          parsed.free_companies_limit = curTenant.freeCompanyLimit || curTenant.free_business_profile_limit;
-        }
-        if (curTenant.freeEmployeeLimit || curTenant.free_employee_limit) {
-          parsed.free_users_limit = curTenant.freeEmployeeLimit || curTenant.free_employee_limit;
-        }
-        if (curTenant.trialPeriod || curTenant.trial_period) {
-          parsed.trial_period = curTenant.trialPeriod || curTenant.trial_period;
-          parsed.trial_days = trialDays;
-        }
-        if (curTenant.trialEndsAt || curTenant.trial_ends_at) {
-          parsed.trial_end_date = new Date(curTenant.trialEndsAt || curTenant.trial_ends_at).toISOString().split('T')[0];
-        }
-      }
-      if (parsed.trial_tender_limit === undefined) parsed.trial_tender_limit = 5;
-      if (parsed.trial_bid_security_limit === undefined) parsed.trial_bid_security_limit = 3;
+      // Synchronize limits, plan, leverages, and status from live database/tenant source
+      parsed.plan_type = planType;
+      parsed.status = isSuspended ? 'Suspended' : (isTrial ? 'Trial' : 'Active');
+      parsed.is_trial = isTrial;
+      parsed.free_companies_limit = dynamicFreeCompanies;
+      parsed.free_users_limit = dynamicFreeUsers;
+      parsed.tender_limit = dynamicTenderLimit;
+      parsed.bid_security_limit = dynamicBidSecurityLimit;
+      parsed.is_unlimited_tenders = isUnlimitedTenders;
+      parsed.is_unlimited_cdrs = isUnlimitedCdrs;
+      parsed.trial_tender_limit = isUnlimitedTenders ? 'unlimited' : dynamicTenderLimit;
+      parsed.trial_bid_security_limit = isUnlimitedCdrs ? 'unlimited' : dynamicBidSecurityLimit;
+      parsed.active_modules = dynamicModules;
+      parsed.billing_cycle = dynamicBillingCycle;
+      parsed.custom_base_price = dynamicBasePrice;
+      parsed.trial_period = trialPeriodStr;
+      parsed.trial_days = trialDays;
+      parsed.trial_end_date = trialEndStr;
+      parsed.current_period_end = trialEndStr;
+
+      localStorage.setItem(`mashrue_sub_${tid}`, JSON.stringify(parsed));
       return parsed;
     }
 
     const defaultSub = {
       tenant_id: tid,
-      plan_type: curTenant?.subscriptionPlan || curTenant?.subscription_plan || 'Advance',
-      status: 'Trial',
-      is_trial: true,
+      plan_type: planType,
+      status: isSuspended ? 'Suspended' : (isTrial ? 'Trial' : 'Active'),
+      is_trial: isTrial,
       trial_days: trialDays,
       trial_period: trialPeriodStr,
       trial_start_date: now.toISOString().split('T')[0],
-      trial_end_date: trialEnd.toISOString().split('T')[0],
+      trial_end_date: trialEndStr,
       current_period_start: now.toISOString().split('T')[0],
-      current_period_end: trialEnd.toISOString().split('T')[0],
-      billing_cycle: 'monthly',
-      free_companies_limit: curTenant?.freeCompanyLimit || curTenant?.free_business_profile_limit || 2,
-      free_users_limit: curTenant?.freeEmployeeLimit || curTenant?.free_employee_limit || 3,
-      custom_base_price: 35000,
+      current_period_end: trialEndStr,
+      billing_cycle: dynamicBillingCycle,
+      free_companies_limit: dynamicFreeCompanies,
+      free_users_limit: dynamicFreeUsers,
+      tender_limit: dynamicTenderLimit,
+      bid_security_limit: dynamicBidSecurityLimit,
+      is_unlimited_tenders: isUnlimitedTenders,
+      is_unlimited_cdrs: isUnlimitedCdrs,
+      custom_base_price: dynamicBasePrice,
       custom_extra_company_price: 4500,
       custom_extra_seat_price: 1500,
-      trial_tender_limit: 5,
-      trial_bid_security_limit: 3,
+      trial_tender_limit: isUnlimitedTenders ? 'unlimited' : dynamicTenderLimit,
+      trial_bid_security_limit: isUnlimitedCdrs ? 'unlimited' : dynamicBidSecurityLimit,
       starter_tender_limit: 5,
-      is_personal_reference_trial: false,
+      is_personal_reference_trial: (trialDays > 15),
       personal_reference_note: '',
-      active_modules: ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'],
+      active_modules: dynamicModules,
       custom_module_fees: {},
       last_payment_date: null,
       last_payment_reference: null
@@ -378,36 +514,33 @@ const State = {
 
   getSubscriptionPayments(tenantId) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 'all';
-    const raw = localStorage.getItem('mashrue_subscription_payments');
-    const all = raw ? JSON.parse(raw) : [];
-    if (tid === 'all') return all;
-    return all.filter(p => p.tenant_id === tid);
+    const raw = localStorage.getItem(`mashrue_payments_${tid}`);
+    return raw ? JSON.parse(raw) : [];
   },
 
   recordSubscriptionPayment(paymentData) {
-    const raw = localStorage.getItem('mashrue_subscription_payments');
-    const all = raw ? JSON.parse(raw) : [];
+    const tid = paymentData.tenant_id;
+    const payments = this.getSubscriptionPayments(tid);
     const newPayment = {
-      id: 'spay-' + Date.now(),
-      created_at: new Date().toISOString(),
-      ...paymentData
+      id: 'REC-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000),
+      ...paymentData,
+      created_at: new Date().toISOString()
     };
-    all.unshift(newPayment);
-    localStorage.setItem('mashrue_subscription_payments', JSON.stringify(all));
+    payments.unshift(newPayment);
+    localStorage.setItem(`mashrue_payments_${tid}`, JSON.stringify(payments));
 
-    // Update tenant's active subscription status to 'Active' (Paid) and extend renewal date
     const sub = this.getTenantSubscription(paymentData.tenant_id);
-    const currentEnd = new Date(sub.current_period_end || new Date());
-    const extensionMonths = paymentData.extension_months || 1;
-    currentEnd.setMonth(currentEnd.getMonth() + extensionMonths);
+    const addMonths = Number(paymentData.extension_months || 1);
+    const curEnd = new Date(sub.current_period_end || sub.trial_end_date || new Date());
+    curEnd.setMonth(curEnd.getMonth() + addMonths);
 
-    this.saveTenantSubscription(paymentData.tenant_id, {
+    this.saveTenantSubscription(tid, {
       status: 'Active',
       is_trial: false,
-      billing_cycle: paymentData.billing_cycle || sub.billing_cycle || 'monthly',
-      current_period_end: currentEnd.toISOString().split('T')[0],
-      last_payment_date: paymentData.payment_date || new Date().toISOString().split('T')[0],
-      last_payment_reference: paymentData.reference_number || 'N/A'
+      current_period_end: curEnd.toISOString().split('T')[0],
+      trial_end_date: curEnd.toISOString().split('T')[0],
+      last_payment_date: new Date().toISOString().split('T')[0],
+      last_payment_reference: paymentData.reference_number
     });
 
     return newPayment;
@@ -415,19 +548,46 @@ const State = {
 
   getTenantQuota(tenantId) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 'default';
-    const ym = new Date().toISOString().slice(0, 7); // e.g. "2026-08"
-    const raw = localStorage.getItem(`mashrue_quota_${tid}_${ym}`);
-    return raw ? JSON.parse(raw) : { month: ym, tenders_created: 0, quotes_created: 0, bid_securities_created: 0 };
+    try {
+      const raw = localStorage.getItem(`mashrue_quota_${tid}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+
+    const opps = this.getTenantEntityList ? this.getTenantEntityList('opportunities') : [];
+    const oppCount = Array.isArray(opps) ? opps.filter(o => o && o.tenant_id === tid).length : 0;
+
+    const secs = this.getTenantEntityList ? this.getTenantEntityList('bidSecurities') : [];
+    const secCount = Array.isArray(secs) ? secs.filter(b => b && b.tenant_id === tid).length : 0;
+
+    const initial = {
+      tenant_id: tid,
+      tenders_created: oppCount,
+      bid_securities_created: secCount,
+      cycle_start: new Date().toISOString().split('T')[0]
+    };
+    try {
+      localStorage.setItem(`mashrue_quota_${tid}`, JSON.stringify(initial));
+    } catch (e) {}
+    return initial;
   },
 
   incrementTenantQuota(type, tenantId) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 'default';
-    const ym = new Date().toISOString().slice(0, 7);
     const quota = this.getTenantQuota(tid);
-    if (type === 'tender') quota.tenders_created = (quota.tenders_created || 0) + 1;
-    if (type === 'quote') quota.quotes_created = (quota.quotes_created || 0) + 1;
-    if (type === 'bid_security') quota.bid_securities_created = (quota.bid_securities_created || 0) + 1;
-    localStorage.setItem(`mashrue_quota_${tid}_${ym}`, JSON.stringify(quota));
+    if (type === 'tender') {
+      quota.tenders_created = (quota.tenders_created || 0) + 1;
+      this.liveTendersCount = quota.tenders_created;
+      if (this.currentUser?.tenant) this.currentUser.tenant.tenderCount = quota.tenders_created;
+    }
+    if (type === 'bid_security') {
+      quota.bid_securities_created = (quota.bid_securities_created || 0) + 1;
+      this.liveCdrsCount = quota.bid_securities_created;
+      if (this.currentUser?.tenant) this.currentUser.tenant.cdrCount = quota.bid_securities_created;
+    }
+    localStorage.setItem(`mashrue_quota_${tid}`, JSON.stringify(quota));
     return quota;
   },
 
@@ -446,49 +606,51 @@ const State = {
       };
     }
 
-    // 2. 15-Day Free Trial Quota Check (Full App with 5 Tenders, 3 Bid Securities)
-    if (sub.is_trial || sub.status === 'Trial') {
-      if (actionType === 'tender') {
-        const used = quota.tenders_created || 0;
-        const maxLimit = sub.trial_tender_limit || 5;
+    // 2. Dynamic Tender Leverage Check
+    if (actionType === 'tender') {
+      const isUnlimited = (
+        sub.is_unlimited_tenders ||
+        sub.tender_limit === 'unlimited' ||
+        sub.tender_limit === -1 ||
+        sub.trial_tender_limit === 'unlimited'
+      );
+      if (!isUnlimited) {
+        // Sanitize: Check real persisted tenders in entity list
+        const realOpps = (this.getTenantEntityList ? this.getTenantEntityList('opportunities', tid) : [])
+          .filter(o => o && o.id && !String(o.id).startsWith('f-') && !String(o.id).startsWith('tnd-'));
+        const used = Math.min(quota.tenders_created || 0, realOpps.length);
+        const maxLimit = parseInt(sub.tender_limit || sub.trial_tender_limit || sub.starter_tender_limit || 5, 10);
         if (used >= maxLimit) {
           return {
             allowed: false,
             quotaExceeded: true,
             current: used,
             limit: maxLimit,
-            message: `15-Day Free Trial quota reached (${used}/${maxLimit} Tenders). Upgrade to Advance Plan for Unlimited Tenders.`
-          };
-        }
-      }
-      if (actionType === 'bid_security') {
-        const list = this.getTenantEntityList ? this.getTenantEntityList('bidSecurities') : [];
-        const used = list.filter(b => b.tenant_id === tid).length || (quota.bid_securities_created || 0);
-        const maxLimit = sub.trial_bid_security_limit || 3;
-        if (used >= maxLimit) {
-          return {
-            allowed: false,
-            quotaExceeded: true,
-            current: used,
-            limit: maxLimit,
-            message: `15-Day Free Trial quota reached (${used}/${maxLimit} Bid Securities / CDRs). Upgrade to Advance Plan for unlimited entries.`
+            message: `Your organization's tender quota limit has been reached (${used}/${maxLimit} Tenders). Please contact your administrator or upgrade plan for unlimited tender bidding.`
           };
         }
       }
     }
 
-    // 3. Starter Plan Quota (5 Bids per cycle + per bid charges)
-    if (sub.plan_type === 'Starter' || sub.plan_type === 'Basic') {
-      if (actionType === 'tender') {
-        const used = quota.tenders_created || 0;
-        const maxLimit = sub.starter_tender_limit || 5;
+    // 3. Dynamic Bid Security / CDR Leverage Check
+    if (actionType === 'bid_security') {
+      const isUnlimited = (
+        sub.is_unlimited_cdrs ||
+        sub.bid_security_limit === 'unlimited' ||
+        sub.bid_security_limit === -1 ||
+        sub.trial_bid_security_limit === 'unlimited'
+      );
+      if (!isUnlimited) {
+        const list = this.getTenantEntityList ? this.getTenantEntityList('bidSecurities') : [];
+        const used = list.filter(b => b.tenant_id === tid).length || (quota.bid_securities_created || 0);
+        const maxLimit = parseInt(sub.bid_security_limit || sub.trial_bid_security_limit || 10, 10);
         if (used >= maxLimit) {
           return {
             allowed: false,
             quotaExceeded: true,
             current: used,
             limit: maxLimit,
-            message: `Starter Plan includes 5 bids per cycle (${used}/${maxLimit} used). Please top-up per-bid quota or upgrade to Advance Plan for Unlimited Bids.`
+            message: `Your organization's Bid Security / CDR quota limit has been reached (${used}/${maxLimit} items). Please contact your administrator or upgrade plan for unlimited entries.`
           };
         }
       }
@@ -500,12 +662,12 @@ const State = {
   isModuleActiveForTenant(moduleKey, tenantId) {
     if (this.isSuperAdmin()) return true;
     const sub = this.getTenantSubscription(tenantId);
-    if (sub.is_trial || sub.plan_type === 'Advance') return true; // Full application during trial and Advance
+    if (Array.isArray(sub.active_modules) && sub.active_modules.length > 0) {
+      return sub.active_modules.includes(moduleKey);
+    }
+    if (sub.is_trial || sub.plan_type === 'Advance' || sub.plan_type === 'Enterprise') return true;
     if (sub.plan_type === 'Starter' || sub.plan_type === 'Basic') {
       return ['mod_tenders', 'mod_quotations', 'mod_fbr_invoicing'].includes(moduleKey);
-    }
-    if (sub.plan_type === 'Custom') {
-      return Array.isArray(sub.active_modules) && sub.active_modules.includes(moduleKey);
     }
     return true;
   },

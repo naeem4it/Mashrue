@@ -285,6 +285,7 @@ CREATE TABLE IF NOT EXISTS tender_items (
     unit VARCHAR(50) DEFAULT 'PCS',
     estimated_unit_price NUMERIC(18, 4) DEFAULT 0.0000,
     estimated_total_price NUMERIC(18, 4) DEFAULT 0.0000,
+    item_size VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -30,6 +30,7 @@ async function autoSeedSuperAdmin() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS can_see_bidding_prices BOOLEAN DEFAULT TRUE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_primary_admin BOOLEAN DEFAULT FALSE;
       ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL;
       ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
 

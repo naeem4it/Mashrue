@@ -35,19 +35,34 @@ router.post('/login', async (req, res) => {
     // 2. Query user by username or email
     const result = await db.query(
       `SELECT u.*, 
+              c.role as creator_role,
+              (c.role = 'SuperAdmin' OR u.role = 'SuperAdmin' OR (u.role IN ('ClientAdmin', 'CompanyAdmin') AND (c.role = 'SuperAdmin' OR u.id = (
+                SELECT u_first.id FROM users u_first 
+                WHERE u_first.tenant_id = u.tenant_id AND u_first.role IN ('ClientAdmin', 'CompanyAdmin') 
+                ORDER BY u_first.created_at ASC LIMIT 1
+              )))) as is_created_by_super_admin,
               t.company_name as tenant_name, 
               t.subdomain, 
               t.subscription_plan,
+              t.status as tenant_status,
               t.free_business_profile_limit,
               t.free_employee_limit,
+              t.tender_limit,
+              t.bid_security_limit,
+              t.active_modules,
+              t.billing_cycle,
+              t.custom_base_price,
               t.trial_period,
               t.trial_ends_at,
               t.pending_paid_company_payment,
               t.pending_paid_company_amount,
               t.paid_companies_count,
               (SELECT COUNT(*) FROM business_profiles bp WHERE bp.tenant_id = u.tenant_id) as company_count,
-              (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count
+              (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count,
+              (SELECT COUNT(*) FROM opportunities opp WHERE opp.tenant_id = u.tenant_id) as tender_count,
+              (SELECT COUNT(*) FROM bid_securities bs WHERE bs.tenant_id = u.tenant_id) as cdr_count
        FROM users u
+       LEFT JOIN users c ON u.created_by = c.id
        LEFT JOIN tenants t ON u.tenant_id = t.id
        WHERE (u.username IS NOT NULL AND LOWER(TRIM(u.username)) = LOWER(TRIM($1))) 
           OR (u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM($1)))
@@ -115,6 +130,9 @@ router.post('/login', async (req, res) => {
           email: user.email || null,
           role: user.role,
           status: user.status,
+          isPrimaryAdmin: Boolean(user.is_primary_admin),
+          isCreatedBySuperAdmin: Boolean(user.is_primary_admin || user.is_created_by_super_admin),
+          createdBy: user.created_by,
           mustChangePassword: user.must_change_password || false,
           canSeeBiddingPrices: user.can_see_bidding_prices !== false,
           permissions: user.permissions || {},
@@ -123,9 +141,15 @@ router.post('/login', async (req, res) => {
             id: user.tenant_id,
             name: user.tenant_name,
             subdomain: user.subdomain,
-            subscriptionPlan: user.subscription_plan || 'Standard',
-            freeCompanyLimit: parseInt(user.free_business_profile_limit || 2, 10),
-            freeEmployeeLimit: parseInt(user.free_employee_limit || 2, 10),
+            status: user.tenant_status || 'Active',
+            subscriptionPlan: user.subscription_plan || 'Advance',
+            freeCompanyLimit: parseInt(user.free_business_profile_limit !== undefined && user.free_business_profile_limit !== null ? user.free_business_profile_limit : (user.subscription_plan === 'Advance' ? 3 : 1), 10),
+            freeEmployeeLimit: parseInt(user.free_employee_limit !== undefined && user.free_employee_limit !== null ? user.free_employee_limit : (user.subscription_plan === 'Advance' ? 3 : 1), 10),
+            tenderLimit: user.tender_limit || (user.subscription_plan === 'Advance' ? 'unlimited' : '5'),
+            bidSecurityLimit: user.bid_security_limit || (user.subscription_plan === 'Advance' ? 'unlimited' : '10'),
+            activeModules: user.active_modules || ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'],
+            billingCycle: user.billing_cycle || 'monthly',
+            customBasePrice: parseFloat(user.custom_base_price || 35000),
             trialPeriod: user.trial_period || '15 Days',
             trialEndsAt: user.trial_ends_at || null,
             pendingPaidCompanyPayment: Boolean(user.pending_paid_company_payment),
@@ -133,7 +157,9 @@ router.post('/login', async (req, res) => {
             paidCompaniesCount: parseInt(user.paid_companies_count || 0, 10),
             applicationStopped: Boolean(user.pending_paid_company_payment),
             companyCount: parseInt(user.company_count || 0, 10),
-            employeeCount: parseInt(user.employee_count || 0, 10)
+            employeeCount: parseInt(user.employee_count || 0, 10),
+            tenderCount: parseInt(user.tender_count || 0, 10),
+            cdrCount: parseInt(user.cdr_count || 0, 10)
           } : null
         }
       }
@@ -195,6 +221,20 @@ router.post('/change-password', authenticate, async (req, res) => {
   }
 
   try {
+    // Only SuperAdmin and Primary Client Admin created by Super Admin can change password
+    if (req.user.role !== 'SuperAdmin') {
+      const userCheck = await db.query(
+        `SELECT is_primary_admin, role FROM users WHERE id = $1`,
+        [req.user.id]
+      );
+      if (!userCheck.rows[0]?.is_primary_admin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Security Policy: Sub-users cannot change their own password. Please contact your organization administrator.'
+        });
+      }
+    }
+
     // If not first time mandatory change, verify current password
     if (!req.user.mustChangePassword && currentPassword) {
       const userRes = await db.query(`SELECT password_hash FROM users WHERE id = $1`, [req.user.id]);
@@ -238,24 +278,33 @@ router.get('/me', authenticate, async (req, res) => {
     const userRes = await db.query(
       `SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
               u.must_change_password, u.can_see_bidding_prices, u.permissions,
+              c.role as creator_role,
+              (c.role = 'SuperAdmin' OR u.role = 'SuperAdmin' OR (u.role IN ('ClientAdmin', 'CompanyAdmin') AND (c.role = 'SuperAdmin' OR u.id = (
+                SELECT u_first.id FROM users u_first 
+                WHERE u_first.tenant_id = u.tenant_id AND u_first.role IN ('ClientAdmin', 'CompanyAdmin') 
+                ORDER BY u_first.created_at ASC LIMIT 1
+              )))) as is_created_by_super_admin,
               t.company_name as tenant_name, t.subdomain, t.subscription_plan,
               t.free_business_profile_limit, t.free_employee_limit,
               t.pending_paid_company_payment, t.pending_paid_company_amount, t.paid_companies_count,
               (SELECT COUNT(*) FROM business_profiles bp WHERE bp.tenant_id = u.tenant_id) as company_count,
               (SELECT COUNT(*) FROM users emp WHERE emp.tenant_id = u.tenant_id AND emp.role = 'ClientEmployee') as employee_count,
+              (SELECT COUNT(*) FROM opportunities opp WHERE opp.tenant_id = u.tenant_id) as tender_count,
+              (SELECT COUNT(*) FROM bid_securities bs WHERE bs.tenant_id = u.tenant_id) as cdr_count,
               COALESCE(
                 json_agg(json_build_object('id', bp.id, 'name', bp.business_name, 'fbr_enabled', bp.fbr_enabled)) 
                 FILTER (WHERE bp.id IS NOT NULL), 
                 '[]'
               ) as assigned_companies
        FROM users u
+       LEFT JOIN users c ON u.created_by = c.id
        LEFT JOIN tenants t ON u.tenant_id = t.id
        LEFT JOIN user_business_access uba ON u.id = uba.user_id
        LEFT JOIN business_profiles bp ON uba.business_profile_id = bp.id
        WHERE u.id = $1
        GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                 u.must_change_password, u.can_see_bidding_prices, u.permissions,
-                t.company_name, t.subdomain, t.subscription_plan,
+                c.role, t.company_name, t.subdomain, t.subscription_plan,
                 t.free_business_profile_limit, t.free_employee_limit,
                 t.pending_paid_company_payment, t.pending_paid_company_amount, t.paid_companies_count`,
       [req.user.id]
@@ -272,11 +321,14 @@ router.get('/me', authenticate, async (req, res) => {
         id: user.id,
         username: user.username,
         fullName: user.full_name,
-        email: user.email,
+        email: user.email || null,
         role: user.role,
         status: user.status,
-        mustChangePassword: user.must_change_password,
-        canSeeBiddingPrices: user.can_see_bidding_prices,
+        isPrimaryAdmin: Boolean(user.is_primary_admin),
+        isCreatedBySuperAdmin: Boolean(user.is_primary_admin || user.is_created_by_super_admin),
+        createdBy: user.created_by,
+        mustChangePassword: user.must_change_password || false,
+        canSeeBiddingPrices: user.can_see_bidding_prices !== false,
         permissions: user.permissions || {},
         assignedCompanies: user.assigned_companies || [],
         tenant: user.tenant_id ? {
@@ -291,7 +343,9 @@ router.get('/me', authenticate, async (req, res) => {
           paidCompaniesCount: parseInt(user.paid_companies_count || 0, 10),
           applicationStopped: Boolean(user.pending_paid_company_payment),
           companyCount: parseInt(user.company_count || 0, 10),
-          employeeCount: parseInt(user.employee_count || 0, 10)
+          employeeCount: parseInt(user.employee_count || 0, 10),
+          tenderCount: parseInt(user.tender_count || 0, 10),
+          cdrCount: parseInt(user.cdr_count || 0, 10)
         } : null
       }
     });

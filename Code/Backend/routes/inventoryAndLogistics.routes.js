@@ -1,13 +1,14 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // ============================================================================
 // 1. WAREHOUSES & CURRENT STOCK
 // ============================================================================
 
-router.get('/warehouses', optionalAuth, async (req, res) => {
+router.get('/warehouses', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   try {
     let queryText = `
       SELECT w.*, 
@@ -35,7 +36,7 @@ router.get('/warehouses', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/warehouses', optionalAuth, async (req, res) => {
+router.post('/warehouses', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
   const { warehouse_name, location, city, manager_name, contact_phone } = req.body;
 
   if (!warehouse_name) {
@@ -61,7 +62,7 @@ router.post('/warehouses', optionalAuth, async (req, res) => {
   }
 });
 
-router.get('/inventory/transactions', optionalAuth, async (req, res) => {
+router.get('/inventory/transactions', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   const { product_id, warehouse_id } = req.query;
 
   try {
@@ -105,7 +106,7 @@ router.get('/inventory/transactions', optionalAuth, async (req, res) => {
 });
 
 // POST Record Stock Movement (Stock In / Stock Out / Adjustment / Transfer)
-router.post('/inventory/transaction', optionalAuth, async (req, res) => {
+router.post('/inventory/transaction', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
   const { product_id, warehouse_id, transaction_type, quantity, unit_cost, batch_number, serial_number, reference_type, remarks } = req.body;
 
   if (!product_id || !warehouse_id || !transaction_type || !quantity) {
@@ -155,7 +156,7 @@ router.post('/inventory/transaction', optionalAuth, async (req, res) => {
 // 2. PROCUREMENTS (LOCAL & IMPORT)
 // ============================================================================
 
-router.get('/procurements', optionalAuth, async (req, res) => {
+router.get('/procurements', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   try {
     let queryText = `
       SELECT pr.*, 
@@ -188,7 +189,7 @@ router.get('/procurements', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/procurements', optionalAuth, async (req, res) => {
+router.post('/procurements', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
   const {
     business_profile_id,
     purchase_order_id,
@@ -264,7 +265,7 @@ router.post('/procurements', optionalAuth, async (req, res) => {
 // Business Rule: PO is strictly required for Delivery Challan!
 // ============================================================================
 
-router.get('/delivery-challans', optionalAuth, async (req, res) => {
+router.get('/delivery-challans', authenticate, requirePermission('delivery_challans', 'view'), async (req, res) => {
   const { purchase_order_id, business_profile_id } = req.query;
 
   try {
@@ -320,7 +321,7 @@ router.get('/delivery-challans', optionalAuth, async (req, res) => {
 
 // POST create Delivery Challan
 // Enforce Rule: PO required for DC!
-router.post('/delivery-challans', optionalAuth, async (req, res) => {
+router.post('/delivery-challans', authenticate, requirePermission('delivery_challans', 'add'), async (req, res) => {
   const {
     business_profile_id,
     purchase_order_id,

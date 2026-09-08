@@ -1,11 +1,12 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const FBRService = require('../services/fbrService');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // GET all invoices
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('invoices', 'view'), async (req, res) => {
   const { business_profile_id, status, fbr_status } = req.query;
 
   try {
@@ -68,7 +69,7 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // GET single invoice with payments and FBR submissions
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', authenticate, requirePermission('invoices', 'view'), async (req, res) => {
   try {
     let queryText = `SELECT i.*, bp.business_name, bp.legal_name, bp.ntn as bp_ntn, bp.strn as bp_strn,
               c.business_name as customer_name, c.ntn as customer_ntn, c.strn as customer_strn,
@@ -120,7 +121,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // POST create invoice
 // Workflow: Generated post Delivery Challan (DC)
 // Statuses: submitted, reinvoicing, pending, hold, paid, Draft, Cancelled
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', authenticate, requirePermission('invoices', 'add'), async (req, res) => {
   const {
     business_profile_id,
     delivery_challan_id,
@@ -221,7 +222,7 @@ router.post('/', optionalAuth, async (req, res) => {
 });
 
 // PUT update Invoice Status (Submitted, Reinvoicing, Pending, Hold, Paid)
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', authenticate, requirePermission('invoices', 'edit'), async (req, res) => {
   const { status, remarks } = req.body;
 
   try {
@@ -237,7 +238,7 @@ router.put('/:id/status', async (req, res) => {
 });
 
 // PUT update Invoice details
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, requirePermission('invoices', 'edit'), async (req, res) => {
   const {
     invoice_number,
     invoice_date,

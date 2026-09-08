@@ -1,10 +1,11 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // GET all bid securities optionally filtered by opportunity_id or status
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('bid_securities', 'view'), async (req, res) => {
   const { opportunity_id, business_profile_id, status } = req.query;
 
   try {
@@ -38,18 +39,18 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     if (opportunity_id) {
-      params.push(opportunity_id);
-      queryText += ` AND bs.opportunity_id = $${params.length}`;
+      params.push(String(opportunity_id));
+      queryText += ` AND bs.opportunity_id::text = $${params.length}`;
     }
 
     if (business_profile_id && business_profile_id !== 'all') {
-      params.push(business_profile_id);
-      queryText += ` AND bs.business_profile_id = $${params.length}`;
+      params.push(String(business_profile_id));
+      queryText += ` AND (bs.business_profile_id::text = $${params.length} OR o.business_profile_id::text = $${params.length})`;
     }
 
     if (status && status !== 'all') {
       params.push(status);
-      queryText += ` AND bs.status = $${params.length}`;
+      queryText += ` AND LOWER(bs.status) = LOWER($${params.length})`;
     }
 
     queryText += ` ORDER BY bs.expiry_date ASC, bs.created_at DESC`;
@@ -61,12 +62,27 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+// Helper for safe date parsing
+function parseSafeDateInput(dStr) {
+  if (!dStr) return null;
+  if (dStr instanceof Date) return dStr;
+  const str = String(dStr).trim();
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      // DD/MM/YYYY
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  return str;
+}
+
 // POST create new Bid Security
 // Mandatory: 1. Account Title, 2. Beneficiary, 3. Instrument Type, 4. Instrument Number, 5. Amount, 6. Expiry Date
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', authenticate, requirePermission('bid_securities', 'add'), async (req, res) => {
   const {
-    opportunity_id,
     business_profile_id,
+    opportunity_id,
     bid_id,
     account_title,
     beneficiary,
@@ -95,12 +111,82 @@ router.post('/', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
-    // Verify opportunity
+    // Verify opportunity and resolve business_profile_id safely
     let targetBizProfileId = business_profile_id;
-    if (!targetBizProfileId) {
-      const oppRes = await db.query(`SELECT business_profile_id FROM opportunities WHERE id = $1`, [opportunity_id]);
-      targetBizProfileId = oppRes.rows[0]?.business_profile_id;
+    if (!targetBizProfileId && opportunity_id) {
+      try {
+        const oppRes = await db.query(`SELECT business_profile_id, tenant_id FROM opportunities WHERE id::text = $1`, [String(opportunity_id)]);
+        if (oppRes.rows.length > 0) {
+          targetBizProfileId = oppRes.rows[0]?.business_profile_id;
+          if ((!tenantId || tenantId === 'a0000000-0000-0000-0000-000000000001') && oppRes.rows[0]?.tenant_id) {
+            tenantId = oppRes.rows[0].tenant_id;
+          }
+        }
+      } catch (e) {}
     }
+
+    let cleanOppId = null;
+    if (opportunity_id) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(opportunity_id).trim());
+      if (isUuid) {
+        cleanOppId = String(opportunity_id).trim();
+      } else {
+        console.warn('[BID SECURITY CREATE WARNING]: Invalid non-UUID opportunity_id received:', opportunity_id);
+        return res.status(400).json({
+          success: false,
+          message: `Invalid opportunity ID format: "${opportunity_id}". Must be a valid PostgreSQL UUID.`
+        });
+      }
+    }
+
+    // If still null, find the first business profile for this tenant
+    if (!targetBizProfileId) {
+      try {
+        const bpRes = await db.query(`SELECT id FROM business_profiles WHERE tenant_id::text = $1 ORDER BY created_at ASC LIMIT 1`, [String(tenantId)]);
+        targetBizProfileId = bpRes.rows[0]?.id;
+      } catch (e) {}
+    }
+
+    // Enforce dynamic Bid Security / CDR quota leverage according to subscription
+    if (req.user?.role !== 'SuperAdmin') {
+      try {
+        const tenantRow = await db.query(`SELECT subscription_plan, bid_security_limit, status FROM tenants WHERE id = $1`, [tenantId]);
+        if (tenantRow.rows.length > 0) {
+          const tnt = tenantRow.rows[0];
+          if (tnt.status === 'Suspended') {
+            return res.status(403).json({ success: false, message: 'Your organization workspace is suspended due to pending subscription payment.' });
+          }
+          const bsLimit = tnt.bid_security_limit;
+          const isUnlimited = (bsLimit === 'unlimited' || bsLimit === -1 || bsLimit === null || bsLimit === 'Unlimited' || tnt.subscription_plan === 'Advance' || tnt.subscription_plan === 'Enterprise');
+          if (!isUnlimited) {
+            const maxAllowed = parseInt(bsLimit, 10) || 10;
+            const countRes = await db.query(`SELECT COUNT(*) FROM bid_securities WHERE tenant_id = $1`, [tenantId]);
+            const currentCount = parseInt(countRes.rows[0]?.count || 0, 10);
+            if (currentCount >= maxAllowed) {
+              return res.status(402).json({
+                success: false,
+                quotaExceeded: true,
+                message: `Bid Security Quota Reached: Your organization subscription package allows ${maxAllowed} Bid Securities / CDRs (${currentCount} registered). Please upgrade your subscription plan or contact administrator.`
+              });
+            }
+          }
+        }
+      } catch (quotaErr) {
+        console.warn('Bid security quota check warning:', quotaErr.message);
+      }
+    }
+
+    // If still null, fallback to any available business profile in the system
+    if (!targetBizProfileId) {
+      try {
+        const anyBp = await db.query(`SELECT id FROM business_profiles ORDER BY created_at ASC LIMIT 1`);
+        targetBizProfileId = anyBp.rows[0]?.id;
+      } catch (e) {}
+    }
+
+    const cleanIssueDate = parseSafeDateInput(issue_date) || new Date();
+    // In Pakistani banking, CDRs are valid for 90 or 120 days. Ensure not-null constraint is satisfied.
+    const cleanExpiryDate = parseSafeDateInput(expiry_date) || new Date(cleanIssueDate.getTime() + 90 * 86400000);
 
     const result = await db.query(
       `INSERT INTO bid_securities 
@@ -110,15 +196,15 @@ router.post('/', optionalAuth, async (req, res) => {
       [
         tenantId,
         targetBizProfileId,
-        opportunity_id,
+        cleanOppId,
         bid_id || null,
         account_title,
         beneficiary,
         instrument_type,
         instrument_number,
         parseFloat(amount),
-        issue_date || new Date(),
-        expiry_date,
+        cleanIssueDate,
+        cleanExpiryDate,
         bank_name || null,
         bank_branch || null,
         'Active',
@@ -126,13 +212,17 @@ router.post('/', optionalAuth, async (req, res) => {
       ]
     );
 
-    // Also update tender status to 'Ready to submit' if tender was in Bid Preparation / Selected
-    await db.query(
-      `UPDATE opportunities 
-       SET status = 'Ready to submit', updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $1 AND status IN ('New', 'Selected', 'Under Review', 'Bid Preparation')`,
-      [opportunity_id]
-    );
+    // Also update tender status to 'Ready to submit' if tender was in New / Selected / Under Review / Bid Preparation
+    if (cleanOppId) {
+      try {
+        await db.query(
+          `UPDATE opportunities 
+           SET status = 'Ready to submit', updated_at = CURRENT_TIMESTAMP 
+           WHERE id::text = $1 AND status IN ('New', 'Selected', 'Under Review', 'Bid Preparation', 'Under Evaluation')`,
+          [String(cleanOppId)]
+        );
+      } catch (e) {}
+    }
 
     res.status(201).json({
       success: true,
@@ -140,12 +230,13 @@ router.post('/', optionalAuth, async (req, res) => {
       message: 'Bid Security attached successfully. Tender is now Ready to Submit.'
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[BID SECURITY CREATE ERROR]:', err);
+    res.status(500).json({ success: false, error: err.message, message: `Database error saving bid security: ${err.message}` });
   }
 });
 
 // POST release Bid Security (for won after PG/contract, or for lost/withdraw/rejected)
-router.post('/:id/release', async (req, res) => {
+router.post('/:id/release', authenticate, requirePermission('bid_securities', 'edit'), async (req, res) => {
   const { release_date, release_reference, comments } = req.body;
 
   try {
@@ -176,7 +267,7 @@ router.post('/:id/release', async (req, res) => {
 });
 
 // PUT update Bid Security details
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, requirePermission('bid_securities', 'edit'), async (req, res) => {
   const {
     account_title,
     beneficiary,
@@ -245,7 +336,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // GET generate official CDR refund / return request letter
-router.get('/:id/recovery-letter', optionalAuth, async (req, res) => {
+router.get('/:id/recovery-letter', authenticate, requirePermission('bid_securities', 'view'), async (req, res) => {
   try {
     const result = await db.query(
       `SELECT bs.*, 

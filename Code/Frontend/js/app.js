@@ -21,18 +21,27 @@ function showToast(message, type = 'info', duration = 4000) {
   const container = document.getElementById('toast-container');
   if (!container) return;
 
+  // Strict Policy: Never display raw technical error messages to the user.
+  // Log the actual error for diagnosis and display a standard user-friendly notice.
+  let displayMessage = message;
+  if (type === 'error' || type === 'danger') {
+    console.error('[Application Error Logged]:', message);
+    displayMessage = 'There is an error please contact to your administrator.';
+  }
+
   const icons = {
     success: '✓',
     error: '✕',
+    danger: '✕',
     warning: '⚠️',
     info: 'ℹ️'
   };
 
   const toast = document.createElement('div');
-  toast.className = `toast-message toast-${type}`;
+  toast.className = `toast-message toast-${type === 'danger' ? 'error' : type}`;
   toast.innerHTML = `
     <span style="font-size: 1.1rem; font-weight: 800;">${icons[type] || 'ℹ️'}</span>
-    <span style="flex: 1; line-height: 1.4;">${message}</span>
+    <span style="flex: 1; line-height: 1.4;">${displayMessage}</span>
   `;
 
   container.appendChild(toast);
@@ -41,6 +50,23 @@ function showToast(message, type = 'info', duration = 4000) {
     toast.classList.add('toast-hiding');
     setTimeout(() => toast.remove(), 250);
   }, duration);
+}
+
+// Global client error logging and graceful notification
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    console.error('[Global Client Error Logged]:', event.error || event.message, event.filename, event.lineno);
+    if (typeof showToast === 'function') {
+      showToast(event.message || 'Client Exception', 'error');
+    }
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[Unhandled Promise Rejection Logged]:', event.reason);
+    if (typeof showToast === 'function') {
+      showToast(event.reason?.message || 'Unhandled Rejection', 'error');
+    }
+  });
 }
 
 // Universal Currency & Formatting Helpers
@@ -438,18 +464,42 @@ async function initApp() {
   }
 
   // 3. Fetch Business Profiles for active user/tenant
-  State.businessProfiles = await API.getBusinessProfiles();
-  populateBusinessSwitcher();
-  updateHeaderUserProfile();
-  renderDynamicSidebarNavigation();
+  try {
+    State.businessProfiles = await API.getBusinessProfiles();
+  } catch (e) {
+    console.warn('getBusinessProfiles failed:', e.message);
+  }
+  try {
+    populateBusinessSwitcher();
+  } catch (e) {
+    console.warn('populateBusinessSwitcher failed:', e.message);
+  }
+  try {
+    updateHeaderUserProfile();
+  } catch (e) {
+    console.warn('updateHeaderUserProfile failed:', e.message);
+  }
+  try {
+    renderDynamicSidebarNavigation();
+  } catch (e) {
+    console.warn('renderDynamicSidebarNavigation failed:', e.message);
+  }
 
   // 4. Client Admin Onboarding Interceptor (If 0 companies configured and not changing password)
-  if (State.isClientAdmin() && (!State.businessProfiles || State.businessProfiles.length === 0) && !State.currentUser.mustChangePassword) {
-    openModal('modal-onboard-company');
+  try {
+    if (State.isClientAdmin() && (!State.businessProfiles || State.businessProfiles.length === 0) && !State.currentUser?.mustChangePassword) {
+      openModal('modal-onboard-company');
+    }
+  } catch (e) {
+    console.warn('Onboarding modal check failed:', e.message);
   }
 
   // 5. Render Current Active View
-  await renderActiveView();
+  try {
+    await renderActiveView();
+  } catch (e) {
+    console.error('renderActiveView failed during initApp:', e.message);
+  }
 
   // 6. Listen for Business Profile change events
   window.addEventListener('businessProfileChanged', () => {
@@ -641,53 +691,122 @@ function updateHeaderUserProfile() {
   // Render role-gated items in user dropdown menu
   renderUserDropdownMenu();
 
-  // Insert/Update Trial & Subscription Status Pill in Header
+  // Insert/Update Trial & Subscription Status Pill in Header dynamically
+  renderHeaderSubStatusPill();
+  syncDynamicTrialCounters();
+}
+
+function renderHeaderSubStatusPill(overrideTenders, overrideCdrs) {
   const headerActions = document.querySelector('.header-actions');
   const existingPill = document.getElementById('header-sub-status-pill');
   if (State.isSuperAdmin()) {
     if (existingPill) existingPill.remove();
-  } else if (headerActions) {
-    let subStatusPill = existingPill;
-    if (!subStatusPill) {
-      subStatusPill = document.createElement('div');
-      subStatusPill.id = 'header-sub-status-pill';
-      subStatusPill.style.display = 'flex';
-      subStatusPill.style.alignItems = 'center';
-      headerActions.insertBefore(subStatusPill, headerActions.firstChild);
+    return;
+  }
+  if (!headerActions) return;
+
+  let subStatusPill = existingPill;
+  if (!subStatusPill) {
+    subStatusPill = document.createElement('div');
+    subStatusPill.id = 'header-sub-status-pill';
+    subStatusPill.style.display = 'flex';
+    subStatusPill.style.alignItems = 'center';
+    headerActions.insertBefore(subStatusPill, headerActions.firstChild);
+  }
+
+  const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+  const sub = State.getTenantSubscription(tid);
+  let quota = {};
+  try {
+    quota = (typeof State.getTenantQuota === 'function' ? State.getTenantQuota(tid) : {}) || {};
+  } catch (e) {
+    quota = {};
+  }
+  const daysLeft = State.getTrialDaysRemaining(tid);
+
+  if (sub.status === 'Suspended') {
+    subStatusPill.innerHTML = `
+      <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171; font-weight:700; padding:6px 12px; cursor:pointer;" onclick="switchView('my-subscription')">
+        ⛔ Subscription Suspended
+      </span>
+    `;
+    return;
+  }
+
+  const isUnlimitedTenders = (sub.is_unlimited_tenders || sub.tender_limit === 'unlimited' || sub.tender_limit === -1 || sub.trial_tender_limit === 'unlimited' || sub.plan_type === 'Advance');
+  const isUnlimitedCdrs = (sub.is_unlimited_cdrs || sub.bid_security_limit === 'unlimited' || sub.bid_security_limit === -1 || sub.trial_bid_security_limit === 'unlimited' || sub.plan_type === 'Advance');
+
+  const liveTenders = (overrideTenders !== undefined) ? overrideTenders : (State.liveTendersCount !== undefined ? State.liveTendersCount : (quota?.tenders_created || 0));
+  const liveCdrs = (overrideCdrs !== undefined) ? overrideCdrs : (State.liveCdrsCount !== undefined ? State.liveCdrsCount : (quota?.bid_securities_created || 0));
+
+  const tendersText = isUnlimitedTenders 
+    ? `<span>📑 <strong>${liveTenders}</strong> Tenders (Unlimited)</span>` 
+    : `<span>📑 <strong>${liveTenders}/${sub.tender_limit || sub.trial_tender_limit || 5}</strong> Tenders</span>`;
+
+  const cdrsText = isUnlimitedCdrs 
+    ? `<span>🏦 <strong>${liveCdrs}</strong> CDRs (Unlimited)</span>` 
+    : `<span>🏦 <strong>${liveCdrs}/${sub.bid_security_limit || sub.trial_bid_security_limit || 10}</strong> CDRs</span>`;
+
+  const entitySeatsText = `🏢 ${sub.free_companies_limit || 1} Cos &bull; 👥 ${sub.free_users_limit || 1} Seats`;
+
+  if (sub.is_trial && sub.status === 'Trial') {
+    subStatusPill.innerHTML = `
+      <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700; padding:6px 12px; cursor:pointer; display:flex; align-items:center; gap:8px;" onclick="switchView('my-subscription')" title="${sub.plan_type} (${daysLeft}d Trial) | ${entitySeatsText}">
+        <span>⏳ <strong>${daysLeft}d</strong> Trial</span>
+        <span style="font-weight:400; color:#3b82f6;">|</span>
+        ${tendersText}
+        <span style="font-weight:400; color:#3b82f6;">|</span>
+        ${cdrsText}
+        <span style="font-weight:400; color:#3b82f6;">|</span>
+        <span style="font-size: 0.74rem; background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: 700;">${entitySeatsText}</span>
+      </span>
+    `;
+  } else {
+    const cycleText = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
+    const isPro = (sub.plan_type === 'Advance' || sub.plan_type === 'Enterprise');
+    const badgeBg = isPro ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : '#f0fdf4';
+    const badgeColor = isPro ? '#065f46' : '#166534';
+    const borderColor = isPro ? '#6ee7b7' : '#86efac';
+    const tagBg = isPro ? '#a7f3d0' : '#bbf7d0';
+    const tagColor = isPro ? '#064e3b' : '#14532d';
+
+    subStatusPill.innerHTML = `
+      <span class="badge" style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${borderColor}; font-weight: 700; padding: 6px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 1px 3px rgba(16,185,129,0.12);" onclick="switchView('my-subscription')" title="${sub.plan_type} Plan (${cycleText}) | ${entitySeatsText}">
+        <span style="font-size: 0.95rem;">${isPro ? '⚡' : '✓'}</span>
+        <span><strong>${sub.plan_type} Plan</strong></span>
+        <span style="font-weight: 400; opacity: 0.6;">|</span>
+        ${tendersText}
+        <span style="font-weight: 400; opacity: 0.6;">|</span>
+        ${cdrsText}
+        <span style="font-weight: 400; opacity: 0.6;">|</span>
+        <span style="font-size: 0.76rem; background: ${tagBg}; color: ${tagColor}; padding: 2px 7px; border-radius: 4px; font-weight: 700;">${entitySeatsText}</span>
+      </span>
+    `;
+  }
+}
+
+async function syncDynamicTrialCounters() {
+  const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+  if (!tid || State.isSuperAdmin()) return;
+
+  try {
+    const [opps, secs] = await Promise.all([
+      API.getOpportunities('all'),
+      API.getBidSecurities('all')
+    ]);
+    const tendersCount = Array.isArray(opps) ? opps.length : 0;
+    const cdrsCount = Array.isArray(secs) ? secs.length : 0;
+
+    State.liveTendersCount = tendersCount;
+    State.liveCdrsCount = cdrsCount;
+    if (State.currentUser?.tenant) {
+      State.currentUser.tenant.tenderCount = tendersCount;
+      State.currentUser.tenant.cdrCount = cdrsCount;
     }
 
-    const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
-    const sub = State.getTenantSubscription(tid);
-    const daysLeft = State.getTrialDaysRemaining(tid);
-    const quota = State.getTenantQuota(tid);
-
-    if (sub.status === 'Suspended') {
-      subStatusPill.innerHTML = `
-        <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171; font-weight:700; padding:6px 12px; cursor:pointer;" onclick="switchView('my-subscription')">
-          ⛔ Subscription Suspended
-        </span>
-      `;
-    } else if (sub.is_trial && sub.status === 'Trial') {
-      const allSecurities = State.getTenantEntityList ? State.getTenantEntityList('bidSecurities') : [];
-      const secUsed = allSecurities.filter(b => b.tenant_id === tid).length || (quota.bid_securities_created || 0);
-
-      subStatusPill.innerHTML = `
-        <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700; padding:6px 12px; cursor:pointer; display:flex; align-items:center; gap:8px;" onclick="switchView('my-subscription')">
-          <span>⏳ <strong>${daysLeft}d</strong> Trial</span>
-          <span style="font-weight:400; color:#3b82f6;">|</span>
-          <span>📑 <strong>${quota.tenders_created || 0}/5</strong> Tenders</span>
-          <span style="font-weight:400; color:#3b82f6;">|</span>
-          <span>🏦 <strong>${secUsed}/3</strong> CDRs</span>
-        </span>
-      `;
-    } else {
-      const cycleText = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
-      subStatusPill.innerHTML = `
-        <span class="badge badge-won" style="padding:6px 12px; cursor:pointer;" onclick="switchView('my-subscription')">
-          ✓ ${sub.plan_type} Plan (${cycleText})
-        </span>
-      `;
-    }
+    renderHeaderSubStatusPill(tendersCount, cdrsCount);
+  } catch (e) {
+    console.warn('syncDynamicTrialCounters:', e.message);
   }
 }
 
@@ -738,15 +857,18 @@ function renderUserDropdownMenu() {
     </li>
   `;
 
-  // 2. Change Password (Visible to ALL roles)
-  itemsHTML += `
-    <li>
-      <a class="user-dropdown-item" onclick="closeUserDropdown(); openChangePasswordModal();">
-        <span class="item-icon">🔑</span>
-        <span>Change Password</span>
-      </a>
-    </li>
-  `;
+  // 2. Change Password (Visible ONLY to Super Admin and Primary Client Admin created by Super Admin)
+  const canChangePassword = isSuper || (typeof State.isCreatedBySuperAdmin === 'function' ? State.isCreatedBySuperAdmin() : false);
+  if (canChangePassword) {
+    itemsHTML += `
+      <li>
+        <a class="user-dropdown-item" onclick="closeUserDropdown(); openChangePasswordModal();">
+          <span class="item-icon">🔑</span>
+          <span>Change Password</span>
+        </a>
+      </li>
+    `;
+  }
 
   // 3. My Plan & Subscription (Visible ONLY for ClientAdmin / Tenant Admin, or SuperAdmin hub)
   if (isClientAdmin) {
@@ -1021,13 +1143,18 @@ function renderDynamicSidebarNavigation() {
 
   const filterLinks = (list) => {
     return list.filter(item => {
-      if (item.isSuperOnly && !isSuper) return false;
-      if (item.isClientAdminOnly && (isSuper || !isAdmin)) return false;
-      if (item.always) return true;
-      if (item.moduleKey && !State.isModuleActiveForTenant(item.moduleKey)) return false;
-      if (isSuper || isAdmin) return true;
-      if (item.adminOnly) return false;
-      return State.hasPermission(item.perm, 'view');
+      try {
+        if (item.isSuperOnly && !isSuper) return false;
+        if (item.isClientAdminOnly && (isSuper || !isAdmin)) return false;
+        if (item.always) return true;
+        if (item.moduleKey && typeof State.isModuleActiveForTenant === 'function' && !State.isModuleActiveForTenant(item.moduleKey)) return false;
+        if (isSuper || isAdmin) return true;
+        if (item.view === 'business-profiles' || item.view === 'users') return true;
+        if (item.adminOnly) return false;
+        return typeof State.hasPermission === 'function' ? State.hasPermission(item.perm, 'view') : true;
+      } catch (e) {
+        return true;
+      }
     });
   };
 
@@ -1098,6 +1225,9 @@ async function renderActiveView() {
 
   if (!contentArea) return;
 
+  // Keep dynamic trial counters (Tenders & CDRs) refreshed
+  syncDynamicTrialCounters();
+
   const currentProfile = State.getCurrentBusinessProfile();
   const isAdmin = State.isSuperAdmin() || State.isClientAdmin();
 
@@ -1160,136 +1290,153 @@ async function renderActiveView() {
     return;
   }
 
-  switch (State.activeView) {
-    case 'dashboard':
-      viewTitle.innerText = 'Executive KPI Dashboard';
-      viewSubtitle.innerText = `Full lifecycle metrics for ${currentProfile.business_name} (Amounts in PKR)`;
-      contentArea.innerHTML = await renderDashboardHTML();
-      break;
+  try {
+    switch (State.activeView) {
+      case 'dashboard':
+        viewTitle.innerText = 'Executive KPI Dashboard';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderDashboardHTML();
+        break;
 
-    case 'opportunities':
-      viewTitle.innerText = 'Tenders & Direct Quotations Pipeline';
-      viewSubtitle.innerText = `PPRA, DGP, RFQ, LPQ & Direct Sales Opportunities | Pricing View: ${isAdmin ? '🔓 Admin Unlocked' : (State.canSeeBiddingPrices() ? '🔓 Unlocked' : '🔒 Masked')}`;
-      contentArea.innerHTML = await renderOpportunitiesHTML();
-      break;
+      case 'opportunities':
+        viewTitle.innerText = 'Tenders & Quotations Pipeline';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderOpportunitiesHTML();
+        break;
 
-    case 'bid-securities':
-      viewTitle.innerText = 'Mandatory Bid Security Registry';
-      viewSubtitle.innerText = 'Track Earnest Money Instruments (PO, CDR, Bank Guarantees) & Release Workflows';
-      contentArea.innerHTML = await renderBidSecuritiesHTML();
-      break;
+      case 'bid-securities':
+        viewTitle.innerText = 'Bid Security Registry';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderBidSecuritiesHTML();
+        break;
 
-    case 'costing':
-      viewTitle.innerText = 'Interactive Bid Costing & Estimation Engine';
-      viewSubtitle.innerText = 'Live itemized pricing, direct costs, markup %, and margin calculation';
-      contentArea.innerHTML = await renderCostingCalculatorHTML();
-      setupCostingCalculator();
-      break;
+      case 'costing':
+        viewTitle.innerText = 'Costing & Margin Calculator';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderCostingCalculatorHTML();
+        setupCostingCalculator();
+        break;
 
-    case 'approvals':
-      viewTitle.innerText = 'Bid Governance & Approvals';
-      viewSubtitle.innerText = 'Multi-tier review workflow (Bid Manager Review & Management Sign-Off)';
-      contentArea.innerHTML = await renderApprovalsHTML();
-      break;
+      case 'approvals':
+        viewTitle.innerText = 'Bid Governance & Approvals';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderApprovalsHTML();
+        break;
 
-    case 'awards':
-      viewTitle.innerText = 'Award Letters & Performance Guarantees';
-      viewSubtitle.innerText = 'Post-Win LOA acceptance and Performance Bond release management';
-      contentArea.innerHTML = await renderAwardsHTML();
-      break;
+      case 'awards':
+        viewTitle.innerText = 'Awards & Performance Guarantees';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderAwardsHTML();
+        break;
 
-    case 'purchase-orders':
-      viewTitle.innerText = 'Purchase Orders (PO) Management';
-      viewSubtitle.innerText = 'Customer POs, Delivery Deadlines, and Authorization for Delivery Challans';
-      contentArea.innerHTML = await renderPurchaseOrdersHTML();
-      break;
+      case 'purchase-orders':
+        viewTitle.innerText = 'Purchase Orders (PO)';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderPurchaseOrdersHTML();
+        break;
 
-    case 'delivery-challans':
-      viewTitle.innerText = 'Supply & Delivery Challans (DC)';
-      viewSubtitle.innerText = 'PO-backed dispatches, warehouse stock deduction, and 3PL / Hired logistics tracking';
-      contentArea.innerHTML = await renderDeliveryChallansHTML();
-      break;
+      case 'delivery-challans':
+        viewTitle.innerText = 'Supply & Delivery Challans (DC)';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderDeliveryChallansHTML();
+        break;
 
-    case 'invoices':
-      viewTitle.innerText = 'Invoicing & Pakistan FBR Fiscalization Hub';
-      viewSubtitle.innerText = 'Post-DC Invoicing (Submitted, Reinvoicing, Pending, Hold, Paid) & PRAL Integration';
-      contentArea.innerHTML = await renderInvoicesHTML();
-      break;
+      case 'invoices':
+        viewTitle.innerText = 'Invoices & FBR PRAL Hub';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderInvoicesHTML();
+        break;
 
-    case 'payments':
-      viewTitle.innerText = 'Payments Received & Cheque Drawer';
-      viewSubtitle.innerText = 'Record Cheques, Bank Transfers, and reconcile Outstanding Invoice Balances';
-      contentArea.innerHTML = await renderPaymentsHTML();
-      break;
+      case 'payments':
+        viewTitle.innerText = 'Payments Received';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderPaymentsHTML();
+        break;
 
-    case 'inventory':
-      viewTitle.innerText = 'Warehouse Stock & Inventory Control';
-      viewSubtitle.innerText = 'Live multi-warehouse stock levels, Stock In/Out logs, and Local/Import procurement';
-      contentArea.innerHTML = await renderInventoryHTML();
-      break;
+      case 'inventory':
+        viewTitle.innerText = 'Warehouse Stock & Inventory';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderInventoryHTML();
+        break;
 
-    case 'expenses':
-      viewTitle.innerText = 'Company Expense & Overhead Ledger';
-      viewSubtitle.innerText = '13 standard expense categories linked to Tenders, Contracts, or Departments';
-      contentArea.innerHTML = await renderExpensesHTML();
-      break;
+      case 'expenses':
+        viewTitle.innerText = 'Expenses & Overhead Ledger';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderExpensesHTML();
+        break;
 
-    case 'reports':
-      viewTitle.innerText = 'Management Reporting & Analytics';
-      viewSubtitle.innerText = 'Contract-wise Profitability and Pending Bills Aging analysis';
-      contentArea.innerHTML = await renderReportsHTML();
-      break;
+      case 'reports':
+        viewTitle.innerText = 'Management Reporting & Analytics';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderReportsHTML();
+        break;
 
-    case 'customers':
-      viewTitle.innerText = 'Customer & Client Directory';
-      viewSubtitle.innerText = 'Government, Semi-Government, Autonomous, MNC & Private client accounts';
-      contentArea.innerHTML = await renderCustomersHTML();
-      break;
+      case 'customers':
+        viewTitle.innerText = 'Customer Directory';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderCustomersHTML();
+        break;
 
-    case 'suppliers':
-      viewTitle.innerText = 'Supplier & Vendor Registry';
-      viewSubtitle.innerText = 'Local and International suppliers, ratings, and contact information';
-      contentArea.innerHTML = await renderSuppliersHTML();
-      break;
+      case 'suppliers':
+        viewTitle.innerText = 'Supplier & Vendor Registry';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderSuppliersHTML();
+        break;
 
-    case 'products':
-      viewTitle.innerText = 'Product & Item SKU Catalog';
-      viewSubtitle.innerText = 'Master item list with stock balances and auto-population for Tenders';
-      contentArea.innerHTML = await renderProductsHTML();
-      break;
+      case 'products':
+        viewTitle.innerText = 'Product & Item SKU Catalog';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderProductsHTML();
+        break;
 
-    case 'business-profiles':
-      viewTitle.innerText = 'Companies & Business Profiles';
-      viewSubtitle.innerText = '';
-      contentArea.innerHTML = await renderBusinessProfilesHTML();
-      break;
+      case 'business-profiles':
+        viewTitle.innerText = 'Companies & Business Profiles';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderBusinessProfilesHTML();
+        break;
 
-    case 'users':
-      viewTitle.innerText = 'User Management & Role-Based Access Control';
-      viewSubtitle.innerText = '';
-      contentArea.innerHTML = await renderUsersHTML();
-      break;
+      case 'users':
+        viewTitle.innerText = 'User Management & RBAC';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderUsersHTML();
+        break;
 
-    case 'subscriptions':
-      viewTitle.innerText = '👑 Platform Subscriptions & Billing Hub';
-      viewSubtitle.innerText = 'Manage tenant tiers, flexible free trials (15d–3mo), custom price overrides, and payment verification';
-      contentArea.innerHTML = await renderSuperAdminSubscriptionsHTML();
-      break;
+      case 'subscriptions':
+        viewTitle.innerText = 'Platform Subscriptions & Billing';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderSuperAdminSubscriptionsHTML();
+        break;
 
-    case 'my-subscription':
-      viewTitle.innerText = '💳 Organization Subscription & Plan';
-      viewSubtitle.innerText = 'Current tier details, trial timer, quota progress meters, and agreed custom pricing breakdown';
-      contentArea.innerHTML = await renderMySubscriptionHTML();
-      break;
+      case 'my-subscription':
+        viewTitle.innerText = 'Organization Subscription & Plan';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderMySubscriptionHTML();
+        break;
 
-    case 'settings':
-      viewTitle.innerText = '⚙️ System Settings & FBR Digital Invoicing';
-      viewSubtitle.innerText = 'Company-specific PRAL Digital Invoicing API keys, POS IDs, and Gateway Parameters';
-      contentArea.innerHTML = await renderSettingsHTML();
-      break;
+      case 'settings':
+        viewTitle.innerText = 'System Settings & FBR Digital Invoicing';
+        viewSubtitle.innerText = '';
+        contentArea.innerHTML = await renderSettingsHTML();
+        break;
 
-    default:
-      contentArea.innerHTML = `<div class="card"><div class="card-body"><h3>View not found</h3></div></div>`;
+      default:
+        contentArea.innerHTML = `<div class="card"><div class="card-body"><h3>View not found</h3></div></div>`;
+    }
+  } catch (err) {
+    console.error(`Error rendering active view (${State.activeView}):`, err);
+    contentArea.innerHTML = `
+      <div class="card" style="text-align:center; padding:50px 24px; max-width:600px; margin:40px auto; border-top:4px solid #f59e0b; border-radius:12px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.08);">
+        <div style="font-size:3rem; margin-bottom:12px;">⚠️</div>
+        <h3 style="font-size:1.3rem; font-weight:800; color:#1e293b; margin-bottom:8px;">Temporarily Unable to Load View</h3>
+        <p style="font-size:0.9rem; color:#64748b; line-height:1.6; margin-bottom:20px;">
+          An unexpected issue occurred while rendering <strong>${State.activeView.toUpperCase()}</strong>: ${err.message || 'Unknown error'}.
+        </p>
+        <div style="display:flex; justify-content:center; gap:12px;">
+          <button class="primary-btn" onclick="renderActiveView()" style="padding:10px 20px;">🔄 Try Again</button>
+          <button class="secondary-btn" onclick="switchView('dashboard')" style="padding:10px 20px;">📊 Go to Dashboard</button>
+        </div>
+      </div>
+    `;
   }
 }
 
@@ -1347,7 +1494,14 @@ async function renderDashboardHTML() {
 
   // Calculate Bid Security Expiry Buckets
   const now = new Date();
-  const activeSecs = (securities || []).filter(s => s.status === 'Active' || !s.status || s.status === 'active');
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // Include active, submitted, and un-set status securities (case-insensitive)
+  const activeSecs = (securities || []).filter(s => {
+    const st = String(s.status || 'Active').toLowerCase();
+    return st === 'active' || st === 'submitted' || !s.status;
+  });
+
   const criticalSecs = []; // <= 7 days
   const upcomingSecs = []; // 8-30 days
   const safeSecs = [];     // > 30 days
@@ -1355,18 +1509,44 @@ async function renderDashboardHTML() {
   activeSecs.forEach(s => {
     let expDate = null;
     if (s.expiry_date) {
-      if (s.expiry_date.includes('/')) {
-        const p = s.expiry_date.split('/');
-        expDate = new Date(p[2], p[1] - 1, p[0]);
+      if (s.expiry_date instanceof Date) {
+        expDate = s.expiry_date;
       } else {
-        expDate = new Date(s.expiry_date);
+        const str = String(s.expiry_date).trim();
+        if (str.includes('/')) {
+          const p = str.split('/');
+          if (p.length === 3) {
+            // DD/MM/YYYY
+            expDate = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+          }
+        } else if (str.includes('-')) {
+          const datePart = str.split('T')[0];
+          const p = datePart.split('-');
+          if (p.length === 3) {
+            if (p[0].length === 4) {
+              // YYYY-MM-DD
+              expDate = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+            } else {
+              // DD-MM-YYYY
+              expDate = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+            }
+          }
+        }
+        if (!expDate || isNaN(expDate.getTime())) {
+          expDate = new Date(s.expiry_date);
+        }
       }
     }
+
     if (!expDate || isNaN(expDate.getTime())) {
       safeSecs.push(s);
       return;
     }
-    const diffDays = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Exact calendar-day difference independent of time-of-day
+    const expMidnight = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate());
+    const diffDays = Math.round((expMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
     if (diffDays <= 7) {
       criticalSecs.push({ ...s, daysRemaining: diffDays });
     } else if (diffDays <= 30) {
@@ -1379,7 +1559,91 @@ async function renderDashboardHTML() {
   const criticalAmount = criticalSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
   const upcomingAmount = upcomingSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
 
+  // Determine Subscription Notification Banner
+  const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
+  const sub = State.getTenantSubscription(tid);
+  const isSuper = State.isSuperAdmin();
+  let subscriptionBanner = '';
+
+  if (!isSuper) {
+    if (sub.status === 'Suspended') {
+      subscriptionBanner = `
+        <div style="background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%); color: #ffffff; border-radius: var(--radius-md); padding: 14px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 14px rgba(153, 27, 27, 0.25); border-left: 5px solid #f87171;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="font-size: 1.8rem; background: rgba(255,255,255,0.18); width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">⛔</div>
+            <div>
+              <strong style="font-size: 0.98rem; color: #fecaca; letter-spacing: 0.3px;">SUBSCRIPTION SUSPENDED</strong>
+              <div style="font-size: 0.83rem; color: #fee2e2; margin-top: 3px;">
+                Your organization workspace is suspended due to pending subscription payment. Please clear outstanding dues to resume full operations.
+              </div>
+            </div>
+          </div>
+          <button class="primary-btn" style="background: #ef4444; border: 1px solid #f87171; color: #ffffff; font-weight: 600; font-size: 0.8rem; padding: 6px 14px; white-space: nowrap;" onclick="switchView('my-subscription')">
+            💳 Pay & Reactivate &rarr;
+          </button>
+        </div>
+      `;
+    } else if (sub.is_trial && sub.status === 'Trial') {
+      const daysLeft = State.getTrialDaysRemaining(tid);
+      const isUnlimitedTenders = (sub.is_unlimited_tenders || sub.tender_limit === 'unlimited' || sub.tender_limit === -1 || sub.trial_tender_limit === 'unlimited');
+      const isUnlimitedCdrs = (sub.is_unlimited_cdrs || sub.bid_security_limit === 'unlimited' || sub.bid_security_limit === -1 || sub.trial_bid_security_limit === 'unlimited');
+      const coLimit = sub.free_companies_limit || 1;
+      const userLimit = sub.free_users_limit || 1;
+
+      subscriptionBanner = `
+        <div style="background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); color: #ffffff; border-radius: var(--radius-md); padding: 14px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 14px rgba(30, 58, 138, 0.2); border-left: 5px solid #60a5fa;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="font-size: 1.8rem; background: rgba(255,255,255,0.18); width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">⏳</div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="font-size: 0.98rem; color: #bfdbfe; letter-spacing: 0.3px;">${(sub.plan_type || 'ORGANIZATION').toUpperCase()} FREE TRIAL (${daysLeft} DAYS REMAINING)</strong>
+                <span class="badge" style="background: #3b82f6; color: #ffffff; font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; font-weight: 700;">TRIAL</span>
+              </div>
+              <div style="font-size: 0.83rem; color: #e2e8f0; margin-top: 3px;">
+                Active trial leverages: <strong>${isUnlimitedTenders ? 'Unlimited Tenders' : `${sub.tender_limit || 5} Tenders`}</strong> &bull; <strong>${isUnlimitedCdrs ? 'Unlimited CDRs' : `${sub.bid_security_limit || 10} CDRs`}</strong> &bull; <strong>${coLimit} Business Entities</strong> &bull; <strong>${userLimit} User Seats</strong>. Upgrade anytime to lock in organization license.
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="primary-btn" style="background: #3b82f6; border: 1px solid #60a5fa; color: #ffffff; font-weight: 600; font-size: 0.8rem; padding: 6px 14px; white-space: nowrap;" onclick="openModal('modal-quota-upgrade')">
+              🚀 Upgrade Plan &rarr;
+            </button>
+          </div>
+        </div>
+      `;
+    } else {
+      const isPro = (sub.plan_type === 'Advance' || sub.plan_type === 'Enterprise');
+      const isUnlimitedTenders = (sub.is_unlimited_tenders || sub.tender_limit === 'unlimited' || sub.tender_limit === -1 || sub.trial_tender_limit === 'unlimited' || isPro);
+      const isUnlimitedCdrs = (sub.is_unlimited_cdrs || sub.bid_security_limit === 'unlimited' || sub.bid_security_limit === -1 || sub.trial_bid_security_limit === 'unlimited' || isPro);
+      const coLimit = sub.free_companies_limit || (isPro ? 3 : 1);
+      const userLimit = sub.free_users_limit || (isPro ? 3 : 1);
+
+      subscriptionBanner = `
+        <div style="background: linear-gradient(135deg, ${isPro ? '#064e3b 0%, #065f46 100%' : '#0f766e 0%, #115e59 100%'}); color: #ffffff; border-radius: var(--radius-md); padding: 14px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 14px rgba(6, 95, 70, 0.2); border-left: 5px solid ${isPro ? '#34d399' : '#2dd4bf'};">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="font-size: 1.8rem; background: rgba(255,255,255,0.18); width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">${isPro ? '⚡' : '🏢'}</div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="font-size: 0.98rem; color: #a7f3d0; letter-spacing: 0.3px;">${(sub.plan_type || 'ORGANIZATION').toUpperCase()} PLAN ACTIVE</strong>
+                <span class="badge" style="background: #10b981; color: #ffffff; font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; font-weight: 700;">${isPro ? 'PRO TIER' : 'ACTIVE'}</span>
+              </div>
+              <div style="font-size: 0.83rem; color: #e2e8f0; margin-top: 3px;">
+                Active organization leverages: <strong>${isUnlimitedTenders ? 'Unlimited Commercial Tenders & Bidding' : `${sub.tender_limit || 5} Tenders Included`}</strong> &bull; <strong>${isUnlimitedCdrs ? 'Unlimited Bid Securities (CDRs)' : `${sub.bid_security_limit || 10} Bid Securities`}</strong> &bull; <strong>${coLimit} Free Business Entities</strong> &bull; <strong>${userLimit} Free User Seats</strong>. All subscribed modules active.
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="primary-btn" style="background: #10b981; border: 1px solid #34d399; color: #ffffff; font-weight: 600; font-size: 0.8rem; padding: 6px 14px; white-space: nowrap;" onclick="switchView('my-subscription')">
+              💳 View Plan & Entitlements &rarr;
+            </button>
+          </div>
+        </div>
+      `;
+    }
+  }
+
   return `
+    ${subscriptionBanner}
     <!-- ⚠️ Urgent Proactive Expiry Alert Banner (if critical or upcoming instruments exist) -->
     ${criticalSecs.length > 0 ? `
       <div style="background: linear-gradient(135deg, #fee2e2, #fef2f2); border: 2px solid #ef4444; border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);">
@@ -1517,7 +1781,10 @@ async function renderDashboardHTML() {
                   <span style="font-size:0.8rem; color:#94a3b8;">Click "<strong>+ Register New Tender</strong>" above to start bidding.</span>
                 </td>
               </tr>
-            ` : opps.slice(0, 5).map(o => `
+            ` : opps.slice(0, 5).map(o => {
+              const hasAttachedSecurity = (parseInt(o.active_bid_securities_count, 10) > 0) ||
+                (Array.isArray(securities) && securities.some(s => (s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)) && (s.status === 'Active' || s.status === 'Submitted' || !s.status)));
+              return `
               <tr>
                 <td>
                   <strong>${o.tender_name || o.title}</strong><br>
@@ -1531,7 +1798,7 @@ async function renderDashboardHTML() {
                     : `<span class="badge badge-hold">🔒 Masked</span>`}
                 </td>
                 <td>
-                  ${o.active_bid_securities_count > 0 
+                  ${hasAttachedSecurity 
                     ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
                     : `<button type="button" class="danger-btn" style="padding:3px 8px; font-size:0.75rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
                 </td>
@@ -1543,7 +1810,7 @@ async function renderDashboardHTML() {
                   </div>
                 </td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
       </div>
@@ -1555,7 +1822,10 @@ async function renderDashboardHTML() {
 // 2. OPPORTUNITIES & TENDERS VIEW (WITH 360 COCKPIT & LOSS LIFECYCLE)
 // --------------------------------------------------------------------------
 async function renderOpportunitiesHTML() {
-  const opps = await API.getOpportunities(State.currentBusinessProfileId);
+  const [opps, securities] = await Promise.all([
+    API.getOpportunities(State.currentBusinessProfileId),
+    API.getBidSecurities(State.currentBusinessProfileId)
+  ]);
   const isAdmin = State.currentUser?.role === 'CompanyAdmin' || State.isClientAdmin();
 
   return `
@@ -1601,7 +1871,10 @@ async function renderOpportunitiesHTML() {
                   <span style="font-size:0.85rem;">Click the <strong>+ Register New Tender</strong> button above to register your first commercial bidding opportunity.</span>
                 </td>
               </tr>
-            ` : opps.map(o => `
+            ` : opps.map(o => {
+              const hasAttachedSecurity = (parseInt(o.active_bid_securities_count, 10) > 0) || 
+                (Array.isArray(securities) && securities.some(s => (s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)) && (s.status === 'Active' || s.status === 'Submitted' || !s.status)));
+              return `
               <tr data-source="${o.tender_source || 'PPRA (Federal)'}">
                 <td>
                   <strong>${o.tender_name || o.title}</strong><br>
@@ -1620,7 +1893,7 @@ async function renderOpportunitiesHTML() {
                     : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
                 </td>
                 <td>
-                  ${o.active_bid_securities_count > 0 
+                  ${hasAttachedSecurity 
                     ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
                     : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
                 </td>
@@ -1669,7 +1942,7 @@ async function renderOpportunitiesHTML() {
                   </div>
                 </td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
       </div>
@@ -3285,11 +3558,16 @@ async function renderCustomersHTML() {
       </td>
       <td>
         <div style="display:flex; gap:6px; align-items:center;">
-          <button class="edit-btn" onclick="openEditCustomerModal('${c.id}')" title="Edit Customer Details">✏️ Edit</button>
-          <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleCustomerStatus('${c.id}', '${c.status}')" title="Toggle Active / Inactive">
-            ${c.status === 'Inactive' ? '✓' : '⛔'}
-          </button>
-          <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteCustomerItem('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Customer">🗑️ Delete</button>
+          ${State.hasPermission('customers', 'edit') ? `
+            <button class="edit-btn" onclick="openEditCustomerModal('${c.id}')" title="Edit Customer Details">✏️ Edit</button>
+            <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleCustomerStatus('${c.id}', '${c.status}')" title="Toggle Active / Inactive">
+              ${c.status === 'Inactive' ? '✓' : '⛔'}
+            </button>
+          ` : ''}
+          ${State.hasPermission('customers', 'delete') ? `
+            <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteCustomerItem('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Customer">🗑️ Delete</button>
+          ` : ''}
+          ${(!State.hasPermission('customers', 'edit') && !State.hasPermission('customers', 'delete')) ? '<span style="font-size:0.75rem; color:#94a3b8;">👁️ View Only</span>' : ''}
         </div>
       </td>
     </tr>
@@ -3388,7 +3666,7 @@ async function renderCustomersHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">👥 Customer Accounts Directory</div>
-        <button class="primary-btn" onclick="openNewCustomerModal()">+ Register Customer</button>
+        ${State.hasPermission('customers', 'add') ? '<button class="primary-btn" onclick="openNewCustomerModal()">+ Register Customer</button>' : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -3487,11 +3765,16 @@ async function renderSuppliersHTML() {
         </td>
         <td>
           <div style="display:flex; gap:6px; align-items:center;">
-            <button class="edit-btn" onclick="openEditSupplierModal('${s.id}')" title="Edit Supplier Details">✏️ Edit</button>
-            <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleSupplierStatus('${s.id}', '${s.status}')" title="Toggle Active / Inactive">
-              ${s.status === 'Inactive' ? '✓' : '⛔'}
-            </button>
-            <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteSupplierItem('${s.id}', '${encodeURIComponent(s.supplier_name)}')" title="Delete Supplier">🗑️ Delete</button>
+            ${State.hasPermission('suppliers', 'edit') ? `
+              <button class="edit-btn" onclick="openEditSupplierModal('${s.id}')" title="Edit Supplier Details">✏️ Edit</button>
+              <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleSupplierStatus('${s.id}', '${s.status}')" title="Toggle Active / Inactive">
+                ${s.status === 'Inactive' ? '✓' : '⛔'}
+              </button>
+            ` : ''}
+            ${State.hasPermission('suppliers', 'delete') ? `
+              <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteSupplierItem('${s.id}', '${encodeURIComponent(s.supplier_name)}')" title="Delete Supplier">🗑️ Delete</button>
+            ` : ''}
+            ${(!State.hasPermission('suppliers', 'edit') && !State.hasPermission('suppliers', 'delete')) ? '<span style="font-size:0.75rem; color:#94a3b8;">👁️ View Only</span>' : ''}
           </div>
         </td>
       </tr>
@@ -3596,7 +3879,7 @@ async function renderSuppliersHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🏭 Local & International Supplier Registry</div>
-        <button class="primary-btn" onclick="openNewSupplierModal()">+ Register Supplier</button>
+        ${State.hasPermission('suppliers', 'add') ? '<button class="primary-btn" onclick="openNewSupplierModal()">+ Register Supplier</button>' : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -4028,9 +4311,16 @@ async function renderUsersHTML() {
                     <td><span class="badge badge-sec-attached">${tenantCompanies.length} Registered</span></td>
                     <td><span class="badge ${t.status === 'Active' ? 'badge-won' : 'badge-withdraw'}">${t.status || 'Active'}</span></td>
                     <td>
-                      <button class="secondary-btn" style="padding:4px 10px; font-size:0.75rem;" onclick="toggleTenantExpand('${compExpId}', this)">
-                        🏢 View Companies (${tenantCompanies.length})
-                      </button>
+                      <div style="display: flex; gap: 6px; align-items: center;">
+                        <button class="secondary-btn" style="padding:4px 10px; font-size:0.75rem;" onclick="toggleTenantExpand('${compExpId}', this)">
+                          🏢 View Companies (${tenantCompanies.length})
+                        </button>
+                        ${State.isSuperAdmin() && t.id !== 'a0000000-0000-0000-0000-000000000001' ? `
+                          <button class="delete-btn" style="padding:4px 9px; font-size:0.75rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteTenant('${t.id}', '${encodeURIComponent(t.company_name || t.name)}')" title="Permanently delete organization and all child data">
+                            🗑️ Delete Org
+                          </button>
+                        ` : ''}
+                      </div>
                     </td>
                   </tr>
 
@@ -4157,6 +4447,11 @@ async function renderUsersHTML() {
                           <button class="edit-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="openEditUserModal('${clientAdmin.id}')" title="Edit Admin">✏️</button>
                           <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="openResetPasswordModal('${clientAdmin.id}', '${clientAdmin.username}')" title="Reset Password">🔑</button>
                         ` : ''}
+                        ${State.isSuperAdmin() && t.id !== 'a0000000-0000-0000-0000-000000000001' ? `
+                          <button class="delete-btn" style="padding:4px 9px; font-size:0.75rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="handleDeleteTenant('${t.id}', '${encodeURIComponent(t.company_name || t.name)}')" title="Permanently delete organization and all child data">
+                            🗑️
+                          </button>
+                        ` : ''}
                       </div>
                     </td>
                   </tr>
@@ -4234,17 +4529,30 @@ async function renderUsersHTML() {
     `;
   }
 
-  const freeSeatLimit = res?.seatStats?.freeLimit || State.currentUser?.tenant?.freeEmployeeLimit || 2;
-  const usedEmployeeSeats = userList.filter(u => u.role === 'ClientEmployee').length;
-  const paidEmployeeSeats = Math.max(0, usedEmployeeSeats - freeSeatLimit);
+  const freeSeatLimit = res?.seatStats?.freeLimit || State.currentUser?.tenant?.freeEmployeeLimit || 3;
+  const totalOrgUsers = userList.length;
+  const paidEmployeeSeats = Math.max(0, totalOrgUsers - freeSeatLimit);
   const additionalSeatFee = res?.seatStats?.additionalMonthlyFee || 1500.00;
+
+  const companyCount = res?.seatStats?.companyCount !== undefined 
+    ? res.seatStats.companyCount 
+    : (State.businessProfiles?.length || 1);
+  const freeCompanyLimit = res?.seatStats?.freeCompanyLimit || State.currentUser?.tenant?.freeCompanyLimit || 2;
+
+  const isCurrentUserPrimaryAdmin = (typeof State.isPrimaryAdmin === 'function') 
+    ? State.isPrimaryAdmin() 
+    : ((typeof State.isCreatedBySuperAdmin === 'function') ? State.isCreatedBySuperAdmin() : false);
+  const canAddUsers = isSuper || isCurrentUserPrimaryAdmin;
 
   // CLIENT ADMIN VIEW: Tenant Employee Management & Granular RBAC
   return `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <span class="seat-counter-badge">
-          👥 Employee Seats: <strong>${usedEmployeeSeats} / ${freeSeatLimit} Free Used</strong>
+          👥 Users: <strong>${totalOrgUsers} / ${freeSeatLimit} Free Used</strong>
+        </span>
+        <span class="seat-counter-badge" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0;">
+          🏢 Companies: <strong>${companyCount} / ${freeCompanyLimit} Created</strong>
         </span>
         ${paidEmployeeSeats > 0 ? `
           <span class="badge badge-hold" style="padding: 5px 10px;">
@@ -4252,9 +4560,11 @@ async function renderUsersHTML() {
           </span>
         ` : ''}
       </div>
-      <button class="primary-btn" onclick="openCreateUserModal('ClientEmployee')">
-        👤 + Add Employee User
-      </button>
+      ${canAddUsers ? `
+        <button class="primary-btn" onclick="openCreateUserModal('ClientEmployee')">
+          👤 + Add Employee User
+        </button>
+      ` : ''}
     </div>
 
     <div class="card">
@@ -4296,9 +4606,17 @@ async function renderUsersHTML() {
 
               const fullNameDisplay = u.full_name || u.fullName || u.name || u.username || '—';
               const isSelf = String(u.id) === String(currentUserId);
-              const isCreatedByMe = Boolean(u.created_by && String(u.created_by) === String(currentUserId));
-              const canManage = isSelf || isCreatedByMe || isSuper;
-              const canDelete = !isSelf && u.role !== 'SuperAdmin' && (isCreatedByMe || isSuper);
+
+              // Strict RBAC:
+              // - Only the user created by Super Admin (or SuperAdmin) can edit other users
+              // - He CANNOT edit himself
+              // - Sub-users cannot edit any users or change passwords
+              // - Primary Tenant Admin (e.g. Ahmed) can NEVER be edited, reset, or deleted by any user in the tenant
+              const isTargetPrimaryAdmin = Boolean(u.is_primary_admin || u.isPrimaryAdmin || (u.role === 'ClientAdmin' && u.is_created_by_super_admin));
+              const canEdit = !isSelf && (isSuper || (isCurrentUserPrimaryAdmin && !isTargetPrimaryAdmin));
+              const canResetPass = !isSelf && (isSuper || (isCurrentUserPrimaryAdmin && !isTargetPrimaryAdmin));
+              const canDelete = !isSelf && u.role !== 'SuperAdmin' && (isSuper || (isCurrentUserPrimaryAdmin && !isTargetPrimaryAdmin));
+              const hasActions = canEdit || canResetPass || canDelete;
 
               return `
                 <tr>
@@ -4314,17 +4632,19 @@ async function renderUsersHTML() {
                   <td><span style="font-size: 0.82rem; color: #475569;">${compAccessNames}</span></td>
                   <td><span class="badge badge-active">${u.status || 'Active'}</span></td>
                   <td>
-                    ${canManage ? `
+                    ${hasActions ? `
                       <div class="action-buttons-group">
-                        <button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>
-                        <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${fullNameDisplay}')" title="Reset Password">🔑 Pass</button>
+                        ${canEdit ? `<button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>` : ''}
+                        ${canResetPass ? `<button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${fullNameDisplay}')" title="Reset Password">🔑 Pass</button>` : ''}
                         ${canDelete ? `
                           <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${fullNameDisplay}')" title="Delete User">🗑️ Delete</button>
                         ` : ''}
                       </div>
+                    ` : (isTargetPrimaryAdmin ? `
+                      <span class="badge" style="background:#eff6ff; color:#1d4ed8; font-size:0.75rem; border:1px solid #bfdbfe;">👑 Primary Admin</span>
                     ` : `
-                      <span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.75rem; border:1px solid #cbd5e1;">👁️ Read-Only</span>
-                    `}
+                      <span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.75rem; border:1px solid #cbd5e1;">👁️ View Only</span>
+                    `)}
                   </td>
                 </tr>
               `;
@@ -5229,7 +5549,11 @@ async function saveCostingSheetForSelectedTender() {
     approval_status: 'Pending Review'
   };
 
-  await API.saveCosting(payload);
+  const res = await API.saveCosting(payload);
+  if (!res || !res.success) {
+    alert(`⚠️ Failed to save costing: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
   showToast('✓ Costing sheet saved & submitted for Bid Governance Review!', 'success');
   switchView('approvals');
 }
@@ -5454,12 +5778,16 @@ async function handleWithdrawBidAction(oppId, encodedTitle) {
 // --------------------------------------------------------------------------
 
 let _quickAddContext = null;
+let _quickAddContextStack = [];
+window._quickAddContextStack = _quickAddContextStack;
 
 function openQuickAddModal(entityType, targetSelectId) {
-  _quickAddContext = {
+  const ctx = {
     entityType,
     targetSelectId
   };
+  _quickAddContext = ctx;
+  _quickAddContextStack.push(ctx);
 
   let modalId = '';
   switch (entityType) {
@@ -5494,6 +5822,11 @@ function openQuickAddModal(entityType, targetSelectId) {
   if (modalEl) {
     modalEl.classList.add('modal-nested');
     modalEl.classList.add('open');
+    if (!_modalStack.includes(modalId)) {
+      _modalStack.push(modalId);
+    }
+    const depth = _modalStack.indexOf(modalId) + 1;
+    modalEl.style.zIndex = 1100 + (depth * 50);
   }
 }
 window.openQuickAddModal = openQuickAddModal;
@@ -5501,7 +5834,23 @@ window.openQuickAddModal = openQuickAddModal;
 async function handleQuickAddCompletion(entityType, createdItem) {
   if (!createdItem) return;
 
-  const targetSelectId = _quickAddContext?.targetSelectId;
+  // Retrieve and pop matching context from stack to preserve parent quick-add contexts
+  let ctx = null;
+  const ctxIdx = _quickAddContextStack.findLastIndex 
+    ? _quickAddContextStack.findLastIndex(c => c.entityType === entityType || (entityType === 'product' && c.entityType === 'item')) 
+    : -1;
+  if (ctxIdx !== -1) {
+    ctx = _quickAddContextStack.splice(ctxIdx, 1)[0];
+  } else if (_quickAddContextStack.length > 0) {
+    ctx = _quickAddContextStack.pop();
+  } else {
+    ctx = _quickAddContext;
+  }
+  _quickAddContext = _quickAddContextStack.length > 0 
+    ? _quickAddContextStack[_quickAddContextStack.length - 1] 
+    : ctx;
+
+  const targetSelectId = ctx?.targetSelectId;
   const targetSelect = targetSelectId ? document.getElementById(targetSelectId) : null;
 
   // 1. Refresh all matching customer select dropdowns in DOM
@@ -5553,6 +5902,11 @@ async function handleQuickAddCompletion(entityType, createdItem) {
       sel.innerHTML = `<option value="">-- Select Preferred Supplier --</option>` + suppliers.map(s => `<option value="${s.id}">${s.supplier_name} (${s.country || 'Pakistan'})</option>`).join('');
       if (curVal) sel.value = curVal;
     });
+
+    const prodSup = document.getElementById('prod-supplier-select') || document.getElementById('prod-supplier');
+    if (prodSup && createdItem && createdItem.id) {
+      prodSup.value = createdItem.id;
+    }
   } else if (entityType === 'product' || entityType === 'item') {
     const products = await API.getProducts();
     window._cachedProducts = products;
@@ -5602,30 +5956,17 @@ async function handleQuickAddCompletion(entityType, createdItem) {
     let profiles = [];
     try {
       profiles = await API.getBusinessProfiles();
+      State.businessProfiles = profiles;
     } catch (e) {
       console.warn('handleQuickAddCompletion getBusinessProfiles error:', e);
     }
     if (!Array.isArray(profiles)) profiles = [];
 
-    if (createdItem && createdItem.id) {
-      const idx = profiles.findIndex(p => String(p.id) === String(createdItem.id));
-      if (idx >= 0) {
-        profiles[idx] = { ...profiles[idx], ...createdItem };
-      } else {
-        profiles.unshift(createdItem);
-      }
-    }
-    State.businessProfiles = profiles;
-    populateBusinessSwitcher();
-
-    // Update all business profile select dropdowns in DOM and tender modal
-    const allCompSelects = document.querySelectorAll('select#tender-business-profile, select[id*="business-profile"]');
-    allCompSelects.forEach(sel => {
+    document.querySelectorAll('select[id*="business-profile"], select#tender-business-profile, select#user-profile-id').forEach(sel => {
       sel.innerHTML = profiles.map(p => {
         const isSel = (createdItem && String(p.id) === String(createdItem.id)) ? 'selected' : '';
         return `<option value="${p.id}" ${isSel}>${p.business_name} ${p.abbreviation ? `(${p.abbreviation})` : ''}</option>`;
       }).join('');
-
       if (createdItem && createdItem.id) {
         sel.value = createdItem.id;
         sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -5638,10 +5979,15 @@ async function handleQuickAddCompletion(entityType, createdItem) {
       tenderBizSelect.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    _quickAddContext = null;
+    if (typeof populateBusinessSwitcher === 'function') {
+      populateBusinessSwitcher();
+    }
   }
 }
 window.handleQuickAddCompletion = handleQuickAddCompletion;
+
+const _modalStack = [];
+window._modalStack = _modalStack;
 
 function openModal(id) {
   if (id === 'modal-add-expense') {
@@ -5650,6 +5996,32 @@ function openModal(id) {
   }
   const el = document.getElementById(id);
   if (el) {
+    // Keep stack order: remove if already present, then push to top
+    const existingIdx = _modalStack.indexOf(id);
+    if (existingIdx !== -1) {
+      _modalStack.splice(existingIdx, 1);
+    }
+    _modalStack.push(id);
+
+    // Dynamic z-index layering based on modal stack depth
+    const depth = _modalStack.length;
+    const baseZ = 1100;
+    const computedZ = baseZ + (depth * 50);
+
+    const initialInlineZ = parseInt(el.getAttribute('data-base-z') || el.style.zIndex, 10);
+    if (initialInlineZ >= 9000) {
+      if (!el.getAttribute('data-base-z')) {
+        el.setAttribute('data-base-z', initialInlineZ);
+      }
+      el.style.zIndex = Math.max(initialInlineZ, computedZ + 9000);
+    } else {
+      el.style.zIndex = computedZ;
+    }
+
+    if (depth > 1) {
+      el.classList.add('modal-nested');
+    }
+
     el.classList.add('open');
     const resetScroll = () => {
       el.scrollTop = 0;
@@ -5684,6 +6056,38 @@ function closeModal(id) {
   if (el) {
     el.classList.remove('open');
     el.classList.remove('modal-nested');
+    const baseZ = el.getAttribute('data-base-z');
+    if (baseZ) {
+      el.style.zIndex = baseZ;
+    } else {
+      el.style.zIndex = '';
+    }
+  }
+
+  const idx = _modalStack.indexOf(id);
+  if (idx !== -1) {
+    _modalStack.splice(idx, 1);
+  }
+
+  // Also clean up quick-add context stack if closing a quick-add modal without saving
+  if (Array.isArray(window._quickAddContextStack) && window._quickAddContextStack.length > 0) {
+    const modalToEntity = {
+      'modal-add-supplier': 'supplier',
+      'modal-add-product': 'product',
+      'modal-add-customer': 'customer',
+      'modal-add-warehouse': 'warehouse',
+      'modal-add-company': 'company'
+    };
+    const entity = modalToEntity[id];
+    if (entity) {
+      const top = window._quickAddContextStack[window._quickAddContextStack.length - 1];
+      if (top && (top.entityType === entity || (entity === 'product' && top.entityType === 'item'))) {
+        window._quickAddContextStack.pop();
+        window._quickAddContext = window._quickAddContextStack.length > 0 
+          ? window._quickAddContextStack[window._quickAddContextStack.length - 1] 
+          : null;
+      }
+    }
   }
 }
 
@@ -6300,29 +6704,40 @@ async function submitNewTenderForm() {
     };
 
     if (editId) {
-      await API.updateOpportunity(editId, payload);
-      closeModal('modal-add-tender');
-      showToast('✓ Tender Record and scope items updated successfully!', 'success');
-      await renderActiveView();
-    } else {
-      const res = await API.createOpportunity(payload);
-
-      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
-        alert(`⚠️ ${res.message}`);
+      const res = await API.updateOpportunity(editId, payload);
+      if (!res || !res.success) {
+        console.error('[UPDATE TENDER FAILED]:', res);
+        alert(`❌ Failed to update tender in database:\n\n${res?.message || res?.error || 'Unknown error occurred while updating.'}`);
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = '<span>💾 Save Tender Record</span>';
         }
         return;
       }
+      closeModal('modal-add-tender');
+      showToast('✓ Tender Record and scope items updated successfully in database!', 'success');
+      await renderActiveView();
+    } else {
+      const res = await API.createOpportunity(payload);
+
+      if (!res || !res.success || !res.data?.id) {
+        console.error('[CREATE TENDER FAILED]:', res);
+        const errMsg = res?.message || res?.error || 'Database rejected the tender record.';
+        alert(`❌ Tender NOT saved in database!\n\nReason: ${errMsg}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Tender Record</span>';
+        }
+        return; // CRITICAL: NEVER close modal, NEVER show success toast unless verified saved in database
+      }
 
       closeModal('modal-add-tender');
-      showToast('✓ Tender Record saved successfully!', 'success');
+      showToast('✓ Tender Record saved successfully in database!', 'success');
 
-      const createdId = res.data?.id || ('tnd-' + Date.now());
-      const createdNo = res.data?.opportunity_number || oppNo || 'TND-2026';
+      const createdId = res.data.id;
+      const createdNo = res.data.opportunity_number || oppNo || 'TND-2026';
       
-      // Prompt mandatory Bid Security modal
+      // Prompt mandatory Bid Security modal with verified database UUID
       promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
       await renderActiveView();
     }
@@ -6474,7 +6889,8 @@ function openTenderDetailsModal(oppId) {
 }
 
 async function submitBidSecurityForm() {
-  const oppId = document.getElementById('sec-opportunity-id')?.value;
+  let oppId = document.getElementById('sec-opportunity-id')?.value;
+  const oppTitleInput = document.getElementById('sec-opp-title')?.value || '';
   const accountTitle = document.getElementById('sec-account-title')?.value;
   const beneficiary = document.getElementById('sec-beneficiary')?.value;
   const instrumentType = document.getElementById('sec-instrument-type')?.value;
@@ -6489,8 +6905,35 @@ async function submitBidSecurityForm() {
     return;
   }
 
-  await API.createBidSecurity({
+  // If oppId was not set (e.g. user typed directly into input), resolve from oppTitleInput
+  if (!oppId && oppTitleInput.trim()) {
+    try {
+      const allOpps = await API.getOpportunities(State.currentBusinessProfileId);
+      const cleanTitle = oppTitleInput.toLowerCase().trim();
+      const matched = allOpps.find(o => 
+        (o.opportunity_number && cleanTitle.includes(o.opportunity_number.toLowerCase())) ||
+        (o.tender_name && cleanTitle.includes(o.tender_name.toLowerCase())) ||
+        (o.title && cleanTitle.includes(o.title.toLowerCase()))
+      );
+      if (matched) {
+        oppId = matched.id;
+      }
+    } catch (e) {}
+  }
+
+  let bizProfileId = document.getElementById('sec-business-profile-id')?.value;
+  if (!bizProfileId && oppId) {
+    const opps = State.getTenantEntityList('opportunities');
+    const opp = opps.find(o => String(o.id) === String(oppId));
+    if (opp?.business_profile_id) bizProfileId = opp.business_profile_id;
+  }
+  if (!bizProfileId && State.currentBusinessProfileId && State.currentBusinessProfileId !== 'all') {
+    bizProfileId = State.currentBusinessProfileId;
+  }
+
+  const res = await API.createBidSecurity({
     opportunity_id: oppId,
+    business_profile_id: bizProfileId,
     account_title: accountTitle,
     beneficiary: beneficiary,
     instrument_type: instrumentType,
@@ -6501,16 +6944,36 @@ async function submitBidSecurityForm() {
     comments: comments
   });
 
+  if (!res || !res.success || !res.data?.id) {
+    console.error('[ATTACH BID SECURITY FAILED]:', res);
+    alert(`❌ Bid Security NOT saved in database!\n\nReason: ${res?.message || res?.error || 'Database rejected bid security record.'}`);
+    return;
+  }
+
+  if (oppId) {
+    const opps = State.getTenantEntityList('opportunities');
+    const target = opps.find(o => String(o.id) === String(oppId));
+    if (target) {
+      target.active_bid_securities_count = (parseInt(target.active_bid_securities_count, 10) || 0) + 1;
+      target.status = 'Ready to submit';
+      State.saveTenantEntity('opportunities', target);
+    }
+  }
+
   closeModal('modal-add-bid-security');
-  showToast('Bid Security successfully attached! Tender is now Ready to Submit.', 'success');
+  showToast('✓ Bid Security successfully saved in database! Tender is now Ready to Submit.', 'success');
   await renderActiveView();
 }
 
 async function handleReleaseBidSecurity(id) {
   const ref = prompt('Enter release reference number or letter note:', 'Release Handover Form # 104');
   if (ref) {
-    await API.releaseBidSecurity(id, ref);
-    alert('Bid Security has been marked as Released.');
+    const res = await API.releaseBidSecurity(id, ref);
+    if (!res || res.success === false) {
+      alert(`⚠️ Failed to release Bid Security: ${res?.message || 'Database error'}`);
+      return;
+    }
+    alert('✓ Bid Security has been marked as Released in database.');
     await renderActiveView();
   }
 }
@@ -6527,11 +6990,19 @@ async function handleBidSubmission(oppId) {
   const res = await API.getBids(State.currentBusinessProfileId);
   const bid = res.find(b => b.opportunity_id === oppId);
   if (bid) {
-    await API.submitBid(bid.id, { submission_method: 'Online Portal' });
-    alert('Bid submitted successfully with attached Bid Security!');
+    const subRes = await API.submitBid(bid.id, { submission_method: 'Online Portal' });
+    if (!subRes || subRes.success === false) {
+      alert(`⚠️ Failed to submit bid: ${subRes?.message || 'Database error'}`);
+      return;
+    }
+    alert('✓ Bid submitted successfully with attached Bid Security!');
   } else {
-    // Demo auto-submit
-    alert('Bid submitted successfully with attached Bid Security!');
+    const subRes = await API.updateEntity('opportunity', oppId, { status: 'Submitted', stage: 'Submitted' });
+    if (!subRes || subRes.success === false) {
+      alert(`⚠️ Failed to mark tender as submitted: ${subRes?.message || 'Database error'}`);
+      return;
+    }
+    alert('✓ Bid submitted successfully with attached Bid Security!');
   }
   await renderActiveView();
 }
@@ -6743,10 +7214,15 @@ async function submitAwardLetterForm() {
     remarks: remarks
   });
 
+  if (!res || !res.success || !res.data?.id) {
+    alert(`⚠️ Failed to record Letter of Award: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
+
   // Automatically initialize contract
   await API.createContract({
     opportunity_id: oppId,
-    award_letter_id: res.data?.id || 'al-' + Date.now(),
+    award_letter_id: res.data.id,
     customer_id: targetCust?.id,
     contract_number: 'CNT-' + awardNo.replace('LOA-', ''),
     contract_value: parseFloat(awardAmount),
@@ -6755,7 +7231,7 @@ async function submitAwardLetterForm() {
   });
 
   closeModal('modal-add-award');
-  showToast(`✓ Letter of Award ${awardNo} recorded & accepted. Contract initialized!`, 'success');
+  showToast(`✓ Letter of Award ${awardNo} recorded & accepted in database. Contract initialized!`, 'success');
 
   // Prompt PBG Modal if PBG % > 0
   if (parseFloat(pbgPct) > 0) {
@@ -7100,7 +7576,7 @@ async function submitCreatePOForm() {
   const customers = await API.getCustomers();
   const cust = customers.find(c => c.id === custId) || { business_name: 'Customer Account' };
 
-  await API.createPurchaseOrder({
+  const res = await API.createPurchaseOrder({
     award_letter_id: awardId,
     award_number: _cachedPOAward?.award_number || 'Award LOA',
     opportunity_id: oppId,
@@ -7122,8 +7598,13 @@ async function submitCreatePOForm() {
     remarks: remarks
   });
 
+  if (!res || !res.success || !res.data?.id) {
+    alert(`⚠️ Failed to issue Purchase Order: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
+
   closeModal('modal-add-po');
-  showToast(`✓ Purchase Order ${poNumber} issued successfully! Total Value: PKR ${grandTotal.toLocaleString()}`, 'success');
+  showToast(`✓ Purchase Order ${poNumber} issued and saved in database! Total Value: PKR ${grandTotal.toLocaleString()}`, 'success');
   navigateToView('purchase-orders');
 }
 
@@ -7496,6 +7977,11 @@ async function submitDeliveryChallanForm() {
     remarks: remarks
   });
 
+  if (!res || !res.success || !res.data?.id) {
+    alert(`⚠️ Failed to create Delivery Challan: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
+
   // Automated Inventory Stock Decrement for 'Own Warehouse' mode
   if (mode === 'Own Warehouse') {
     const products = State.getTenantEntityList('products');
@@ -7520,7 +8006,7 @@ async function submitDeliveryChallanForm() {
       expense_date: delDate,
       opportunity_id: _cachedDCPO?.opportunity_id || null,
       purchase_order_id: poId,
-      delivery_challan_id: res.data?.id || 'dc-' + Date.now(),
+      delivery_challan_id: res.data.id,
       paid_to: provider,
       payment_mode: 'Cheque / Online IBFT',
       notes: `Contractor-borne logistics expense for dispatching ${dcNumber} to ${destSite}. Deducted from project net profit.`
@@ -7573,7 +8059,7 @@ async function promptGenerateInvoiceFromDC(dcId, dcNumber, customerName) {
     const customers = await API.getCustomers();
     const cust = customers.find(c => c.id === targetDC?.customer_id || c.business_name.includes(customerName.slice(0, 8))) || customers[0];
 
-    await API.createInvoice({
+    const res = await API.createInvoice({
       delivery_challan_id: dcId,
       dc_number: dcNumber,
       purchase_order_id: targetDC?.purchase_order_id || null,
@@ -7591,20 +8077,33 @@ async function promptGenerateInvoiceFromDC(dcId, dcNumber, customerName) {
       fbr_integration_required: true
     });
 
-    alert(`✓ Invoice ${invNum} generated and ready for FBR digital fiscalization!`);
+    if (!res || !res.success || !res.data?.id) {
+      alert(`⚠️ Failed to generate invoice: ${res?.message || 'Database error. Record was NOT saved.'}`);
+      return;
+    }
+
+    alert(`✓ Invoice ${res.data.invoice_number || invNum} generated and recorded in database!`);
     navigateToView('invoices');
   }
 }
 
 async function handleInvoiceStatusChange(id, newStatus) {
-  await API.updateInvoiceStatus(id, newStatus);
+  const res = await API.updateInvoiceStatus(id, newStatus);
+  if (!res || res.success === false) {
+    alert(`⚠️ Failed to update invoice status: ${res?.message || 'Database error'}`);
+    return;
+  }
   alert(`Invoice status updated to ${newStatus}`);
   await renderActiveView();
 }
 
 async function handleFBRSubmit(invoiceId) {
   const res = await API.submitToFBR(invoiceId);
-  alert(`Invoice validated with PRAL FBR! FBR Invoice #: ${res.fbrInvoiceNumber}`);
+  if (!res || res.success === false) {
+    alert(`⚠️ FBR Submission Failed: ${res?.message || 'Gateway error'}`);
+    return;
+  }
+  alert(`Invoice validated with PRAL FBR! FBR Invoice #: ${res.fbrInvoiceNumber || res.data?.fbr_invoice_number}`);
   await renderActiveView();
 }
 
@@ -7631,7 +8130,7 @@ async function submitPaymentForm() {
     return;
   }
 
-  await API.createPayment({
+  const res = await API.createPayment({
     invoice_id: invoiceId,
     amount: amount,
     payment_date: date,
@@ -7641,8 +8140,13 @@ async function submitPaymentForm() {
     reference_number: ref
   });
 
+  if (!res || !res.success || !res.data?.id) {
+    alert(`⚠️ Failed to log payment: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
+
   closeModal('modal-add-payment');
-  alert('Cheque Payment logged and invoice balance deducted.');
+  alert('✓ Cheque Payment logged and invoice balance deducted in database.');
   navigateToView('payments');
 }
 
@@ -7864,16 +8368,16 @@ async function submitNewCustomerForm() {
       showToast('✓ Customer record updated successfully.', 'success');
     } else {
       const res = await API.createCustomer(payload);
-      if (!res || res.success === false) {
-        alert(`⚠️ Failed to save customer: ${res?.message || res?.error || 'Validation or server error'}`);
+      if (!res || res.success === false || !res.data?.id) {
+        alert(`⚠️ Failed to save customer: ${res?.message || res?.error || 'Validation or server error. Record was NOT saved in database.'}`);
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = '<span>💾 Save Customer Master</span>';
         }
         return;
       }
-      created = res.data || { id: 'c-' + Date.now(), ...payload };
-      showToast('✓ Customer registered successfully.', 'success');
+      created = res.data;
+      showToast('✓ Customer registered and saved in database successfully.', 'success');
     }
 
     closeModal('modal-add-customer');
@@ -8055,21 +8559,29 @@ async function submitNewSupplierForm() {
 
     let created = null;
     if (editId) {
-      await API.updateEntity('supplier', editId, payload);
-      created = { id: editId, ...payload };
-      showToast('✓ Supplier details updated successfully.', 'success');
-    } else {
-      const res = await API.createSupplier(payload);
-      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
-        alert(`⚠️ ${res.message}`);
+      const updateRes = await API.updateEntity('supplier', editId, payload);
+      if (updateRes && updateRes.success === false) {
+        alert(`⚠️ Failed to update supplier: ${updateRes.message || updateRes.error || 'Server error'}`);
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = '<span>💾 Save Sourcing Partner</span>';
         }
         return;
       }
-      created = (res && res.data) ? res.data : { id: 'sup-' + Date.now(), ...payload };
-      showToast('✓ Supplier registered successfully.', 'success');
+      created = { id: editId, ...payload };
+      showToast('✓ Supplier details updated successfully.', 'success');
+    } else {
+      const res = await API.createSupplier(payload);
+      if (!res || res.success === false || !res.data?.id) {
+        alert(`⚠️ ${res?.message || res?.error || 'Failed to save supplier in database.'}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Sourcing Partner</span>';
+        }
+        return;
+      }
+      created = res.data;
+      showToast('✓ Supplier registered and saved in database successfully.', 'success');
     }
 
     closeModal('modal-add-supplier');
@@ -8191,7 +8703,7 @@ async function openNewProductModal() {
   if (form) form.reset();
 
   const suppliers = await API.getSuppliers();
-  const supSelect = document.getElementById('prod-supplier');
+  const supSelect = document.getElementById('prod-supplier-select') || document.getElementById('prod-supplier');
   if (supSelect) {
     supSelect.innerHTML = `<option value="">— None (Open Sourcing) —</option>` + suppliers.map(s => `
       <option value="${s.id}">${s.supplier_name} (${s.country || 'Pakistan'})</option>
@@ -8250,7 +8762,7 @@ async function openEditProductModal(id) {
   const p = products.find(item => String(item.id) === String(id));
   if (!p) return;
 
-  const supSelect = document.getElementById('prod-supplier');
+  const supSelect = document.getElementById('prod-supplier-select') || document.getElementById('prod-supplier');
   if (supSelect) {
     supSelect.innerHTML = `<option value="">— None (Open Sourcing) —</option>` + suppliers.map(s => `
       <option value="${s.id}" ${(s.id === p.default_supplier_id || s.id === p.supplier_id) ? 'selected' : ''}>
@@ -8317,7 +8829,7 @@ async function submitNewProductForm() {
   const batchNo = document.getElementById('prod-batch-no')?.value?.trim() || '';
   const hsCode = document.getElementById('prod-hs-code')?.value?.trim() || '';
   const taxCat = document.getElementById('prod-tax-cat')?.value || '18% Standard Sales Tax';
-  const supplierId = document.getElementById('prod-supplier')?.value || null;
+  const supplierId = document.getElementById('prod-supplier-select')?.value || document.getElementById('prod-supplier')?.value || null;
   const currentStock = parseFloat(document.getElementById('prod-current-stock')?.value || 0);
   const reorder = parseFloat(document.getElementById('prod-reorder-level')?.value || 5);
   const costInput = document.getElementById('prod-cost-pkr') || document.getElementById('prod-cost-price');
@@ -8378,20 +8890,28 @@ async function submitNewProductForm() {
     let created = null;
     if (editId) {
       const res = await API.updateProduct(editId, payload);
-      created = (res && res.data) ? res.data : { id: editId, ...payload };
-      showToast('✓ Master Product SKU updated successfully.', 'success');
-    } else {
-      const res = await API.createProduct(payload);
-      if (res && (res.status === 409 || (res.message && res.message.includes('Duplicate')))) {
-        alert(`⚠️ ${res.message}`);
+      if (!res || res.success === false) {
+        alert(`⚠️ Failed to update product: ${res?.message || 'Server error'}`);
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
         }
         return;
       }
-      created = (res && res.data) ? res.data : { id: 'prod-' + Date.now(), ...payload };
-      showToast('✓ Master Product SKU registered into Catalog.', 'success');
+      created = res.data || { id: editId, ...payload };
+      showToast('✓ Master Product SKU updated successfully.', 'success');
+    } else {
+      const res = await API.createProduct(payload);
+      if (!res || res.success === false || !res.data?.id) {
+        alert(`⚠️ ${res?.message || res?.error || 'Failed to save product in database.'}`);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>💾 Save Master Product</span>';
+        }
+        return;
+      }
+      created = res.data;
+      showToast('✓ Master Product SKU registered into Catalog in database.', 'success');
     }
 
     closeModal('modal-add-product');
@@ -8505,13 +9025,21 @@ async function submitNewWarehouseForm() {
 
   let created = null;
   if (editId) {
-    await API.updateEntity('warehouse', editId, payload);
-    created = { id: editId, ...payload };
+    const res = await API.updateEntity('warehouse', editId, payload);
+    if (!res || res.success === false) {
+      alert(`⚠️ Failed to update warehouse: ${res?.message || 'Server error'}`);
+      return;
+    }
+    created = res.data || { id: editId, ...payload };
     alert('✓ Warehouse details updated.');
   } else {
     const res = await API.createWarehouse(payload);
-    created = (res && res.data) ? res.data : { id: 'wh-' + Date.now(), ...payload };
-    alert('✓ Warehouse location created.');
+    if (!res || !res.success || !res.data?.id) {
+      alert(`⚠️ Failed to create warehouse: ${res?.message || 'Database error'}`);
+      return;
+    }
+    created = res.data;
+    alert('✓ Warehouse location created in database.');
   }
 
   closeModal('modal-add-warehouse');
@@ -8804,10 +9332,14 @@ async function submitGeneralExpenseForm() {
     notes: remarks
   };
 
-  await API.createExpense(payload);
+  const res = await API.createExpense(payload);
+  if (!res || !res.success || !res.data?.id) {
+    alert(`⚠️ Failed to record expenditure: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
 
   closeModal('modal-add-expense');
-  showToast(`✓ Expenditure of PKR ${amount.toLocaleString()} recorded successfully!`, 'success');
+  showToast(`✓ Expenditure of PKR ${amount.toLocaleString()} recorded and saved in database!`, 'success');
 
   await renderActiveView();
 }
@@ -8981,8 +9513,8 @@ async function submitNewCompanyForm() {
       return;
     }
 
-    if (res && res.success === false) {
-      alert(`⚠️ ${res.message || res.error || 'Failed to create business profile.'}`);
+    if (!res || res.success === false || !res.data?.id) {
+      alert(`⚠️ ${res?.message || res?.error || 'Failed to create business profile in database.'}`);
       return;
     }
 
@@ -8996,12 +9528,12 @@ async function submitNewCompanyForm() {
       return;
     }
 
-    const created = (res && res.data) ? res.data : { id: 'bp-' + Date.now(), ...payload };
+    const created = res.data;
 
     if (res && res.billingNotice) {
       showToast(`${res.billingNotice.notice} (Plan: ${res.billingNotice.chargePerMonth})`, 'info');
     } else {
-      showToast(`✓ Business profile registered! Verification link automatically dispatched to ${email}`, 'success');
+      showToast(`✓ Business profile registered in database! Verification link automatically dispatched to ${email}`, 'success');
     }
 
     State.businessProfiles = await API.getBusinessProfiles();
@@ -9028,8 +9560,8 @@ async function confirmAndCreatePaidCompany() {
 
   try {
     const res = await API.createBusinessProfile(payload);
-    if (res && res.success === false) {
-      alert(`⚠️ ${res.message || res.error || 'Failed to create business profile.'}`);
+    if (!res || res.success === false || !res.data?.id) {
+      alert(`⚠️ ${res?.message || res?.error || 'Failed to create business profile in database.'}`);
       return;
     }
 
@@ -9043,11 +9575,11 @@ async function confirmAndCreatePaidCompany() {
       return;
     }
 
-    const created = (res && res.data) ? res.data : { id: 'bp-' + Date.now(), ...payload };
+    const created = res.data;
     if (res && res.billingNotice) {
-      showToast(`✓ Company registered! Added to subscription billing: ${res.billingNotice.chargePerMonth}`, 'info');
+      showToast(`✓ Company registered in database! Added to subscription billing: ${res.billingNotice.chargePerMonth}`, 'info');
     } else {
-      showToast('✓ Business profile registered successfully!', 'success');
+      showToast('✓ Business profile registered in database successfully!', 'success');
     }
 
     State.businessProfiles = await API.getBusinessProfiles();
@@ -9573,6 +10105,13 @@ function applyRbacPreset(presetType) {
   });
 }
 
+function handleEqualRightsToggle(checked) {
+  if (checked) {
+    applyRbacPreset('full');
+  }
+}
+window.handleEqualRightsToggle = handleEqualRightsToggle;
+
 function openCreateUserModal(defaultRole = 'ClientEmployee') {
   const titleEl = document.getElementById('modal-create-user-title');
   const roleSelect = document.getElementById('newuser-role');
@@ -9581,6 +10120,13 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
   const passGuide = document.getElementById('box-newuser-password-guide');
   const saveBtn = document.getElementById('btn-save-user');
   const companyContainer = document.getElementById('newuser-company-checkboxes');
+  const eqToggle = document.getElementById('newuser-equal-rights');
+
+  if (eqToggle) {
+    eqToggle.checked = false;
+    const parentBox = eqToggle.closest('div[style*="background: #eff6ff"]') || eqToggle.parentElement?.parentElement;
+    if (parentBox) parentBox.style.display = 'block';
+  }
 
   document.getElementById('newuser-id').value = '';
   document.getElementById('newuser-fullname').value = '';
@@ -9608,8 +10154,6 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
       roleSelect.innerHTML = `
         <option value="ClientEmployee" selected>Client Employee (Custom Configurable Access)</option>
         <option value="ReadOnly">Read Only (View Permitted Screens - No Create / Edit / Delete)</option>
-        <option value="CompanyAdmin">Company Admin (Single Company Administrator)</option>
-        <option value="ClientAdmin">Client Admin (Full Tenant Admin)</option>
       `;
     }
     const safeRole = (defaultRole === 'SuperAdmin' && !State.isSuperAdmin()) ? 'ClientEmployee' : defaultRole;
@@ -9659,8 +10203,22 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
 }
 
 function openEditUserModal(userId) {
+  if (String(userId) === String(State.currentUser?.id) && !State.isSuperAdmin()) {
+    alert('⚠️ Security Rule: Administrators cannot edit their own account or permissions from User Management.');
+    return;
+  }
+  if (!State.isSuperAdmin() && !State.isCreatedBySuperAdmin()) {
+    alert('⚠️ Forbidden: Only the organization administrator created by Super Admin has permission to edit users.');
+    return;
+  }
+
   const users = State.getStoredUsers ? State.getStoredUsers() : [];
   const u = users.find(user => user.id === userId) || { id: userId };
+
+  if (!State.isSuperAdmin() && (u.is_primary_admin || u.isPrimaryAdmin || (u.role === 'ClientAdmin' && u.is_created_by_super_admin))) {
+    alert('⚠️ Security Policy: The Primary Organization Administrator created by Super Admin cannot be edited.');
+    return;
+  }
 
   const titleEl = document.getElementById('modal-create-user-title');
   const roleSelect = document.getElementById('newuser-role');
@@ -9669,6 +10227,13 @@ function openEditUserModal(userId) {
   const passGuide = document.getElementById('box-newuser-password-guide');
   const saveBtn = document.getElementById('btn-save-user');
   const companyContainer = document.getElementById('newuser-company-checkboxes');
+  const eqToggle = document.getElementById('newuser-equal-rights');
+
+  if (eqToggle) {
+    eqToggle.checked = false;
+    const parentBox = eqToggle.closest('div[style*="background: #eff6ff"]') || eqToggle.parentElement?.parentElement;
+    if (parentBox) parentBox.style.display = 'none';
+  }
 
   document.getElementById('newuser-id').value = u.id || userId;
   document.getElementById('newuser-fullname').value = u.full_name || '';
@@ -9771,6 +10336,7 @@ async function submitCreateUserForm() {
   const password = document.getElementById('newuser-password')?.value;
   const role = document.getElementById('newuser-role')?.value || 'ClientEmployee';
   const canSeePrices = document.getElementById('newuser-can-see-prices')?.checked;
+  const equalRights = document.getElementById('newuser-equal-rights')?.checked;
 
   if (!State.isSuperAdmin() && (role === 'SuperAdmin' || role === 'LimitedSuperAdmin')) {
     alert('⚠️ Permission Denied: Client Administrators cannot assign or create Super Admin accounts.');
@@ -9825,6 +10391,7 @@ async function submitCreateUserForm() {
       email: effectiveEmail,
       role,
       can_see_bidding_prices: canSeePrices,
+      equal_rights: Boolean(equalRights),
       permissions,
       business_profile_ids: businessProfileIds
     };
@@ -9951,6 +10518,14 @@ async function submitResetPasswordForm() {
 
 async function deleteUserAction(userId, userName) {
   if (!userId) return;
+
+  const users = State.getStoredUsers ? State.getStoredUsers() : [];
+  const u = users.find(user => user.id === userId);
+  if (!State.isSuperAdmin() && (u?.is_primary_admin || u?.isPrimaryAdmin || (u?.role === 'ClientAdmin' && u?.is_created_by_super_admin))) {
+    alert('⚠️ Security Policy: The Primary Organization Administrator created by Super Admin cannot be deleted.');
+    return;
+  }
+
   if (!confirm(`Are you sure you want to permanently delete user "${userName || userId}"? This action cannot be undone.`)) {
     return;
   }
@@ -10004,6 +10579,34 @@ async function handleDeleteCompany(companyId, companyName) {
   }
 }
 window.handleDeleteCompany = handleDeleteCompany;
+
+async function handleDeleteTenant(tenantId, tenantName) {
+  if (!tenantId) return;
+  const decodedName = decodeURIComponent(tenantName || tenantId);
+
+  // Safety confirmation
+  const confirmMsg = `⚠️ CRITICAL WARNING: Permanent Deletion of Organization!\n\nAre you sure you want to permanently delete the entire organization "${decodedName}"?\n\nThis will irreversibly delete ALL child data:\n• All users (Client Admins & Employees)\n• All registered companies & NTN/STRN profiles\n• All commercial tenders & RFP records\n• All costing sheets, bids & bid evaluations\n• All attached Bid Securities, CDRs & Bank Guarantees\n• All purchase orders, delivery challans & invoices\n\nClick OK to permanently delete.`;
+
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  showToast(`⏳ Deleting organization "${decodedName}" and all child records...`, 'info', 3000);
+
+  try {
+    const res = await API.deleteTenant(tenantId);
+    if (res && res.success) {
+      showToast(`✓ Organization "${decodedName}" and all child data deleted permanently.`, 'success', 5000);
+      await renderActiveView();
+    } else {
+      showToast(res.message || 'There is an error please contact to your administrator.', 'error');
+    }
+  } catch (err) {
+    console.error('[handleDeleteTenant Error]:', err);
+    showToast('There is an error please contact to your administrator.', 'error');
+  }
+}
+window.handleDeleteTenant = handleDeleteTenant;
 
 async function handleResendInviteEmail(userId, userName, userEmail) {
   if (!userId) return;
@@ -10169,15 +10772,30 @@ async function renderSuperAdminSubscriptionsHTML() {
                   ? '<span class="badge badge-ready">Starter Plan</span>' 
                   : '<span class="badge" style="background:#f3e8ff; color:#7e22ce;">Custom Plan</span>';
 
-              const tenderQuotaDisplay = sub.is_trial 
-                ? `${o.tenderCount} / 5 Tenders` 
-                : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic')
-                  ? `${o.tenderCount} / 5 Bids (per-bid extra)`
-                  : `${o.tenderCount} / ∞ (Unlimited)`;
+              const isUnlimitedTenders = (
+                sub.tender_limit === 'unlimited' || 
+                sub.tender_limit === -1 || 
+                sub.is_unlimited_tenders ||
+                sub.plan_type === 'Advance' || 
+                sub.plan_type === 'Enterprise'
+              );
+              const isUnlimitedCdrs = (
+                sub.bid_security_limit === 'unlimited' || 
+                sub.bid_security_limit === -1 || 
+                sub.is_unlimited_cdrs ||
+                sub.plan_type === 'Advance' || 
+                sub.plan_type === 'Enterprise'
+              );
 
-              const bidSecQuotaDisplay = sub.is_trial 
-                ? `${o.bidSecurityCount} / 3 Bid Sec` 
-                : `${o.bidSecurityCount} / ∞ (Unlimited)`;
+              const tenderQuotaDisplay = isUnlimitedTenders 
+                ? `📑 ${o.tenderCount} / ∞ (Unlimited)` 
+                : `📑 ${o.tenderCount} / ${sub.tender_limit || 5} Tenders`;
+
+              const bidSecQuotaDisplay = isUnlimitedCdrs 
+                ? `🏦 ${o.bidSecurityCount} / ∞ (Unlimited)` 
+                : `🏦 ${o.bidSecurityCount} / ${sub.bid_security_limit || 10} CDRs`;
+
+              const renewalDateDisplay = sub.trial_end_date || sub.current_period_end || (o.tenant.trial_ends_at ? o.tenant.trial_ends_at.split('T')[0].split(' ')[0] : 'N/A');
 
               return `
                 <tr>
@@ -10188,8 +10806,8 @@ async function renderSuperAdminSubscriptionsHTML() {
                   <td>${planBadge}</td>
                   <td>${statusBadge}</td>
                   <td>
-                    <span style="font-size:0.78rem; font-weight:600; color:#1e293b;">📑 ${tenderQuotaDisplay}</span><br>
-                    <span style="font-size:0.75rem; color:#64748b;">🏦 ${bidSecQuotaDisplay}</span>
+                    <span style="font-size:0.78rem; font-weight:600; color:#1e293b;">${tenderQuotaDisplay}</span><br>
+                    <span style="font-size:0.75rem; color:#64748b;">${bidSecQuotaDisplay}</span>
                   </td>
                   <td>
                     <strong>PKR ${o.totalMonthly.toLocaleString()}</strong><br>
@@ -10202,7 +10820,7 @@ async function renderSuperAdminSubscriptionsHTML() {
                     </span>
                   </td>
                   <td>
-                    <span style="font-size:0.82rem; font-weight:600;">${sub.current_period_end || 'N/A'}</span>
+                    <span style="font-size:0.82rem; font-weight:600;">${renewalDateDisplay}</span>
                   </td>
                   <td>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -10235,28 +10853,50 @@ async function renderMySubscriptionHTML() {
   const sub = data.subscription;
   const quota = data.quota;
 
+  const isStarter = sub.plan_type === 'Starter' || sub.plan_type === 'Basic';
+  const isTrial = sub.is_trial || sub.status === 'Trial';
+
+  const isUnlimitedTenders = (
+    sub.tender_limit === 'unlimited' || 
+    sub.tender_limit === -1 || 
+    sub.is_unlimited_tenders ||
+    sub.plan_type === 'Advance' || 
+    sub.plan_type === 'Enterprise'
+  );
+  const isUnlimitedCdrs = (
+    sub.bid_security_limit === 'unlimited' || 
+    sub.bid_security_limit === -1 || 
+    sub.is_unlimited_cdrs ||
+    sub.plan_type === 'Advance' || 
+    sub.plan_type === 'Enterprise'
+  );
+
   let statusBadge = '';
   if (sub.status === 'Suspended') {
     statusBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171; font-size:0.85rem; padding:6px 12px;">⛔ Account Suspended (Pending Payment)</span>';
   } else if (sub.is_trial && sub.status === 'Trial') {
-    statusBadge = `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:0.85rem; padding:6px 12px;">⏳ 15-Day Free Trial: ${data.trialDaysRemaining} Days Remaining</span>`;
+    const trialName = (sub.trial_period && sub.trial_period !== '15 Days') ? `${sub.trial_period} Free Trial` : '15-Day Free Trial';
+    statusBadge = `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:0.85rem; padding:6px 12px;">⏳ ${trialName}: ${data.trialDaysRemaining} Days Remaining</span>`;
   } else {
     statusBadge = '<span class="badge badge-won" style="font-size:0.85rem; padding:6px 12px;">✓ Active Subscription (Paid)</span>';
   }
 
-  const isStarter = sub.plan_type === 'Starter' || sub.plan_type === 'Basic';
-  const isTrial = sub.is_trial || sub.status === 'Trial';
-
-  const tenderQuotaMax = isTrial ? 5 : (isStarter ? 5 : 'Unlimited');
+  const tenderLimitVal = isUnlimitedTenders ? 'Unlimited' : (sub.tender_limit || 5);
+  const tenderQuotaMax = tenderLimitVal;
   const tendersUsed = quota.tenders_created || 0;
-  const tenderPct = (isTrial || isStarter) ? Math.min(100, (tendersUsed / 5) * 100) : 100;
+  const tenderPct = isUnlimitedTenders ? 100 : Math.min(100, (tendersUsed / (parseInt(tenderLimitVal, 10) || 1)) * 100);
 
   const allSecurities = State.getTenantEntityList ? State.getTenantEntityList('bidSecurities') : [];
-  const secUsed = allSecurities.filter(b => b.tenant_id === (sub.tenant_id || State.currentUser?.tenant_id)).length || (quota.bid_securities_created || 0);
-  const secQuotaMax = isTrial ? 3 : 'Unlimited';
-  const secPct = isTrial ? Math.min(100, (secUsed / 3) * 100) : 100;
+  const secUsed = (State.liveCdrsCount !== undefined) 
+    ? State.liveCdrsCount 
+    : (allSecurities.filter(b => b.tenant_id === (sub.tenant_id || State.currentUser?.tenant_id)).length || (quota.bid_securities_created || 0));
+  const secLimitVal = isUnlimitedCdrs ? 'Unlimited' : (sub.bid_security_limit || 10);
+  const secQuotaMax = secLimitVal;
+  const secPct = isUnlimitedCdrs ? 100 : Math.min(100, (secUsed / (parseInt(secLimitVal, 10) || 1)) * 100);
 
   const cycleName = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
+  const renewalDate = sub.trial_end_date || sub.current_period_end || (State.currentUser?.tenant?.trialEndsAt ? State.currentUser.tenant.trialEndsAt.split('T')[0] : 'N/A');
+  const isAlreadyAdvance = (sub.plan_type === 'Advance' || sub.plan_type === 'Enterprise');
 
   return `
     <!-- Top Plan Overview Banner -->
@@ -10267,13 +10907,17 @@ async function renderMySubscriptionHTML() {
           <h2 style="font-size: 1.8rem; font-weight: 800; color: #38bdf8; margin: 4px 0 8px;">${sub.plan_type} Tier</h2>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             ${statusBadge}
-            <span style="font-size: 0.85rem; color: #cbd5e1;">Billing Cycle: <strong>${cycleName}</strong> | Expiry / Renewal: <strong>${sub.current_period_end || 'N/A'}</strong></span>
+            <span style="font-size: 0.85rem; color: #cbd5e1;">Billing Cycle: <strong>${cycleName}</strong> | Expiry / Renewal: <strong>${renewalDate}</strong></span>
           </div>
         </div>
         <div style="text-align: right; background: rgba(255,255,255,0.06); padding: 16px 20px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.1);">
           <div style="font-size: 0.8rem; color: #94a3b8;">Contracted Plan Rate:</div>
           <div style="font-size: 1.6rem; font-weight: 800; color: #4ade80;">PKR ${(sub.custom_base_price || (isStarter ? 14000 : 35000)).toLocaleString()} <span style="font-size:0.8rem; color:#94a3b8;">/ period</span></div>
-          <button class="primary-btn" style="margin-top: 8px; font-size: 0.82rem; padding: 6px 14px;" onclick="openModal('modal-quota-upgrade')">🚀 Upgrade to Advance Plan</button>
+          ${isAlreadyAdvance ? `
+            <button class="primary-btn" style="margin-top: 8px; font-size: 0.82rem; padding: 6px 14px;" onclick="openModal('modal-quota-upgrade')">⚡ Extend or Manage Plan</button>
+          ` : `
+            <button class="primary-btn" style="margin-top: 8px; font-size: 0.82rem; padding: 6px 14px;" onclick="openModal('modal-quota-upgrade')">🚀 Upgrade to Advance Plan</button>
+          `}
         </div>
       </div>
     </div>
@@ -10286,11 +10930,13 @@ async function renderMySubscriptionHTML() {
           <span>📑 Commercial Tenders</span>
           <span style="color: var(--primary); font-weight: 800;">${tendersUsed} / ${tenderQuotaMax}</span>
         </div>
-        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">${isTrial ? '15-Day Free Trial Limit' : isStarter ? 'Starter Bids Included' : 'Unlimited Active'}</div>
-        <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-          <div style="width: ${tenderPct}%; height: 100%; background: ${(isTrial || isStarter) && tendersUsed >= 5 ? '#ef4444' : '#0284c7'};"></div>
+        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">
+          ${isUnlimitedTenders ? `Unlimited Bidding Included in ${sub.plan_type} Plan` : `${tenderLimitVal} Bids Included in Contract`}
         </div>
-        ${(isTrial || isStarter) && tendersUsed >= 5 ? '<div style="font-size:0.74rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Limit reached (Upgrade to Advance)</div>' : ''}
+        <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+          <div style="width: ${tenderPct}%; height: 100%; background: ${(!isUnlimitedTenders && tendersUsed >= parseInt(tenderLimitVal, 10)) ? '#ef4444' : '#0284c7'};"></div>
+        </div>
+        ${(!isUnlimitedTenders && tendersUsed >= parseInt(tenderLimitVal, 10)) ? `<div style="font-size:0.74rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Quota reached (${tenderLimitVal} Tenders)</div>` : ''}
       </div>
 
       <!-- Bid Security Quota Meter -->
@@ -10299,11 +10945,13 @@ async function renderMySubscriptionHTML() {
           <span>🏦 Bid Securities & CDRs</span>
           <span style="color: #0891b2; font-weight: 800;">${secUsed} / ${secQuotaMax}</span>
         </div>
-        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">${isTrial ? '15-Day Free Trial Limit' : 'Unlimited Registry'}</div>
-        <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-          <div style="width: ${secPct}%; height: 100%; background: ${isTrial && secUsed >= 3 ? '#ef4444' : '#0891b2'};"></div>
+        <div style="font-size: 0.78rem; color: #64748b; margin-bottom: 10px;">
+          ${isUnlimitedCdrs ? `Unlimited CDR Registry Included in ${sub.plan_type} Plan` : `${secLimitVal} CDRs Included in Contract`}
         </div>
-        ${isTrial && secUsed >= 3 ? '<div style="font-size:0.74rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Trial limit reached (3 Items)</div>' : ''}
+        <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+          <div style="width: ${secPct}%; height: 100%; background: ${(!isUnlimitedCdrs && secUsed >= parseInt(secLimitVal, 10)) ? '#ef4444' : '#0891b2'};"></div>
+        </div>
+        ${(!isUnlimitedCdrs && secUsed >= parseInt(secLimitVal, 10)) ? `<div style="font-size:0.74rem; color:#ef4444; font-weight:700; margin-top:6px;">⚠️ Quota reached (${secLimitVal} Items)</div>` : ''}
       </div>
 
       <!-- Multi-Company Quota -->
@@ -10438,6 +11086,22 @@ function switchPublicPricingFreq(freq, btn) {
 }
 window.switchPublicPricingFreq = switchPublicPricingFreq;
 
+function onTenderLimitSelectChanged(val) {
+  const customInput = document.getElementById('sub-custom-tender-limit');
+  if (customInput) {
+    customInput.style.display = (val === 'custom') ? 'block' : 'none';
+  }
+}
+window.onTenderLimitSelectChanged = onTenderLimitSelectChanged;
+
+function onBidSecLimitSelectChanged(val) {
+  const customInput = document.getElementById('sub-custom-bid-sec-limit');
+  if (customInput) {
+    customInput.style.display = (val === 'custom') ? 'block' : 'none';
+  }
+}
+window.onBidSecLimitSelectChanged = onBidSecLimitSelectChanged;
+
 function openConfigureSubscriptionModal(tenantId) {
   const sub = State.getTenantSubscription(tenantId);
   const tenant = State.getTenants().find(t => t.id === tenantId) || { company_name: 'Tenant' };
@@ -10455,12 +11119,41 @@ function openConfigureSubscriptionModal(tenantId) {
   const activeCycle = sub.billing_cycle || 'monthly';
   cycleRadios.forEach(r => { r.checked = (r.value === activeCycle); });
 
-  // Set Included Quotas & Package Limits (Editable for Super Admin)
+  // Set Dynamic Quota Limits
+  const tenderSelect = document.getElementById('sub-tender-limit-select');
+  const customTenderInput = document.getElementById('sub-custom-tender-limit');
+  const rawTenderLim = String(sub.tender_limit !== undefined ? sub.tender_limit : (normalizedPlan === 'Advance' ? 'unlimited' : '5'));
+  if (tenderSelect) {
+    const hasOpt = ['unlimited', '5', '10', '20', '50'].includes(rawTenderLim);
+    if (hasOpt) {
+      tenderSelect.value = rawTenderLim;
+      if (customTenderInput) { customTenderInput.style.display = 'none'; customTenderInput.value = ''; }
+    } else {
+      tenderSelect.value = 'custom';
+      if (customTenderInput) { customTenderInput.style.display = 'block'; customTenderInput.value = rawTenderLim; }
+    }
+  }
+
+  const bidSecSelect = document.getElementById('sub-bid-sec-limit-select');
+  const customBidSecInput = document.getElementById('sub-custom-bid-sec-limit');
+  const rawBidSecLim = String(sub.bid_security_limit !== undefined ? sub.bid_security_limit : (normalizedPlan === 'Advance' ? 'unlimited' : '10'));
+  if (bidSecSelect) {
+    const hasOpt = ['unlimited', '3', '10', '25', '50'].includes(rawBidSecLim);
+    if (hasOpt) {
+      bidSecSelect.value = rawBidSecLim;
+      if (customBidSecInput) { customBidSecInput.style.display = 'none'; customBidSecInput.value = ''; }
+    } else {
+      bidSecSelect.value = 'custom';
+      if (customBidSecInput) { customBidSecInput.style.display = 'block'; customBidSecInput.value = rawBidSecLim; }
+    }
+  }
+
+  // Set Included Companies & Seats (Custom per client)
   const incCoInput = document.getElementById('sub-included-companies');
   if (incCoInput) {
     incCoInput.value = sub.free_companies_limit !== undefined 
       ? sub.free_companies_limit 
-      : (tenant.free_business_profile_limit || (normalizedPlan === 'Advance' ? 2 : 1));
+      : (tenant.free_business_profile_limit || (normalizedPlan === 'Advance' ? 3 : 1));
   }
 
   const incUsersInput = document.getElementById('sub-included-users');
@@ -10478,7 +11171,11 @@ function openConfigureSubscriptionModal(tenantId) {
   // Set Trial Duration & Expiry Date
   const trialSelect = document.getElementById('sub-trial-duration');
   if (trialSelect) {
-    const dVal = String(sub.trial_days || 15);
+    let dVal = String(sub.trial_days || 15);
+    if (sub.trial_period === '3 Months') dVal = '90';
+    else if (sub.trial_period === '2 Months') dVal = '60';
+    else if (sub.trial_period === '1 Month') dVal = '30';
+    else if (sub.trial_period === '15 Days') dVal = '15';
     const hasOpt = Array.from(trialSelect.options).some(o => o.value === dVal);
     trialSelect.value = sub.is_trial ? (hasOpt ? dVal : 'custom') : 'none';
   }
@@ -10499,13 +11196,13 @@ function renderSubModulesChecklist(sub) {
   const container = document.getElementById('sub-modules-checklist');
   if (!container) return;
 
-  const activeKeys = sub.active_modules || ['mod_tenders', 'mod_quotations', 'mod_fbr_invoicing'];
+  const activeKeys = sub.active_modules || ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'];
 
   container.innerHTML = State.MODULE_CATALOG.map(m => {
     const isChecked = activeKeys.includes(m.key);
     const customFee = (sub.custom_module_fees && sub.custom_module_fees[m.key] !== undefined) ? sub.custom_module_fees[m.key] : m.benchmarkFee;
     return `
-      <div style="border: 1px solid var(--border); background: #f8fafc; padding: 10px 12px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between;">
+      <div style="border: 1px solid var(--border); background: #ffffff; padding: 10px 12px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between;">
         <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; flex: 1;">
           <input type="checkbox" class="sub-mod-checkbox permissions-checkbox" value="${m.key}" ${isChecked ? 'checked' : ''} onchange="recalcSubscriptionBillPreview()">
           <span>${m.icon} ${m.name}</span>
@@ -10524,29 +11221,32 @@ function onPlanSelectionChanged(planType, resetLimits = true) {
   const basePriceInput = document.getElementById('sub-custom-base-price');
   const incCoInput = document.getElementById('sub-included-companies');
   const incUsersInput = document.getElementById('sub-included-users');
+  const tenderSelect = document.getElementById('sub-tender-limit-select');
+  const bidSecSelect = document.getElementById('sub-bid-sec-limit-select');
 
   if (resetLimits) {
     if (planType === 'Advance') {
-      if (incCoInput) incCoInput.value = 2;
+      if (incCoInput) incCoInput.value = 3;
       if (incUsersInput) incUsersInput.value = 3;
+      if (tenderSelect) { tenderSelect.value = 'unlimited'; onTenderLimitSelectChanged('unlimited'); }
+      if (bidSecSelect) { bidSecSelect.value = 'unlimited'; onBidSecLimitSelectChanged('unlimited'); }
     } else if (planType === 'Starter' || planType === 'Basic') {
       if (incCoInput) incCoInput.value = 1;
       if (incUsersInput) incUsersInput.value = 1;
+      if (tenderSelect) { tenderSelect.value = '5'; onTenderLimitSelectChanged('5'); }
+      if (bidSecSelect) { bidSecSelect.value = '10'; onBidSecLimitSelectChanged('10'); }
     }
   }
 
   if (planType === 'Custom') {
-    if (modulesContainer) modulesContainer.style.display = 'block';
     if (cycleContainer) cycleContainer.style.display = 'none';
     if (basePriceInput && (!basePriceInput.value || basePriceInput.value === '35000' || basePriceInput.value === '14000')) {
       basePriceInput.value = 3000;
     }
   } else if (planType === 'Starter' || planType === 'Basic') {
-    if (modulesContainer) modulesContainer.style.display = 'none';
     if (cycleContainer) cycleContainer.style.display = 'none';
     if (basePriceInput) basePriceInput.value = 14000;
   } else {
-    if (modulesContainer) modulesContainer.style.display = 'none';
     if (cycleContainer) cycleContainer.style.display = 'block';
     
     // Check cycle radio
@@ -10591,7 +11291,7 @@ function recalcSubscriptionBillPreview() {
   radios.forEach(r => { if (r.checked) selectedPlan = r.value; });
 
   const basePrice = Number(document.getElementById('sub-custom-base-price')?.value || 0);
-  const incCo = Number(document.getElementById('sub-included-companies')?.value || (selectedPlan === 'Advance' ? 2 : 1));
+  const incCo = Number(document.getElementById('sub-included-companies')?.value || (selectedPlan === 'Advance' ? 3 : 1));
   const incUsers = Number(document.getElementById('sub-included-users')?.value || (selectedPlan === 'Advance' ? 3 : 1));
   let total = basePrice;
 
@@ -10621,7 +11321,16 @@ async function submitConfigureSubscriptionForm() {
   const cycleRadios = document.getElementsByName('sub-billing-cycle');
   cycleRadios.forEach(r => { if (r.checked) selectedCycle = r.value; });
 
-  const incCo = parseInt(document.getElementById('sub-included-companies')?.value, 10) || (selectedPlan === 'Advance' ? 2 : 1);
+  // Read dynamic leverages
+  const tenderSel = document.getElementById('sub-tender-limit-select')?.value || 'unlimited';
+  const customTenderVal = document.getElementById('sub-custom-tender-limit')?.value;
+  const tenderLimit = (tenderSel === 'custom') ? (parseInt(customTenderVal, 10) || 5) : (tenderSel === 'unlimited' ? 'unlimited' : parseInt(tenderSel, 10));
+
+  const bidSecSel = document.getElementById('sub-bid-sec-limit-select')?.value || 'unlimited';
+  const customBidSecVal = document.getElementById('sub-custom-bid-sec-limit')?.value;
+  const bidSecLimit = (bidSecSel === 'custom') ? (parseInt(customBidSecVal, 10) || 10) : (bidSecSel === 'unlimited' ? 'unlimited' : parseInt(bidSecSel, 10));
+
+  const incCo = parseInt(document.getElementById('sub-included-companies')?.value, 10) || (selectedPlan === 'Advance' ? 3 : 1);
   const incUsers = parseInt(document.getElementById('sub-included-users')?.value, 10) || (selectedPlan === 'Advance' ? 3 : 1);
 
   const basePrice = Number(document.getElementById('sub-custom-base-price')?.value || (selectedPlan === 'Starter' ? 14000 : 35000));
@@ -10636,8 +11345,8 @@ async function submitConfigureSubscriptionForm() {
   const activeModules = [];
   const customModuleFees = {};
 
-  if (selectedPlan === 'Custom') {
-    const checkboxes = document.querySelectorAll('.sub-mod-checkbox:checked');
+  const checkboxes = document.querySelectorAll('.sub-mod-checkbox:checked');
+  if (checkboxes.length > 0) {
     checkboxes.forEach(cb => {
       activeModules.push(cb.value);
       const feeInput = document.querySelector(`.sub-mod-fee-input[data-mod="${cb.value}"]`);
@@ -10649,22 +11358,36 @@ async function submitConfigureSubscriptionForm() {
     activeModules.push('mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi');
   }
 
+  let trialPeriodName = '15 Days';
+  if (trialDuration === '30') trialPeriodName = '1 Month';
+  else if (trialDuration === '60') trialPeriodName = '2 Months';
+  else if (trialDuration === '90') trialPeriodName = '3 Months';
+  else if (trialDuration === 'custom') trialPeriodName = 'Custom';
+  else if (trialDuration === 'none') trialPeriodName = 'None';
+
   const payload = {
     tenant_id: tenantId,
     plan_type: selectedPlan,
+    subscription_plan: selectedPlan,
     billing_cycle: selectedCycle,
     status: isTrial ? 'Trial' : 'Active',
     is_trial: isTrial,
     trial_days: isTrial ? (trialDuration === 'custom' ? 30 : parseInt(trialDuration, 10)) : 0,
+    trial_period: trialPeriodName,
     trial_end_date: trialEndDate,
+    trial_ends_at: trialEndDate,
     current_period_end: trialEndDate,
-    trial_tender_limit: 5,
-    trial_bid_security_limit: 3,
-    starter_tender_limit: 5,
+    tender_limit: tenderLimit,
+    bid_security_limit: bidSecLimit,
+    trial_tender_limit: tenderLimit,
+    trial_bid_security_limit: bidSecLimit,
+    starter_tender_limit: (tenderLimit === 'unlimited' ? 'unlimited' : tenderLimit),
     personal_reference_note: refNote,
     is_personal_reference_trial: (isTrial && ['30', '60', '90', 'custom'].includes(trialDuration)),
     free_companies_limit: incCo,
+    free_business_profile_limit: incCo,
     free_users_limit: incUsers,
+    free_employee_limit: incUsers,
     custom_base_price: basePrice,
     custom_extra_company_price: extraCoPrice,
     custom_extra_seat_price: extraSeatPrice,
@@ -10890,7 +11613,7 @@ async function submitTenderLossForm() {
     evaluation_date: evalDate,
     remarks: remarks
   };
-  State.saveTenantEntity('bidEvaluations', { id: 'eval-' + Date.now(), ...evalPayload });
+  await API.evaluateBid(oppId, evalPayload);
 
   // 2. Update Opportunity status to Lost / Closed
   await API.updateEntity('opportunity', oppId, {
@@ -10904,10 +11627,7 @@ async function submitTenderLossForm() {
   const linkedSecs = securities.filter(s => s.opportunity_id === oppId && s.status === 'Active');
   
   for (const sec of linkedSecs) {
-    sec.status = 'Released';
-    sec.release_date = evalDate;
-    sec.release_reference = 'Auto-Release on Tender Loss (' + (grievanceTrack || stage) + ')';
-    State.saveTenantEntity('bidSecurities', sec);
+    await API.releaseBidSecurity(sec.id, 'Auto-Release on Tender Loss (' + (grievanceTrack || stage) + ')');
   }
 
   closeModal('modal-tender-loss-eval');

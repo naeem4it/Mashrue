@@ -173,11 +173,10 @@ app.get('*', (req, res, next) => {
 
 // 11. Production Error Handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled Application Error:', err.message, isProd ? '' : err.stack);
+  console.error(`[SERVER ERROR] ${req.method} ${req.originalUrl}:`, err.message, err.stack);
   res.status(err.status || 500).json({
     success: false,
-    message: isProd ? 'An internal server error occurred. Please contact system support.' : err.message,
-    ...(isProd ? {} : { stack: err.stack })
+    message: 'There is an error please contact to your administrator.'
   });
 });
 
@@ -211,10 +210,18 @@ app.listen(PORT, '0.0.0.0', async () => {
 
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_business_profile_limit INT DEFAULT 2;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_profile_monthly_fee NUMERIC(10,2) DEFAULT 4500.00;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_employee_limit INT DEFAULT 2;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_employee_monthly_fee NUMERIC(10,2) DEFAULT 1500.00;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tender_limit VARCHAR(50) DEFAULT 'unlimited';
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS bid_security_limit VARCHAR(50) DEFAULT 'unlimited';
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS active_modules JSONB DEFAULT '["mod_tenders","mod_quotations","mod_bid_security","mod_costing_eval","mod_supply_dc","mod_inventory","mod_fbr_invoicing","mod_finance_kpi"]'::jsonb;
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(50) DEFAULT 'monthly';
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_base_price NUMERIC(10,2) DEFAULT 35000.00;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS pending_paid_company_payment BOOLEAN DEFAULT FALSE;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS pending_paid_company_amount NUMERIC(10,2) DEFAULT 0.00;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS paid_companies_count INT DEFAULT 0;
       UPDATE tenants SET additional_profile_monthly_fee = 4500.00 WHERE additional_profile_monthly_fee = 2500.00 OR additional_profile_monthly_fee IS NULL;
+      UPDATE tenants SET free_business_profile_limit = 3, free_employee_limit = 3 WHERE subscription_plan = 'Advance' AND (free_business_profile_limit < 3 OR free_employee_limit < 3 OR free_business_profile_limit IS NULL OR free_employee_limit IS NULL);
 
       CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

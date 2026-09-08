@@ -52,8 +52,10 @@ async function authenticate(req, res, next) {
       userRes = await db.query(
         `SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                 u.must_change_password, u.can_see_bidding_prices, u.permissions,
-                t.company_name as tenant_name, t.subscription_plan,
+                t.company_name as tenant_name, t.subdomain, t.subscription_plan,
+                t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
                 t.pending_paid_company_payment, t.pending_paid_company_amount, t.status as tenant_status,
+                t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price,
                 COALESCE(
                   json_agg(uba.business_profile_id) FILTER (WHERE uba.business_profile_id IS NOT NULL),
                   '[]'
@@ -66,8 +68,10 @@ async function authenticate(req, res, next) {
             OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER($2)) 
          GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                   u.must_change_password, u.can_see_bidding_prices, u.permissions,
-                  t.company_name, t.subscription_plan,
-                  t.pending_paid_company_payment, t.pending_paid_company_amount, t.status`,
+                  t.company_name, t.subdomain, t.subscription_plan,
+                  t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
+                  t.pending_paid_company_payment, t.pending_paid_company_amount, t.status,
+                  t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price`,
         [String(decoded.userId || ''), String(decoded.username || '')]
       );
     } catch (dbErr) {
@@ -144,7 +148,26 @@ async function authenticate(req, res, next) {
       isClientAdmin: user.role === 'ClientAdmin' || user.role === 'CompanyAdmin',
       isClientEmployee: user.role === 'ClientEmployee' || user.role === 'BidManager',
       applicationStopped: Boolean(user.pending_paid_company_payment),
-      pendingPaidCompanyAmount: parseFloat(user.pending_paid_company_amount || 4500.00)
+      pendingPaidCompanyAmount: parseFloat(user.pending_paid_company_amount || 4500.00),
+      subscriptionPlan: user.subscription_plan || 'Advance',
+      tenant: user.tenant_id ? {
+        id: user.tenant_id,
+        name: user.tenant_name,
+        subdomain: user.subdomain,
+        status: user.tenant_status || 'Active',
+        subscriptionPlan: user.subscription_plan || 'Advance',
+        freeCompanyLimit: parseInt(user.free_business_profile_limit !== undefined && user.free_business_profile_limit !== null ? user.free_business_profile_limit : (user.subscription_plan === 'Advance' ? 3 : 1), 10),
+        freeEmployeeLimit: parseInt(user.free_employee_limit !== undefined && user.free_employee_limit !== null ? user.free_employee_limit : (user.subscription_plan === 'Advance' ? 3 : 1), 10),
+        tenderLimit: user.tender_limit || (user.subscription_plan === 'Advance' ? 'unlimited' : '5'),
+        bidSecurityLimit: user.bid_security_limit || (user.subscription_plan === 'Advance' ? 'unlimited' : '10'),
+        activeModules: user.active_modules || ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'],
+        billingCycle: user.billing_cycle || 'monthly',
+        customBasePrice: parseFloat(user.custom_base_price || 35000),
+        trialPeriod: user.trial_period || '15 Days',
+        trialEndsAt: user.trial_ends_at || null,
+        pendingPaidCompanyPayment: Boolean(user.pending_paid_company_payment),
+        pendingPaidCompanyAmount: parseFloat(user.pending_paid_company_amount || 0)
+      } : null
     };
 
     // If client user and application access is stopped pending payment on trial

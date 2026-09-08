@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=5.6">
+  <link rel="stylesheet" href="css/main.css?v=14.1">
 </head>
 <body>
 
@@ -264,7 +264,7 @@
       <header class="top-header">
         <div class="header-title-box">
           <h1 id="view-title">Executive KPI Dashboard</h1>
-          <p id="view-subtitle">Financial overview for All Entities (Amounts in PKR)</p>
+          <p id="view-subtitle" style="display: none;"></p>
         </div>
 
         <div class="header-actions">
@@ -2382,6 +2382,19 @@
             </div>
           </div>
 
+          <!-- Equal Rights Option -->
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+              <input type="checkbox" id="newuser-equal-rights" class="permissions-checkbox" style="margin-top: 3px;" onchange="handleEqualRightsToggle(this.checked)">
+              <div>
+                <strong style="color: #1e40af; font-size: 0.9rem;">✨ Equal Rights (Full Business Module Access)</strong>
+                <p style="font-size: 0.78rem; color: #3b82f6; margin-top: 2px; margin-bottom: 0; line-height: 1.4;">
+                  <strong>When checked:</strong> User receives equivalent access to all organization business modules (Tenders, CDRs, Quotations, Inventory, Invoices, Expenses, Reports, Customers, Suppliers), but does NOT receive administrative control over users.
+                </p>
+              </div>
+            </label>
+          </div>
+
           <!-- Granular Permissions Matrix -->
           <div id="rbac-matrix-container" style="margin-top: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
@@ -2393,13 +2406,14 @@
               </div>
             </div>
             <div style="max-height: 280px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: #ffffff;">
-              <table class="permissions-matrix-table" style="margin-top: 0; border: none; width: 100%; min-width: 500px;">
+              <table class="permissions-matrix-table" style="margin-top: 0; border: none; width: 100%; min-width: 580px;">
                 <thead>
                   <tr style="position: sticky; top: 0; background: #f1f5f9; z-index: 2;">
                     <th style="padding: 10px 14px; background: #f1f5f9;">Application Screen / Module</th>
-                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">View (Grant Screen)</th>
+                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">View (Read)</th>
                     <th class="center" style="padding: 10px 14px; background: #f1f5f9;">Add (Create)</th>
-                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">Edit (Update / Delete)</th>
+                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">Edit (Update)</th>
+                    <th class="center" style="padding: 10px 14px; background: #f1f5f9;">Delete (Remove)</th>
                   </tr>
                 </thead>
                 <tbody id="permissions-matrix-tbody">
@@ -2408,78 +2422,98 @@
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="edit" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="opportunities" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>🛡️ Bid Security Registry (CDRs / POs)</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="bid-securities" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>💰 Costing Sheets & Margin Control</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="add"></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="costing" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>⚖️ Bid Approvals & Governance</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="add"></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="approvals" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>🏆 Awards & Performance Guarantees</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="awards" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>📦 Customer Purchase Orders (PO)</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="purchase-orders" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>🏬 Warehouse Stock & SKU Inventory</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="edit" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="inventory" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>🚚 Supply & Delivery Challans (DC)</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="delivery-challans" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>🧾 Sales Invoices & FBR PRAL</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="add"></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="invoices" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>💵 Payments Received & Cheques</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="add"></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="payments" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>💳 Expense Vouchers & Overheads</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="expenses" data-action="delete"></td>
                   </tr>
                   <tr>
-                    <td><strong>👥 Customers & Suppliers Directories</strong></td>
+                    <td><strong>👥 Customers Directory</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="add" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="edit" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="customers" data-action="delete"></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🏭 Suppliers Directory</strong></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="suppliers" data-action="view" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="suppliers" data-action="add" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="suppliers" data-action="edit" checked></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="suppliers" data-action="delete"></td>
                   </tr>
                   <tr>
                     <td><strong>📈 Executive Reports & Analytics</strong></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="view" checked></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="add"></td>
                     <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="edit"></td>
+                    <td class="center"><input type="checkbox" class="permissions-checkbox perm-toggle" data-module="reports" data-action="delete"></td>
                   </tr>
                 </tbody>
               </table>
@@ -2871,19 +2905,49 @@
           <!-- 3. Package Limits & Included Quotas (Editable for Super Admin) -->
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
             <div style="font-weight: 700; color: #166534; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-              <span>🏢 Included Quotas & Package Limits (For this specific tenant)</span>
-              <span style="font-size: 0.75rem; color: #15803d; font-weight: 600;">Editable by Super Admin</span>
+              <span>🏢 Included Quotas & Dynamic Leverages (For this specific organization)</span>
+              <span style="font-size: 0.75rem; color: #15803d; font-weight: 600;">Customized per purchase contract</span>
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Included / Free Companies *</label>
-                <input type="number" class="form-input" id="sub-included-companies" value="2" min="1" max="50" required oninput="recalcSubscriptionBillPreview()">
-                <span style="font-size:0.72rem; color:#15803d;">Allowed business profiles without surcharge (Advance: 2, Starter: 1)</span>
+            
+            <!-- Row A: Tenders & Bid Securities Quota Caps -->
+            <div class="form-row" style="margin-bottom: 10px;">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">📑 Commercial Tenders Quota *</label>
+                <select class="form-select" id="sub-tender-limit-select" onchange="onTenderLimitSelectChanged(this.value)">
+                  <option value="unlimited">Unlimited Commercial Tenders (Advance / Enterprise)</option>
+                  <option value="5">5 Tenders (Starter Tier Default)</option>
+                  <option value="10">10 Tenders</option>
+                  <option value="20">20 Tenders</option>
+                  <option value="50">50 Tenders</option>
+                  <option value="custom">Custom Numeric Limit...</option>
+                </select>
+                <input type="number" class="form-input" id="sub-custom-tender-limit" placeholder="Enter custom tender count limit" style="display:none; margin-top:6px;" min="1">
               </div>
-              <div class="form-group">
-                <label class="form-label">Included / Free Employee Seats *</label>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">🏦 Bid Securities & CDRs Quota *</label>
+                <select class="form-select" id="sub-bid-sec-limit-select" onchange="onBidSecLimitSelectChanged(this.value)">
+                  <option value="unlimited">Unlimited Bid Securities & CDRs (Advance / Enterprise)</option>
+                  <option value="3">3 Items (15-Day Free Trial Default)</option>
+                  <option value="10">10 Items (Standard Cap)</option>
+                  <option value="25">25 Items</option>
+                  <option value="50">50 Items</option>
+                  <option value="custom">Custom Numeric Limit...</option>
+                </select>
+                <input type="number" class="form-input" id="sub-custom-bid-sec-limit" placeholder="Enter custom bid security count limit" style="display:none; margin-top:6px;" min="1">
+              </div>
+            </div>
+
+            <!-- Row B: Free Companies & Free Users Seats -->
+            <div class="form-row">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">🏢 Included / Free Companies *</label>
+                <input type="number" class="form-input" id="sub-included-companies" value="3" min="1" max="50" required oninput="recalcSubscriptionBillPreview()">
+                <span style="font-size:0.72rem; color:#15803d;">Allowed business profiles without surcharge (Advance: 3, Starter: 1)</span>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">👥 Included / Free User Seats *</label>
                 <input type="number" class="form-input" id="sub-included-users" value="3" min="1" max="100" required oninput="recalcSubscriptionBillPreview()">
-                <span style="font-size:0.72rem; color:#15803d;">Allowed user accounts without extra seat fee (Advance: 3, Starter: 1)</span>
+                <span style="font-size:0.72rem; color:#15803d;">Allowed team user accounts without extra seat fee (Advance: 3, Starter: 1)</span>
               </div>
             </div>
           </div>
@@ -2891,7 +2955,7 @@
           <!-- 4. Per-Tenant Custom Price Overrides -->
           <div style="background: #fafaf9; border: 1px solid #e7e5e4; border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
             <div style="font-weight: 700; color: #292524; font-size: 0.9rem; margin-bottom: 8px;">
-              💵 Super Admin Custom Price Overrides (For this specific tenant)
+              💵 Agreed Billing & Surcharge Overrides (For this specific tenant)
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -2909,10 +2973,11 @@
             </div>
           </div>
 
-          <!-- 5. Modular Catalog (Visible for Custom Plan) -->
-          <div id="sub-modules-selector-container" style="display: none; margin-bottom: 16px;">
-            <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem; margin-bottom: 8px;">
-              📦 Subscribed Modules & Itemized Pricing (A La Carte)
+          <!-- 5. Modular Catalog (Dynamic Subscribed Modules) -->
+          <div id="sub-modules-selector-container" style="display: block; margin-bottom: 16px; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;">
+            <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+              <span>📦 Subscribed Modules & Entitlements</span>
+              <span style="font-size: 0.75rem; color: #64748b;">Check to activate module for this organization</span>
             </div>
             <div id="sub-modules-checklist" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
               <!-- Dynamically populated from State.MODULE_CATALOG -->
@@ -3024,7 +3089,7 @@
           <ul style="font-size: 0.82rem; color: #475569; padding-left: 20px; line-height: 1.6; margin-bottom: 10px;">
             <li><strong>Unlimited</strong> commercial tenders, RFQs, and quotations</li>
             <li><strong>Unlimited</strong> Bid Securities, CDRs, and Bank Guarantees</li>
-            <li><strong>2 Companies</strong> & <strong>3 User Seats</strong> included free</li>
+            <li><strong>3 Companies</strong> & <strong>3 User Seats</strong> included free</li>
             <li>Full FBR PRAL Digital Invoicing & POS Integration</li>
           </ul>
           <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 10px; font-size: 0.76rem; color: #1e40af;">
@@ -3522,8 +3587,8 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=12.0"></script>
-  <script src="js/state.js?v=12.0"></script>
-  <script src="js/app.js?v=12.0"></script>
+  <script src="js/api.js?v=14.1"></script>
+  <script src="js/state.js?v=14.1"></script>
+  <script src="js/app.js?v=14.1"></script>
 </body>
 </html>

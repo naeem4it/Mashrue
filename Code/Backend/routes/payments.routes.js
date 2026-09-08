@@ -1,10 +1,11 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // GET all payments
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('payments', 'view'), async (req, res) => {
   const { invoice_id, business_profile_id } = req.query;
 
   try {
@@ -58,7 +59,7 @@ router.get('/', optionalAuth, async (req, res) => {
 
 // POST record payment received
 // Fields: check_no, check_from, invoice_number (or invoice_id), amount, payment_date, bank_account
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', authenticate, requirePermission('payments', 'add'), async (req, res) => {
   const {
     invoice_id,
     invoice_number,
@@ -183,7 +184,7 @@ router.post('/', optionalAuth, async (req, res) => {
 });
 
 // PUT update Payment record
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, requirePermission('payments', 'edit'), async (req, res) => {
   const { payment_date, payment_method, amount, check_no, check_from, bank_account, deposited_in_bank, reference_number, notes } = req.body;
   try {
     const result = await db.query(

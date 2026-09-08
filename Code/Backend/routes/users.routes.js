@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const { authenticate, JWT_SECRET } = require('../middleware/auth.middleware');
-const { requireRoles } = require('../middleware/rbac.middleware');
+const { requireRoles, getEqualRightsPermissions, RESTRICTED_ADMIN_MODULES } = require('../middleware/rbac.middleware');
 const { sendWelcomeUserEmail } = require('../services/emailService');
 
 /**
@@ -19,7 +19,13 @@ router.get('/', authenticate, async (req, res) => {
     let queryText = `
       SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
              u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at, u.created_by,
-             c.username as creator_username, c.full_name as creator_name,
+             u.is_primary_admin,
+             c.username as creator_username, c.full_name as creator_name, c.role as creator_role,
+             (c.role = 'SuperAdmin' OR u.role = 'SuperAdmin' OR (u.role IN ('ClientAdmin', 'CompanyAdmin') AND (c.role = 'SuperAdmin' OR u.id = (
+               SELECT u_first.id FROM users u_first 
+               WHERE u_first.tenant_id = u.tenant_id AND u_first.role IN ('ClientAdmin', 'CompanyAdmin') 
+               ORDER BY u_first.created_at ASC LIMIT 1
+             )))) as is_created_by_super_admin,
              t.company_name as tenant_name,
              COALESCE(
                json_agg(
@@ -48,7 +54,8 @@ router.get('/', authenticate, async (req, res) => {
     queryText += `
       GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at, u.created_by,
-               c.username, c.full_name, t.company_name
+               u.is_primary_admin,
+               c.username, c.full_name, c.role, t.company_name
       ORDER BY u.created_at DESC
     `;
 
@@ -62,6 +69,7 @@ router.get('/', authenticate, async (req, res) => {
                  u.must_change_password, u.can_see_bidding_prices, u.permissions, u.created_at,
                  NULL::uuid as created_by,
                  'System' as creator_username, 'System' as creator_name,
+                 TRUE as is_created_by_super_admin,
                  t.company_name as tenant_name,
                  COALESCE(
                    json_agg(
@@ -92,29 +100,46 @@ router.get('/', authenticate, async (req, res) => {
       }
     }
 
-    // Calculate tenant seat stats
+    // Calculate tenant seat stats and company stats
     let seatStats = null;
     if (req.user.tenantId || req.user.role !== 'SuperAdmin') {
       const tenantRes = await db.query(
-        `SELECT free_employee_limit, free_business_profile_limit, additional_employee_monthly_fee, trial_period, trial_ends_at 
+        `SELECT free_employee_limit, free_business_profile_limit, additional_employee_monthly_fee, trial_period, trial_ends_at, subscription_plan 
          FROM tenants 
          WHERE id::text = $1::text OR id = (SELECT tenant_id FROM users WHERE id::text = $1::text)`,
         [String(req.user.tenantId || req.user.id)]
       );
-      const limit = tenantRes.rows[0]?.free_employee_limit || 2;
-      const compLimit = tenantRes.rows[0]?.free_business_profile_limit || 2;
-      const fee = tenantRes.rows[0]?.additional_employee_monthly_fee || 1500.00;
+
+      let companyCount = 0;
+      try {
+        const compCountRes = await db.query(
+          `SELECT COUNT(*) as comp_count FROM business_profiles 
+           WHERE tenant_id = (SELECT tenant_id FROM users WHERE id::text = $1::text OR tenant_id::text = $1::text LIMIT 1)`,
+          [String(req.user.tenantId || req.user.id)]
+        );
+        companyCount = parseInt(compCountRes.rows[0]?.comp_count || 0, 10);
+      } catch (e) {
+        companyCount = 1;
+      }
+
+      const tRow = tenantRes.rows[0];
+      const limit = parseInt(tRow?.free_employee_limit || (tRow?.subscription_plan === 'Advance' ? 3 : 2), 10);
+      const compLimit = parseInt(tRow?.free_business_profile_limit || (tRow?.subscription_plan === 'Advance' ? 3 : 2), 10);
+      const fee = tRow?.additional_employee_monthly_fee || 1500.00;
       const employeeCount = result.rows.filter(u => u.role === 'ClientEmployee').length;
+      const totalUsers = result.rows.length;
 
       seatStats = {
         freeLimit: limit,
         freeCompanyLimit: compLimit,
+        companyCount: companyCount,
         usedEmployees: employeeCount,
-        paidEmployees: Math.max(0, employeeCount - limit),
+        totalUsers: totalUsers,
+        paidEmployees: Math.max(0, totalUsers - limit),
         additionalMonthlyFee: fee,
         trialPeriod: tenantRes.rows[0]?.trial_period || '15 Days',
         trialEndsAt: tenantRes.rows[0]?.trial_ends_at || null,
-        isOverLimit: employeeCount >= limit
+        isOverLimit: totalUsers >= limit
       };
     }
 
@@ -125,6 +150,8 @@ router.get('/', authenticate, async (req, res) => {
         const tenantsRes = await db.query(
           `SELECT t.id, t.company_name, t.subdomain, t.subscription_plan, t.status,
                   t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
+                  t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price,
+                  t.additional_profile_monthly_fee, t.additional_employee_monthly_fee,
                   (SELECT json_agg(json_build_object(
                      'id', bp.id, 'business_name', bp.business_name, 'legal_name', bp.legal_name,
                      'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled, 'created_at', bp.created_at
@@ -146,6 +173,8 @@ router.get('/', authenticate, async (req, res) => {
         const fallbackTenants = await db.query(
           `SELECT t.id, t.company_name, t.subdomain, t.subscription_plan, t.status,
                   t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
+                  t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price,
+                  t.additional_profile_monthly_fee, t.additional_employee_monthly_fee,
                   (SELECT json_agg(json_build_object(
                      'id', bp.id, 'business_name', bp.business_name, 'legal_name', bp.legal_name,
                      'ntn', bp.ntn, 'strn', bp.strn, 'city', bp.city, 'fbr_enabled', bp.fbr_enabled, 'created_at', bp.created_at
@@ -214,7 +243,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
     can_see_bidding_prices,
     permissions,
     business_profile_ids,
-    confirm_paid
+    confirm_paid,
+    equal_rights
   } = req.body;
 
   const cleanEmail = email && typeof email === 'string' && email.trim().length > 0 ? email.trim().toLowerCase() : null;
@@ -234,11 +264,10 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
   try {
     const isUUID = (val) => val && typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-    let targetTenantId = req.user.tenantId || req.headers['x-tenant-id'] || null;
-
-    // SuperAdmin creating user for specific or new tenant
+    // Zero-trust tenant resolution: Never trust client headers or body for non-SuperAdmin
+    let targetTenantId = req.user.tenantId;
     if (req.user.role === 'SuperAdmin') {
-      targetTenantId = tenant_id || null;
+      targetTenantId = tenant_id || req.user.tenantId || null;
     }
 
     if (!isUUID(targetTenantId)) {
@@ -258,10 +287,26 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
       return res.status(400).json({ success: false, message: 'Official email address is required for Administrator accounts.' });
     }
 
-    // Rule: Client Admin cannot create Super Admin
-    if (req.user.role !== 'SuperAdmin' && (targetRole === 'SuperAdmin' || targetRole === 'LimitedSuperAdmin')) {
-      return res.status(403).json({ success: false, message: 'Forbidden: Client Administrators cannot assign or create Super Admin accounts.' });
+    // Role & Creator verification: Only SuperAdmin or Primary Tenant Admin can create users
+    if (req.user.role !== 'SuperAdmin') {
+      const callerCheck = await db.query(`SELECT is_primary_admin, role FROM users WHERE id = $1`, [req.user.id]);
+      if (!callerCheck.rows[0]?.is_primary_admin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Only the Primary Organization Administrator can create employee users.'
+        });
+      }
+
+      // Non-SuperAdmins cannot create any Administrator roles (SuperAdmin, ClientAdmin, CompanyAdmin)
+      if (targetRole === 'SuperAdmin' || targetRole === 'LimitedSuperAdmin' || targetRole === 'ClientAdmin' || targetRole === 'CompanyAdmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Organization administrators can only create sub-users (Employees / Read-Only).'
+        });
+      }
     }
+
+    const isPrimaryAdminUser = (req.user.role === 'SuperAdmin' && (targetRole === 'ClientAdmin' || targetRole === 'CompanyAdmin'));
 
     // If Client Admin is creating a Client Employee, enforce free seat limits
     if (req.user.role !== 'SuperAdmin' && targetRole === 'ClientEmployee' && isUUID(targetTenantId)) {
@@ -270,13 +315,14 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
         [targetTenantId]
       );
       const tenantRes = await db.query(
-        `SELECT free_employee_limit, additional_employee_monthly_fee FROM tenants WHERE id = $1`,
+        `SELECT free_employee_limit, additional_employee_monthly_fee, subscription_plan FROM tenants WHERE id = $1`,
         [targetTenantId]
       );
 
       const currentCount = parseInt(countRes.rows[0]?.employee_count || 0, 10);
-      const freeLimit = parseInt(tenantRes.rows[0]?.free_employee_limit || 2, 10);
-      const additionalFee = parseFloat(tenantRes.rows[0]?.additional_employee_monthly_fee || 1500.00);
+      const tRow = tenantRes.rows[0];
+      const freeLimit = parseInt(tRow?.free_employee_limit || (tRow?.subscription_plan === 'Advance' ? 3 : 2), 10);
+      const additionalFee = parseFloat(tRow?.additional_employee_monthly_fee || 1500.00);
 
       if (currentCount >= freeLimit && !confirm_paid) {
         return res.status(402).json({
@@ -314,22 +360,34 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
     // Client Admin created by Super Admin must change password on first login
     const mustChangePassword = (targetRole === 'ClientAdmin' || targetRole === 'CompanyAdmin');
 
-    const defaultPermissions = permissions || (targetRole === 'ClientEmployee' ? {
-      opportunities: { view: true, add: false, edit: false },
-      bids: { view: true, add: false, edit: false },
-      inventory: { view: true, add: false, edit: false },
-      invoices: { view: true, add: false, edit: false }
-    } : {});
+    // Equal Rights & Granular Permissions Assignment
+    let defaultPermissions = permissions || {};
+    if (equal_rights || req.body.equal_rights) {
+      defaultPermissions = getEqualRightsPermissions();
+    } else if (targetRole === 'ClientEmployee' || targetRole === 'ReadOnly') {
+      // Clean out any restricted admin modules if passed in payload
+      for (const adminMod of RESTRICTED_ADMIN_MODULES) {
+        delete defaultPermissions[adminMod];
+      }
+      if (Object.keys(defaultPermissions).length === 0) {
+        defaultPermissions = {
+          opportunities: { view: true, add: false, edit: false, delete: false },
+          bids: { view: true, add: false, edit: false, delete: false },
+          inventory: { view: true, add: false, edit: false, delete: false },
+          invoices: { view: true, add: false, edit: false, delete: false }
+        };
+      }
+    }
 
     let userRes;
     try {
       userRes = await db.query(
         `INSERT INTO users (
           tenant_id, username, full_name, email, password_hash, role, status,
-          must_change_password, can_see_bidding_prices, permissions, created_by
+          must_change_password, can_see_bidding_prices, permissions, created_by, is_primary_admin
          )
-         VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, $10)
-         RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_by, created_at`,
+         VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, $10, $11)
+         RETURNING id, tenant_id, username, full_name, email, role, status, must_change_password, can_see_bidding_prices, permissions, created_by, is_primary_admin, created_at`,
         [
           targetTenantId,
           cleanUsername,
@@ -340,7 +398,8 @@ router.post('/', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Compan
           mustChangePassword,
           can_see_bidding_prices !== false,
           JSON.stringify(defaultPermissions),
-          req.user.id
+          req.user.id,
+          Boolean(isPrimaryAdminUser)
         ]
       );
     } catch (insertErr) {
@@ -493,14 +552,42 @@ router.put('/:id', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'Comp
   } = req.body;
 
   try {
-    // Security check: If not SuperAdmin, verify the user belongs to the caller's tenant
+    // Self-edit restriction: Client Admin cannot edit themselves in user management
+    if (String(req.user.id) === String(id) && req.user.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Administrators cannot edit their own account or permissions from user management.'
+      });
+    }
+
+    // Security check: If not SuperAdmin, verify caller is primary ClientAdmin created by SuperAdmin and user belongs to caller's tenant
     if (req.user.role !== 'SuperAdmin') {
-      if (role === 'SuperAdmin' || role === 'LimitedSuperAdmin') {
-        return res.status(403).json({ success: false, message: 'Forbidden: Client Administrators cannot promote users to Super Admin.' });
+      if (role === 'SuperAdmin' || role === 'LimitedSuperAdmin' || role === 'ClientAdmin' || role === 'CompanyAdmin') {
+        return res.status(403).json({ success: false, message: 'Forbidden: Organization administrators cannot promote users to Administrator roles.' });
       }
-      const verifyRes = await db.query(`SELECT tenant_id FROM users WHERE id = $1`, [id]);
+
+      const callerCheck = await db.query(
+        `SELECT is_primary_admin, role FROM users WHERE id = $1`,
+        [req.user.id]
+      );
+      if (!callerCheck.rows[0]?.is_primary_admin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Only the Primary Organization Administrator has rights to edit other users.'
+        });
+      }
+
+      const verifyRes = await db.query(`SELECT is_primary_admin, tenant_id FROM users WHERE id = $1`, [id]);
       if (verifyRes.rows.length === 0 || verifyRes.rows[0].tenant_id !== req.user.tenantId) {
         return res.status(403).json({ success: false, message: 'Unauthorized to modify this user.' });
+      }
+
+      // The Primary Organization Administrator created by Super Admin cannot be edited by any user in the tenant!
+      if (verifyRes.rows[0].is_primary_admin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Security Policy: The Primary Organization Administrator created by Super Admin cannot be edited.'
+        });
       }
     }
 
@@ -598,8 +685,31 @@ router.post('/:id/reset-password', authenticate, requireRoles('SuperAdmin', 'Cli
   }
 
   try {
-    // Security check: If not SuperAdmin, verify the user belongs to the caller's tenant
+    if (String(req.user.id) === String(id) && req.user.role !== 'SuperAdmin') {
+      return res.status(403).json({ success: false, message: 'You cannot reset your own password via this endpoint.' });
+    }
+
+    // Security check: If not SuperAdmin, verify caller is primary Client Admin created by Super Admin
     if (req.user.role !== 'SuperAdmin') {
+      const callerCheck = await db.query(
+        `SELECT u.id, u.role, u.tenant_id, c.role as creator_role,
+                (c.role = 'SuperAdmin' OR u.role = 'SuperAdmin' OR u.id = (
+                  SELECT u_first.id FROM users u_first 
+                  WHERE u_first.tenant_id = u.tenant_id AND u_first.role IN ('ClientAdmin', 'CompanyAdmin') 
+                  ORDER BY u_first.created_at ASC LIMIT 1
+                )) as is_created_by_super_admin
+         FROM users u
+         LEFT JOIN users c ON u.created_by = c.id
+         WHERE u.id = $1`,
+        [req.user.id]
+      );
+      if (!callerCheck.rows[0]?.is_created_by_super_admin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Only the primary Client Administrator created by Super Admin has rights to reset user passwords.'
+        });
+      }
+
       const verifyRes = await db.query(`SELECT tenant_id, role FROM users WHERE id = $1`, [id]);
       if (verifyRes.rows.length === 0 || verifyRes.rows[0].tenant_id !== req.user.tenantId) {
         return res.status(403).json({ success: false, message: 'Unauthorized to reset password for this user.' });
@@ -707,7 +817,7 @@ router.delete('/:id', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'C
 
   try {
     // 1. Fetch user to check safety & creator rules
-    const userRes = await db.query(`SELECT id, username, email, role, tenant_id, created_by FROM users WHERE id::text = $1`, [String(id)]);
+    const userRes = await db.query(`SELECT id, username, email, role, tenant_id, created_by, is_primary_admin FROM users WHERE id::text = $1`, [String(id)]);
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
@@ -724,17 +834,25 @@ router.delete('/:id', authenticate, requireRoles('SuperAdmin', 'ClientAdmin', 'C
       return res.status(403).json({ success: false, message: 'System Protection Rule: Super Admin accounts cannot be deleted.' });
     }
 
-    // 4. Downward / Creator check for non-SuperAdmin users
+    // 4. Primary Tenant Admin cannot be deleted
+    if (targetUser.is_primary_admin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Security Policy: The Primary Organization Administrator created by Super Admin cannot be deleted.'
+      });
+    }
+
+    // 5. Downward / Organization check for non-SuperAdmin users
     if (req.user.role !== 'SuperAdmin') {
-      // Must be created by this user
-      if (!targetUser.created_by || String(targetUser.created_by) !== String(req.user.id)) {
+      const callerCheck = await db.query(`SELECT is_primary_admin FROM users WHERE id = $1`, [req.user.id]);
+      if (!callerCheck.rows[0]?.is_primary_admin) {
         return res.status(403).json({
           success: false,
-          message: 'Forbidden: You can only delete users that were created by your account.'
+          message: 'Forbidden: Only the Primary Organization Administrator can delete users.'
         });
       }
 
-      // Tenant isolation
+      // Tenant isolation: Must belong to this organization
       if (String(targetUser.tenant_id) !== String(req.user.tenantId)) {
         return res.status(403).json({ success: false, message: 'Forbidden: You can only delete users within your organization.' });
       }
@@ -824,9 +942,9 @@ router.post('/tenants', authenticate, requireRoles('SuperAdmin'), async (req, re
     }
 
     const userRes = await db.query(
-      `INSERT INTO users (tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions, created_by)
-       VALUES ($1, $2, $3, $4, $5, 'ClientAdmin', 'Active', TRUE, TRUE, '{}'::jsonb, $6)
-       RETURNING id, username, full_name, email, role, status`,
+      `INSERT INTO users (tenant_id, username, full_name, email, password_hash, role, status, must_change_password, can_see_bidding_prices, permissions, created_by, is_primary_admin)
+       VALUES ($1, $2, $3, $4, $5, 'ClientAdmin', 'Active', TRUE, TRUE, '{}'::jsonb, $6, TRUE)
+       RETURNING id, username, full_name, email, role, status, is_primary_admin`,
       [newTenant.id, finalUsername, admin_name || company_name + ' Admin', cleanAdminEmail, passwordHash, req.user.id]
     );
     const adminUser = userRes.rows[0];
@@ -930,15 +1048,20 @@ router.post('/tenants', authenticate, requireRoles('SuperAdmin'), async (req, re
  */
 router.put('/tenants/:id/subscription', authenticate, requireRoles('SuperAdmin'), async (req, res) => {
   const { id } = req.params;
-  const {
-    subscription_plan,
-    free_business_profile_limit,
-    free_employee_limit,
-    max_users,
-    additional_profile_monthly_fee,
-    additional_employee_monthly_fee,
-    status
-  } = req.body;
+  const plan = req.body.subscription_plan || req.body.plan_type;
+  const freeCo = req.body.free_business_profile_limit !== undefined ? req.body.free_business_profile_limit : req.body.free_companies_limit;
+  const freeEmp = req.body.free_employee_limit !== undefined ? req.body.free_employee_limit : req.body.free_users_limit;
+  const maxUsr = req.body.max_users !== undefined ? req.body.max_users : (freeEmp ? Number(freeEmp) + 10 : null);
+  const extraCoFee = req.body.additional_profile_monthly_fee !== undefined ? req.body.additional_profile_monthly_fee : req.body.custom_extra_company_price;
+  const extraEmpFee = req.body.additional_employee_monthly_fee !== undefined ? req.body.additional_employee_monthly_fee : req.body.custom_extra_seat_price;
+  const trialPeriod = req.body.trial_period;
+  const trialEnd = req.body.trial_ends_at || req.body.trial_end_date;
+  const status = req.body.status;
+  const tenderLimit = req.body.tender_limit !== undefined ? req.body.tender_limit : (req.body.trial_tender_limit !== undefined ? req.body.trial_tender_limit : null);
+  const bidSecLimit = req.body.bid_security_limit !== undefined ? req.body.bid_security_limit : (req.body.trial_bid_security_limit !== undefined ? req.body.trial_bid_security_limit : null);
+  const activeMods = req.body.active_modules;
+  const cycle = req.body.billing_cycle;
+  const basePrice = req.body.custom_base_price;
 
   try {
     const updateRes = await db.query(
@@ -949,18 +1072,32 @@ router.put('/tenants/:id/subscription', authenticate, requireRoles('SuperAdmin')
            max_users = COALESCE($4, max_users),
            additional_profile_monthly_fee = COALESCE($5, additional_profile_monthly_fee),
            additional_employee_monthly_fee = COALESCE($6, additional_employee_monthly_fee),
-           status = COALESCE($7, status),
+           trial_period = COALESCE($7, trial_period),
+           trial_ends_at = COALESCE($8, trial_ends_at),
+           status = COALESCE($9, status),
+           tender_limit = COALESCE($10, tender_limit),
+           bid_security_limit = COALESCE($11, bid_security_limit),
+           active_modules = COALESCE($12, active_modules),
+           billing_cycle = COALESCE($13, billing_cycle),
+           custom_base_price = COALESCE($14, custom_base_price),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $8
+       WHERE id = $15
        RETURNING *`,
       [
-        subscription_plan,
-        free_business_profile_limit,
-        free_employee_limit,
-        max_users,
-        additional_profile_monthly_fee,
-        additional_employee_monthly_fee,
+        plan,
+        freeCo !== undefined && freeCo !== null ? Number(freeCo) : null,
+        freeEmp !== undefined && freeEmp !== null ? Number(freeEmp) : null,
+        maxUsr !== undefined && maxUsr !== null ? Number(maxUsr) : null,
+        extraCoFee !== undefined && extraCoFee !== null ? Number(extraCoFee) : null,
+        extraEmpFee !== undefined && extraEmpFee !== null ? Number(extraEmpFee) : null,
+        trialPeriod,
+        trialEnd,
         status,
+        tenderLimit ? String(tenderLimit) : null,
+        bidSecLimit ? String(bidSecLimit) : null,
+        activeMods ? JSON.stringify(activeMods) : null,
+        cycle,
+        basePrice !== undefined && basePrice !== null ? Number(basePrice) : null,
         id
       ]
     );
@@ -1069,6 +1206,124 @@ router.post('/tenant/verify-addon-payment', authenticate, requireRoles('SuperAdm
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * @route   DELETE /api/users/tenants/:id
+ * @desc    Super Admin permanently deletes an entire organization and all child data
+ * @access  Private (SuperAdmin only)
+ */
+router.delete('/tenants/:id', authenticate, requireRoles('SuperAdmin'), async (req, res) => {
+  const { id } = req.params;
+  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
+
+  if (!isUuid(id)) {
+    // If it is a legacy or local mock identifier (e.g. t-123456789), acknowledge removal so client cleans up
+    if (String(id).startsWith('t-') || String(id).startsWith('mock-')) {
+      return res.json({ success: true, message: 'Local organization record removed.' });
+    }
+    return res.status(400).json({ success: false, message: 'Valid Tenant UUID is required.' });
+  }
+
+  // Safety Guard 1: Protect master system tenant
+  if (id === 'a0000000-0000-0000-0000-000000000001') {
+    return res.status(403).json({ success: false, message: 'The primary system master organization cannot be deleted.' });
+  }
+
+  // Safety Guard 2: Super Admin cannot delete their own active tenant
+  if (req.user.tenantId && req.user.tenantId === id) {
+    return res.status(403).json({ success: false, message: 'You cannot delete your own active organization.' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Verify tenant exists
+    const tCheck = await client.query(`SELECT id, company_name FROM tenants WHERE id = $1`, [id]);
+    if (tCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.json({ success: true, message: 'Organization already deleted or removed.' });
+    }
+    const orgName = tCheck.rows[0].company_name;
+
+    // 2. Cascade delete all child data in reverse dependency order across all 38 related tables
+
+    // A. Audit logs & Subscription payments
+    await client.query(`DELETE FROM audit_logs WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM tenant_subscription_payments WHERE tenant_id = $1`, [id]);
+
+    // B. FBR Submissions, Invoices, Payments, Delivery Challans & Inspections
+    await client.query(`DELETE FROM fbr_submissions WHERE invoice_id IN (SELECT id FROM invoices WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM payments WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM delivery_challan_items WHERE delivery_challan_id IN (SELECT id FROM delivery_challans WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM grn_inspections WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM invoices WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM delivery_challans WHERE tenant_id = $1`, [id]);
+
+    // C. Procurements, Purchase Orders, Contracts & Performance Guarantees
+    await client.query(`DELETE FROM purchase_order_items WHERE purchase_order_id IN (SELECT id FROM purchase_orders WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM procurements WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM purchase_orders WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM performance_guarantees WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM contracts WHERE tenant_id = $1`, [id]);
+
+    // D. Awards & Letters
+    await client.query(`DELETE FROM award_items WHERE award_letter_id IN (SELECT id FROM award_letters WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM award_letters WHERE tenant_id = $1`, [id]);
+
+    // E. Grievances, Supplier Quotations, Bid Evaluations, Submissions, Items & Bids
+    await client.query(`DELETE FROM grievance_cases WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM supplier_quotations WHERE bid_id IN (SELECT id FROM bids WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM bid_evaluations WHERE bid_id IN (SELECT id FROM bids WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM bid_submissions WHERE bid_id IN (SELECT id FROM bids WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM bid_items WHERE bid_id IN (SELECT id FROM bids WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM bid_securities WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM bids WHERE tenant_id = $1`, [id]);
+
+    // F. Opportunities, Requirements, Tender Expenses & Items
+    await client.query(`DELETE FROM tender_expenses WHERE opportunity_id IN (SELECT id FROM opportunities WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM general_expenses WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM opportunity_requirements WHERE opportunity_id IN (SELECT id FROM opportunities WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM tender_items WHERE opportunity_id IN (SELECT id FROM opportunities WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM stock_reservations WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM opportunities WHERE tenant_id = $1`, [id]);
+
+    // G. Warehouses, Stock & Logistics
+    await client.query(`DELETE FROM warehouse_stock WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM inventory_transactions WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM warehouses WHERE tenant_id = $1`, [id]);
+
+    // H. Masters: Products, Customers, Suppliers
+    await client.query(`DELETE FROM products_services WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM customers WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM suppliers WHERE tenant_id = $1`, [id]);
+
+    // I. FBR Settings, User Business Access, Business Profiles & Users
+    await client.query(`DELETE FROM fbr_settings WHERE business_profile_id IN (SELECT id FROM business_profiles WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM user_business_access WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1) OR business_profile_id IN (SELECT id FROM business_profiles WHERE tenant_id = $1)`, [id]);
+    await client.query(`DELETE FROM business_profiles WHERE tenant_id = $1`, [id]);
+    await client.query(`DELETE FROM users WHERE tenant_id = $1`, [id]);
+
+    // J. Final: Delete Tenant Record
+    await client.query(`DELETE FROM tenants WHERE id = $1`, [id]);
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Organization "${orgName}" and all associated child data have been permanently deleted.`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[Delete Tenant Cascade Error]:', err);
+    res.status(500).json({
+      success: false,
+      message: 'There is an error please contact to your administrator.'
+    });
+  } finally {
+    client.release();
   }
 });
 

@@ -14,7 +14,7 @@ Target Database: **`mashrueDB`** (PostgreSQL 16 / 18)
    * Provisions ONLY the primary Super Admin user: `naeem4it` (`Password123!`).
    * No dummy tenants, fake tenders, or sample invoices.
 3. **[`02_seed_data.sql`](file:///d:/mashrue/CodeBase/database/02_seed_data.sql)** *(Optional Demo Data)*:
-   * Seeds demo tenant (`Alpha Group Pakistan`), business profiles, sample tenders, cost sheets, and invoices.
+   * Seeds demo tenant (`Mashrue Internal`), business profiles, sample tenders, cost sheets, and invoices.
 4. **[`setup_database.bat`](file:///d:/mashrue/CodeBase/database/setup_database.bat)**:
    * Automated 1-click batch runner with interactive choice (Clean SuperAdmin or Full Demo).
 
@@ -47,7 +47,7 @@ Simply double-click **`setup_database.bat`** in `d:\mashrue\CodeBase\database`.
 
 | Category | Table Name | Key Purpose |
 | :--- | :--- | :--- |
-| **Multi-Tenant** | `tenants` | Customer tenant account isolation (`Alpha Group PK`) |
+| **Multi-Tenant** | `tenants` | Customer tenant account isolation (`Mashrue Internal`) |
 | **Business Profiles** | `business_profiles` | Multiple sub-entities under one user (`ABC Pvt Ltd`, `XYZ`, `Company 3`) |
 | **User Access** | `users`, `user_business_access` | RBAC roles & user-to-business permissions |
 | **Stakeholders** | `customers`, `suppliers` | Customer NTN/STRN & supplier rating registry |

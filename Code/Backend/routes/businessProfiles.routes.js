@@ -62,7 +62,7 @@ router.get('/', optionalAuth, async (req, res) => {
     const result = await db.query(queryText, params);
     
     const count = result.rows.length;
-    const freeLimit = result.rows[0]?.free_business_profile_limit || 2;
+    const freeLimit = parseInt(result.rows[0]?.free_business_profile_limit || (result.rows[0]?.subscription_plan === 'Advance' ? 3 : 2), 10);
     const additionalFee = result.rows[0]?.additional_profile_monthly_fee || 4500.00;
 
     res.json({
@@ -138,7 +138,7 @@ router.post('/', authenticate, async (req, res) => {
     // Query allowed company limits dynamically from database
     const tenantRes = await db.query(`SELECT * FROM tenants WHERE id = $1`, [resolvedTenantId]);
     const tenant = tenantRes.rows[0];
-    const allowedLimit = parseInt(tenant?.free_business_profile_limit || 2, 10);
+    const allowedLimit = parseInt(tenant?.free_business_profile_limit || (tenant?.subscription_plan === 'Advance' ? 3 : 2), 10);
     const fee = parseFloat(tenant?.additional_profile_monthly_fee || 4500.00);
 
     // Count existing profiles for this tenant
@@ -268,13 +268,17 @@ router.post('/', authenticate, async (req, res) => {
       }
     }
 
-    // If user is ClientAdmin, ensure they have access to this new business profile
-    if (isUuid(req.user?.id) && isUuid(createdProfile?.id)) {
+    // Ensure creator and all ClientAdmins in this organization have access to this new business profile
+    if (isUuid(createdProfile?.id) && isUuid(resolvedTenantId)) {
       try {
         await db.query(
           `INSERT INTO user_business_access (user_id, business_profile_id)
-           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [req.user.id, createdProfile.id]
+           SELECT u.id, $1 
+           FROM users u 
+           WHERE u.tenant_id::text = $2::text 
+             AND (u.role IN ('ClientAdmin', 'CompanyAdmin') OR u.id::text = $3::text)
+           ON CONFLICT DO NOTHING`,
+          [createdProfile.id, resolvedTenantId, req.user?.id || '00000000-0000-0000-0000-000000000000']
         );
       } catch (e) {}
     }

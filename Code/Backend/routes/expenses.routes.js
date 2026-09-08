@@ -1,7 +1,8 @@
+const { requirePermission, resolveTenantId, sanitizePrices, requireRoles } = require('../middleware/rbac.middleware');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
-const { optionalAuth } = require('../middleware/auth.middleware');
+const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
 // Standard Company Expense Categories (13 Categories)
 const EXPENSE_CATEGORIES = [
@@ -31,7 +32,7 @@ const EXPENSE_CATEGORIES = [
 })();
 
 // GET all expenses
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('expenses', 'view'), async (req, res) => {
   const { opportunity_id, contract_id, category, business_profile_id, expense_type } = req.query;
 
   try {
@@ -120,7 +121,7 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // POST record new Expense (General / Tender / Quotation / Contract)
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', authenticate, requirePermission('expenses', 'add'), async (req, res) => {
   const {
     business_profile_id,
     expense_type,
@@ -194,7 +195,7 @@ router.post('/', optionalAuth, async (req, res) => {
 });
 
 // PUT update Expense details
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (req, res) => {
   const { expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, remarks } = req.body;
   try {
     const result = await db.query(

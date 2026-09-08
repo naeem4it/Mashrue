@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
-const { requirePermission, sanitizePrices } = require('../middleware/rbac.middleware');
+const { requirePermission, resolveTenantId, sanitizePrices } = require('../middleware/rbac.middleware');
 
 // GET all opportunities (Tenders and Direct Sales) - Tenant Isolated & Price Protected
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, requirePermission('opportunities', 'view'), async (req, res) => {
   const { business_profile_id, status, tender_source, tender_type } = req.query;
 
   try {
@@ -83,7 +83,7 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // GET single opportunity by ID with items, requirements, and linked bid security
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', authenticate, requirePermission('opportunities', 'view'), async (req, res) => {
   const userRole = req.user?.role || req.headers['x-user-role'] || 'ClientAdmin';
 
   try {
@@ -162,7 +162,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 });
 
 // POST create new opportunity / tender / direct sales quotation
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', authenticate, requirePermission('opportunities', 'add'), async (req, res) => {
   const {
     business_profile_id,
     opportunity_number,
@@ -199,6 +199,42 @@ router.post('/', optionalAuth, async (req, res) => {
     const oppNumber = opportunity_number || (tender_source === 'DIRECT SALES' ? `QTN-${Date.now().toString().slice(-6)}` : `TND-${Date.now().toString().slice(-6)}`);
     const nameStr = tender_name || title;
     const titleStr = title || tender_name;
+
+    console.log('[OPPORTUNITY CREATE REQUEST]:', {
+      user: req.user?.email || 'unauthenticated',
+      tenantId,
+      opportunity_number: oppNumber,
+      tender_name: nameStr,
+      closing_date
+    });
+    // Enforce dynamic tender quota leverage according to subscription
+    if (req.user?.role !== 'SuperAdmin') {
+      try {
+        const tenantRow = await db.query(`SELECT subscription_plan, tender_limit, status FROM tenants WHERE id = $1`, [tenantId]);
+        if (tenantRow.rows.length > 0) {
+          const tnt = tenantRow.rows[0];
+          if (tnt.status === 'Suspended') {
+            return res.status(403).json({ success: false, message: 'Your organization workspace is suspended due to pending subscription payment.' });
+          }
+          const tLimit = tnt.tender_limit;
+          const isUnlimited = (tLimit === 'unlimited' || tLimit === -1 || tLimit === null || tLimit === 'Unlimited' || tnt.subscription_plan === 'Advance' || tnt.subscription_plan === 'Enterprise');
+          if (!isUnlimited) {
+            const maxAllowed = parseInt(tLimit, 10) || 5;
+            const countRes = await db.query(`SELECT COUNT(*) FROM opportunities WHERE tenant_id = $1`, [tenantId]);
+            const currentCount = parseInt(countRes.rows[0]?.count || 0, 10);
+            if (currentCount >= maxAllowed) {
+              return res.status(402).json({
+                success: false,
+                quotaExceeded: true,
+                message: `Tender Quota Reached: Your organization subscription package allows ${maxAllowed} commercial tenders (${currentCount} created). Please upgrade your subscription plan or contact administrator.`
+              });
+            }
+          }
+        }
+      } catch (quotaErr) {
+        console.warn('Tender quota check warning:', quotaErr.message);
+      }
+    }
 
     // Strict duplicate check
     const dupCheck = await db.query(
@@ -315,12 +351,13 @@ router.post('/', optionalAuth, async (req, res) => {
       message: 'Tender/Opportunity registered successfully. Proceed to Bid Security & Selection.'
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[OPPORTUNITY CREATE ERROR]:', err);
+    res.status(500).json({ success: false, error: err.message, message: `Database error saving tender: ${err.message}` });
   }
 });
 
 // POST Tender Selection Decision (Select / Reject)
-router.post('/:id/select', async (req, res) => {
+router.post('/:id/select', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
   const { selection_status, selection_reason, remarks } = req.body; // 'Selected' or 'Rejected'
 
   try {
@@ -350,7 +387,7 @@ router.post('/:id/select', async (req, res) => {
 });
 
 // POST Add or update Tender Items
-router.post('/:id/items', async (req, res) => {
+router.post('/:id/items', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
   const { product_service_id, item_name, item_description, quantity, unit, estimated_unit_price } = req.body;
 
   try {
@@ -531,7 +568,8 @@ router.put('/:id', optionalAuth, async (req, res) => {
       message: 'Tender record and scope items updated successfully'
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[OPPORTUNITY UPDATE ERROR]:', err);
+    res.status(500).json({ success: false, error: err.message, message: `Database error updating tender: ${err.message}` });
   }
 });
 
@@ -557,7 +595,8 @@ router.delete('/:id', optionalAuth, async (req, res) => {
     await db.query(queryText, params);
     res.json({ success: true, message: 'Tender record deleted successfully.' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[OPPORTUNITY DELETE ERROR]:', err);
+    res.status(500).json({ success: false, error: err.message, message: `Database error deleting tender: ${err.message}` });
   }
 });
 
