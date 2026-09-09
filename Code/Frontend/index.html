@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/main.css?v=14.1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body>
 
@@ -380,7 +381,7 @@
             <div class="form-group">
               <label class="form-label">Customer / Department *</label>
               <div class="input-with-action">
-                <select class="form-select" id="tender-customer" required></select>
+                <select class="form-select" id="tender-customer" required onchange="handleTenderCustomerChange(this.value)"></select>
                 <button type="button" class="btn-quick-add-icon" onclick="openQuickAddModal('customer', 'tender-customer')" title="Quick Add New Customer">+</button>
               </div>
             </div>
@@ -415,13 +416,14 @@
               <table class="data-table" style="font-size:0.82rem; margin:0;" id="tender-items-table">
                 <thead>
                   <tr style="background:#f1f5f9;">
-                    <th style="min-width: 140px;">Item / Catalog SKU</th>
-                    <th style="min-width: 150px;">Description *</th>
+                    <th style="min-width: 135px;">Item / Catalog SKU</th>
+                    <th style="min-width: 140px;">Description *</th>
                     <th style="width: 95px;">Size</th>
-                    <th style="width: 75px;">Qty *</th>
-                    <th style="width: 85px;">Unit</th>
-                    <th style="width: 110px;">Unit Price (<span class="currency-label">PKR</span>)</th>
-                    <th style="width: 110px;">Total (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 105px;">Variant</th>
+                    <th style="width: 70px;">Qty *</th>
+                    <th style="width: 80px;">Unit</th>
+                    <th style="width: 105px;">Unit Price (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 105px;">Total (<span class="currency-label">PKR</span>)</th>
                     <th style="width: 36px; text-align:center;">Action</th>
                   </tr>
                 </thead>
@@ -482,13 +484,13 @@
             <div class="form-group">
               <label class="form-label">Submission Deadline (DD/MM/YYYY) *</label>
               <div class="custom-dt-picker-wrapper" style="position:relative;">
-                <input type="text" class="form-input" id="tender-closing-date" required placeholder="DD/MM/YYYY hh:mm A" autocomplete="off">
+                <input type="text" class="form-input date-picker" id="tender-closing-date" required placeholder="DD/MM/YYYY" autocomplete="off">
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">Tender Opening Date</label>
+              <label class="form-label">Tender Opening Date (DD/MM/YYYY)</label>
               <div class="custom-dt-picker-wrapper" style="position:relative;">
-                <input type="text" class="form-input" id="tender-opening-date" placeholder="DD/MM/YYYY hh:mm A" autocomplete="off">
+                <input type="text" class="form-input date-picker" id="tender-opening-date" placeholder="DD/MM/YYYY" autocomplete="off">
               </div>
             </div>
           </div>
@@ -574,9 +576,40 @@
         <button class="modal-close-btn" onclick="closeModal('modal-add-bid-security')">&times;</button>
       </div>
       <div class="modal-body">
-        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); padding:10px 14px; margin-bottom:16px; font-size:0.82rem; color:#1e40af;">
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#1e40af;">
           ℹ️ <strong>Workflow Requirement:</strong> Without an attached Bid Security instrument, this Tender cannot be marked as <em>Ready to Submit</em> or completed.
         </div>
+
+        <!-- Pay Order (PO) / CDR Auto-Fill Upload Dropzone -->
+        <div style="background: #f8fafc; border: 2px dashed #93c5fd; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px; text-align: center; position: relative;" id="sec-upload-dropzone" ondragover="handleInstrumentDragOver(event)" ondragleave="handleInstrumentDragLeave(event)" ondrop="handleInstrumentDrop(event)">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+            <div style="font-size: 1.6rem; line-height: 1;">📷</div>
+            <div style="font-size: 0.86rem; font-weight: 700; color: #1e40af;">
+              Scan / Upload Pay Order (PO) or CDR Instrument
+            </div>
+            <div style="font-size: 0.76rem; color: #64748b; max-width: 480px;">
+              Drag & drop instrument photo or scan here, or <button type="button" class="btn-link" style="color:#2563eb; font-weight:700; background:none; border:none; padding:0; cursor:pointer; text-decoration:underline;" onclick="document.getElementById('sec-instrument-file').click()">browse file</button> (JPG, PNG, PDF)
+            </div>
+            <input type="file" id="sec-instrument-file" accept="image/*,.pdf" style="display:none;" onchange="handleInstrumentFileSelect(event)">
+            
+            <!-- Scan Status & Progress Indicator -->
+            <div id="sec-scan-status" style="display:none; margin-top:8px; font-size:0.8rem; font-weight:600; color:#2563eb; background:#eff6ff; padding:5px 12px; border-radius:var(--radius-sm); border:1px solid #bfdbfe;">
+              <span class="spinner" style="display:inline-block; width:12px; height:12px; border:2px solid #93c5fd; border-top-color:#2563eb; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:6px;"></span>
+              <span id="sec-scan-status-text">Scanning & Parsing Instrument with OCR...</span>
+            </div>
+
+            <!-- Preview Thumbnail and Success Banner -->
+            <div id="sec-preview-container" style="display:none; margin-top:8px; align-items:center; gap:10px; background:#f0fdf4; border:1px solid #bbf7d0; padding:6px 12px; border-radius:var(--radius-sm); width:100%; max-width:500px;">
+              <img id="sec-preview-img" src="" alt="PO/CDR" style="max-height:42px; max-width:65px; border-radius:4px; border:1px solid #cbd5e1; object-fit:cover;">
+              <div style="text-align:left; font-size:0.76rem; flex:1;">
+                <strong id="sec-preview-filename" style="color:#166534; display:block;">instrument.jpg</strong>
+                <span id="sec-preview-match-tag" style="color:#15803d;">✨ Instrument details auto-extracted & populated!</span>
+              </div>
+              <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="clearInstrumentFile()">✕ Clear</button>
+            </div>
+          </div>
+        </div>
+
         <form id="form-add-bid-security" onsubmit="event.preventDefault(); submitBidSecurityForm();">
           <input type="hidden" id="sec-opportunity-id">
           
@@ -633,8 +666,8 @@
               <input type="text" class="form-input" id="sec-amount" required placeholder="e.g. 290,000" oninput="formatCurrencyInput(this)">
             </div>
             <div class="form-group">
-              <label class="form-label">6. Expiry Date (DD/MM/YYYY) * (Mandatory)</label>
-              <input type="text" class="form-input" id="sec-expiry-date" required placeholder="DD/MM/YYYY" autocomplete="off">
+              <label class="form-label">6. Bid Security Date (DD/MM/YYYY) * (Mandatory)</label>
+              <input type="text" class="form-input date-picker" id="sec-expiry-date" required placeholder="DD/MM/YYYY" autocomplete="off">
             </div>
           </div>
 
@@ -1051,6 +1084,53 @@
             <div class="form-group">
               <label class="form-label">Product Specification / Size / Variant</label>
               <input type="text" class="form-input" id="prod-spec" placeholder="e.g. 5cc, A4, Size 7.5, 100ml, 20 MVA">
+            </div>
+          </div>
+
+          <!-- Product Sizes & Variants Multi-Option Definition Panel -->
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+              <div>
+                <strong style="font-size:0.86rem; color:#1e293b; display:inline-flex; align-items:center; gap:6px;">
+                  🏷️ Product Sizes & Variants Structure (Multi-Option Support)
+                </strong>
+                <span style="font-size:0.75rem; color:#64748b; display:block;">Define multiple sizes and variants within this single master product entry</span>
+              </div>
+              <!-- Quick Medical & General Presets Strip -->
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-size:0.74rem; font-weight:700; color:#475569;">⚡ Quick Presets:</span>
+                <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:0.72rem; background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700;" onclick="applyProductPreset('syringe')" title="Load Medical Syringe Sizes & Variants">💉 Syringes</button>
+                <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:0.72rem; background:#f0fdf4; color:#15803d; border-color:#bbf7d0; font-weight:700;" onclick="applyProductPreset('cannula')" title="Load IV Cannula Gauges & Types">🩺 Cannulas</button>
+                <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:0.72rem; background:#fdf4ff; color:#86198f; border-color:#f5d0fe; font-weight:700;" onclick="applyProductPreset('gloves')" title="Load Surgical Gloves Sizes & Types">🧤 Gloves</button>
+                <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:0.72rem; background:#fefce8; color:#854d0e; border-color:#fef08a; font-weight:700;" onclick="applyProductPreset('gauze')" title="Load Cotton Gauze & Bandage Sizes">🩹 Gauze / Cotton</button>
+                <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:0.72rem; background:#f1f5f9; color:#334155; border-color:#cbd5e1; font-weight:700;" onclick="applyProductPreset('shirt')" title="Load Shirt & Apparel Sizes (XS to 3XL)">👔 Shirts & Apparel (S-3XL)</button>
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom: 0;">
+              <!-- Defined Sizes -->
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:0.78rem; font-weight:700; margin-bottom:4px;">Available Sizes (e.g. 1ml, 5ml, 10ml, or S, M, L)</label>
+                <div class="input-with-action" style="margin-bottom:6px;">
+                  <input type="text" class="form-input" id="prod-size-input" placeholder="Type size & press enter or click +" onkeydown="if(event.key==='Enter'){event.preventDefault();addProductSizeTag();}">
+                  <button type="button" class="primary-btn" style="padding:3px 10px; font-size:0.78rem;" onclick="addProductSizeTag()">+ Add</button>
+                </div>
+                <div id="prod-sizes-tags-container" style="display:flex; flex-wrap:wrap; gap:4px; min-height:28px; background:white; border:1px solid #e2e8f0; border-radius:var(--radius-sm); padding:4px 6px;">
+                  <!-- Dynamic size badges rendered here -->
+                </div>
+              </div>
+
+              <!-- Defined Variants -->
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:0.78rem; font-weight:700; margin-bottom:4px;">Available Variants (e.g. Luer Lock, Auto-Disable, White, Blue)</label>
+                <div class="input-with-action" style="margin-bottom:6px;">
+                  <input type="text" class="form-input" id="prod-variant-input" placeholder="Type variant & press enter or click +" onkeydown="if(event.key==='Enter'){event.preventDefault();addProductVariantTag();}">
+                  <button type="button" class="primary-btn" style="padding:3px 10px; font-size:0.78rem;" onclick="addProductVariantTag()">+ Add</button>
+                </div>
+                <div id="prod-variants-tags-container" style="display:flex; flex-wrap:wrap; gap:4px; min-height:28px; background:white; border:1px solid #e2e8f0; border-radius:var(--radius-sm); padding:4px 6px;">
+                  <!-- Dynamic variant badges rendered here -->
+                </div>
+              </div>
             </div>
           </div>
 
@@ -3585,6 +3665,10 @@
 
   <!-- Enterprise Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
+
+  <!-- Third-party Interactive Calendar & In-Browser OCR Engines -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- JavaScript Modules -->
   <script src="js/api.js?v=14.1"></script>

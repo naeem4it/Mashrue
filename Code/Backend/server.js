@@ -201,6 +201,7 @@ app.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_type VARCHAR(100) DEFAULT 'Government Department';
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS org_type VARCHAR(100) DEFAULT 'Government Department';
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS workflow_gates JSONB DEFAULT '{"requires_bid_security":true,"requires_performance_guarantee":true,"requires_stamp_duty":true,"requires_dtl_inspection":false,"requires_fbr_e_invoice":true,"requires_diary_tracking":true}'::jsonb;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS workflow_gates JSONB DEFAULT '{"requires_bid_security":true,"requires_performance_guarantee":true,"requires_stamp_duty":true,"requires_dtl_inspection":false,"requires_fbr_e_invoice":true,"requires_diary_tracking":true}'::jsonb;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
 
       ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS abbreviation VARCHAR(50);

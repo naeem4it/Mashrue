@@ -188,28 +188,30 @@ router.post('/', authenticate, requirePermission('bid_securities', 'add'), async
     // In Pakistani banking, CDRs are valid for 90 or 120 days. Ensure not-null constraint is satisfied.
     const cleanExpiryDate = parseSafeDateInput(expiry_date) || new Date(cleanIssueDate.getTime() + 90 * 86400000);
 
+    let secCols = [
+      'tenant_id', 'business_profile_id', 'opportunity_id', 'bid_id',
+      'account_title', 'beneficiary', 'instrument_type', 'instrument_number',
+      'amount', 'issue_date', 'expiry_date', 'bank_name', 'bank_branch',
+      'status', 'comments'
+    ];
+    let secVals = [
+      tenantId, targetBizProfileId, cleanOppId, bid_id || null,
+      account_title, beneficiary, instrument_type, instrument_number,
+      parseFloat(amount), cleanIssueDate, cleanExpiryDate, bank_name || null,
+      bank_branch || null, 'Active', comments || null
+    ];
+
+    if (req.body.instrument_image_url) {
+      secCols.push('instrument_image_url');
+      secVals.push(req.body.instrument_image_url);
+    }
+
+    const placeholders = secVals.map((_, i) => `$${i + 1}`).join(', ');
     const result = await db.query(
-      `INSERT INTO bid_securities 
-       (tenant_id, business_profile_id, opportunity_id, bid_id, account_title, beneficiary, instrument_type, instrument_number, amount, issue_date, expiry_date, bank_name, bank_branch, status, comments)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `INSERT INTO bid_securities (${secCols.join(', ')})
+       VALUES (${placeholders})
        RETURNING *`,
-      [
-        tenantId,
-        targetBizProfileId,
-        cleanOppId,
-        bid_id || null,
-        account_title,
-        beneficiary,
-        instrument_type,
-        instrument_number,
-        parseFloat(amount),
-        cleanIssueDate,
-        cleanExpiryDate,
-        bank_name || null,
-        bank_branch || null,
-        'Active',
-        comments || null
-      ]
+      secVals
     );
 
     // Also update tender status to 'Ready to submit' if tender was in New / Selected / Under Review / Bid Preparation
@@ -398,4 +400,264 @@ router.get('/:id/recovery-letter', authenticate, requirePermission('bid_securiti
   }
 });
 
+// ============================================================================
+// 10. INTELLIGENT INSTRUMENT PARSER (Pay Order & CDR Auto-Fill Engine)
+// Specialized for Pakistani Banking Instruments (HBL, MCB, ABL, UBL, Meezan, BOP, NBP, etc.)
+// ============================================================================
+
+function parsePakistaniBankingInstrument(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return {
+      instrument_type: 'PO',
+      instrument_number: '',
+      bank_name: '',
+      bank_branch: '',
+      amount: '',
+      date: '',
+      expiry_date: '',
+      beneficiary: '',
+      confidence: 0
+    };
+  }
+
+  const text = rawText.replace(/\r\n/g, '\n');
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  let detectedType = 'PO';
+  let detectedNumber = '';
+  let detectedBank = '';
+  let detectedBranch = '';
+  let detectedAmount = '';
+  let detectedDate = '';
+  let detectedBeneficiary = '';
+
+  // 1. Detect Instrument Type across all Pakistani banks
+  if (/\b(CDR|C\.D\.R|CALL\s*DEPOSIT|CALL\s*DEPOSIT\s*RECEIPT)\b/i.test(text)) {
+    detectedType = 'CDR';
+  } else if (/\b(BANK\s*GUARANTEE|GUARANTEE\s*BOND|B\.G\.)\b/i.test(text)) {
+    detectedType = 'BG';
+  } else if (/\b(CASHIER'?S?\s*CHEQUE|PAY\s*ORDER|P\.O\.?\s*NO|DEMAND\s*DRAFT)\b/i.test(text)) {
+    detectedType = 'PO';
+  } else {
+    detectedType = 'PO';
+  }
+
+  // 2. Detect Issuing Bank (Universal across all commercial and Islamic banks in Pakistan)
+  const bankPatterns = [
+    { name: 'Meezan Bank Limited', regex: /\b(MEEZAN\s*BANK|MEEZAN)\b/i },
+    { name: 'United Bank Limited (UBL)', regex: /\b(UNITED\s*BANK|UBL|UBL\s*AMEEN)\b/i },
+    { name: 'Habib Bank Limited (HBL)', regex: /\b(HABIB\s*BANK|HBL)\b/i },
+    { name: 'MCB Bank Limited', regex: /\b(MCB|MUSLIM\s*COMMERCIAL\s*BANK)\b/i },
+    { name: 'Allied Bank Limited (ABL)', regex: /\b(ALLIED\s*BANK|ABL)\b/i },
+    { name: 'National Bank of Pakistan (NBP)', regex: /\b(NATIONAL\s*BANK\s*OF\s*PAKISTAN|NBP)\b/i },
+    { name: 'The Bank of Punjab (BOP)', regex: /\b(BANK\s*OF\s*PUNJAB|BOP)\b/i },
+    { name: 'Bank Alfalah Limited', regex: /\b(BANK\s*ALFALAH|ALFALAH)\b/i },
+    { name: 'Faysal Bank Limited', regex: /\b(FAYSAL\s*BANK)\b/i },
+    { name: 'Askari Bank Limited', regex: /\b(ASKARI\s*BANK)\b/i },
+    { name: 'Standard Chartered Bank', regex: /\b(STANDARD\s*CHARTERED)\b/i },
+    { name: 'Dubai Islamic Bank', regex: /\b(DUBAI\s*ISLAMIC)\b/i },
+    { name: 'Bank Al Habib Limited', regex: /\b(BANK\s*AL\s*HABIB|AL\s*HABIB)\b/i },
+    { name: 'Soneri Bank Limited', regex: /\b(SONERI\s*BANK)\b/i },
+    { name: 'JS Bank Limited', regex: /\b(JS\s*BANK)\b/i },
+    { name: 'Habib Metropolitan Bank', regex: /\b(HABIB\s*METROPOLITAN|HABIBMETRO)\b/i },
+    { name: 'Sindh Bank Limited', regex: /\b(SINDH\s*BANK)\b/i },
+    { name: 'The Bank of Khyber (BOK)', regex: /\b(BANK\s*OF\s*KHYBER|BOK)\b/i },
+    { name: 'Al Baraka Bank', regex: /\b(AL\s*BARAKA)\b/i }
+  ];
+
+  for (const b of bankPatterns) {
+    if (b.regex.test(text)) {
+      detectedBank = b.name;
+      break;
+    }
+  }
+
+  // Detect Branch from issuing branch lines, branch parenthesis, or labeled fields
+  const branchIssuingMatch = text.match(/ISSUING\s*BRANCH\s*[:.-]?\s*([^\n\r]+)/i);
+  const branchParenMatch = text.match(/\(([0-9]{3,5})\)\s*([A-Za-z0-9\s,\.\-]{3,60}(?:BRANCH|LAHORE|KARACHI|ISLAMABAD|RAWALPINDI|PESHAWAR|QUETTA|MULTAN|FAISALABAD))/i);
+  const branchStandardMatch = text.match(/(?:Branch|Br\.?)\s*[:.-]?\s*([A-Za-z0-9\s,\-]{3,50})/i);
+
+  if (branchIssuingMatch && branchIssuingMatch[1]) {
+    detectedBranch = branchIssuingMatch[1].replace(/(?:NOT\s+OVER|DATE|CHEQUE|TEL).*$/i, '').trim();
+  } else if (branchParenMatch) {
+    detectedBranch = `(${branchParenMatch[1]}) ${branchParenMatch[2].trim()}`;
+  } else if (branchStandardMatch && branchStandardMatch[1]) {
+    const rawBr = branchStandardMatch[1].split('\n')[0].replace(/(?:Date|Code|Tel|Ph).*$/i, '').trim();
+    if (rawBr.length > 2) detectedBranch = rawBr;
+  }
+
+  // 3. Detect Instrument Number (e.g. PO.0243.6526558, Cheque No. IB 01520607, CDR # 445566, Ref No 1520607)
+  const poPrefixedMatch = text.match(/\b(PO\.?[0-9]{3,5}\.?[0-9]{5,10})\b/i);
+  const chequeIbMatch = text.match(/CHEQUE\s*NO\.?\s*(?:IB\s*)?([0-9]{6,12})/i);
+  const stationeryMatch = text.match(/(?:STATIONERY|REF)\s*(?:\/REF)?\s*NO\.?\s*[:.-]?\s*([0-9]{6,12})/i);
+  const labeledNoMatch = text.match(/(?:CDR|PO|P\.O\.?|PAY\s*ORDER|INSTRUMENT|CHEQUE|CHQ|RECEIPT)\s*(?:NO\.?|#)?\s*[:.-]?\s*([A-Za-z0-9\.\-\/]{5,22})/i);
+
+  if (poPrefixedMatch) {
+    detectedNumber = poPrefixedMatch[1].trim();
+  } else if (chequeIbMatch) {
+    detectedNumber = chequeIbMatch[1].trim();
+  } else if (labeledNoMatch && /\d/.test(labeledNoMatch[1])) {
+    detectedNumber = labeledNoMatch[1].trim();
+  } else if (stationeryMatch) {
+    detectedNumber = stationeryMatch[1].trim();
+  } else {
+    // Look for MICR sequence "06526558" or standalone 6-9 digit number
+    const micrQuotesMatch = text.match(/["“⑈']\s*([0-9]{6,10})\s*["”⑈']/);
+    if (micrQuotesMatch) {
+      detectedNumber = micrQuotesMatch[1];
+    } else {
+      const numCandidates = text.match(/\b([0-9]{6,10})\b/g);
+      if (numCandidates && numCandidates.length > 0) {
+        detectedNumber = numCandidates[0];
+      }
+    }
+  }
+
+  // 4. Detect Amount (Numeric PKR) with asterisk/bracket bounding support
+  // e.g. NOT OVER RS. ***2,400,000.00***, PKR *270,000.00*, Rs. 1,250,000/=
+  const notOverMatch = text.match(/NOT\s+OVER\s+RS\.?\s*[*=\s]*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{2})?)/i);
+  const pkrAsteriskMatch = text.match(/(?:PKR|RS\.?|AMOUNT)\s*[:.-]?\s*[*=\s]*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{2})?)/i);
+
+  if (pkrAsteriskMatch && pkrAsteriskMatch[1]) {
+    detectedAmount = pkrAsteriskMatch[1].replace(/,/g, '');
+  } else if (notOverMatch && notOverMatch[1]) {
+    detectedAmount = notOverMatch[1].replace(/,/g, '');
+  } else {
+    const commaNums = text.match(/\b([1-9][0-9]{0,2}(?:,[0-9]{2,3})+(?:\.[0-9]{2})?)\b/g);
+    if (commaNums && commaNums.length > 0) {
+      detectedAmount = commaNums[0].replace(/,/g, '');
+    }
+  }
+
+  // 5. Detect Date (Supports both 8-Box and 6-Box separated digits, and standard DD/MM/YYYY)
+  // Format A: 8-digit spaced boxes e.g. "1 0 0 7 2 0 2 6" or "1 0 | 0 7 | 2 0 2 6" -> 10/07/2026
+  const box8Match = text.match(/\b([0-3])\s*([0-9])[\s\|\.\-\/]+([0-1])\s*([0-9])[\s\|\.\-\/]+(2)\s*(0)\s*([2-3])\s*([0-9])\b/);
+  // Format B: 6-digit spaced boxes e.g. "2 0 0 7 2 6" or "2 0 | 0 7 | 2 6" -> 20/07/2026
+  const box6Match = text.match(/\b([0-3])\s*([0-9])[\s\|\.\-\/]+([0-1])\s*([0-9])[\s\|\.\-\/]+([2-3])\s*([0-9])\b/);
+  // Format C: Standard slashed/hyphenated/dotted DD/MM/YYYY
+  const standardDateMatch = text.match(/\b([0-3]?[0-9][\/\-\.][0-1]?[0-9][\/\-\.](?:20)?[2-3][0-9])\b/);
+
+  if (box8Match) {
+    const dd = `${box8Match[1]}${box8Match[2]}`;
+    const mm = `${box8Match[3]}${box8Match[4]}`;
+    const yyyy = `${box8Match[5]}${box8Match[6]}${box8Match[7]}${box8Match[8]}`;
+    detectedDate = `${dd}/${mm}/${yyyy}`;
+  } else if (box6Match) {
+    const dd = `${box6Match[1]}${box6Match[2]}`;
+    const mm = `${box6Match[3]}${box6Match[4]}`;
+    const yyyy = `20${box6Match[5]}${box6Match[6]}`;
+    detectedDate = `${dd}/${mm}/${yyyy}`;
+  } else if (standardDateMatch) {
+    const rawD = standardDateMatch[1].replace(/[\-\.]/g, '/');
+    const parts = rawD.split('/');
+    if (parts.length === 3) {
+      const dd = parts[0].padStart(2, '0');
+      const mm = parts[1].padStart(2, '0');
+      let yyyy = parts[2];
+      if (yyyy.length === 2) yyyy = '20' + yyyy;
+      detectedDate = `${dd}/${mm}/${yyyy}`;
+    }
+  } else {
+    // Format D: Month name format e.g. 15 Aug 2026 or 15-August-2026
+    const monthWordMatch = text.match(/\b([0-3]?[0-9])[\s\-\/]+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s\-\/,]+((?:20)?[2-3][0-9])\b/i);
+    if (monthWordMatch) {
+      const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+      const mIdx = monthNames.indexOf(monthWordMatch[2].toLowerCase().slice(0, 3));
+      if (mIdx !== -1) {
+        const dd = monthWordMatch[1].padStart(2, '0');
+        const mm = String(mIdx + 1).padStart(2, '0');
+        let yyyy = monthWordMatch[3];
+        if (yyyy.length === 2) yyyy = '20' + yyyy;
+        detectedDate = `${dd}/${mm}/${yyyy}`;
+      }
+    }
+  }
+
+  // Standard validity: 6 months (180 days) from issue date in Pakistan
+  let calculatedExpiry = '';
+  if (detectedDate) {
+    const p = detectedDate.split('/');
+    if (p.length === 3) {
+      const dObj = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
+      if (!isNaN(dObj.getTime())) {
+        const expObj = new Date(dObj.getTime() + 180 * 86400000);
+        calculatedExpiry = `${String(expObj.getDate()).padStart(2, '0')}/${String(expObj.getMonth() + 1).padStart(2, '0')}/${expObj.getFullYear()}`;
+      }
+    }
+  }
+
+  // 6. Detect Beneficiary / Payee (handles two-tier printed payee lines common in Pakistani banks)
+  const payToMatch = text.match(/Pay\s+to\s+([\s\S]{4,180}?)(?:or\s+Order|Rupees|PKR|RS\.|\*\*\*|\n\s*\n)/i);
+  const altBeneMatch = text.match(/(?:IN\s+FAVOU?R\s+OF|ACCOUNT\s+OF|FAVOURING|BENEFICIARY|M\/S|MESSRS)\s*[:.-]?\s*([A-Za-z0-9\s,\.\-\(\)\/\&]{4,150})/i);
+
+  if (payToMatch && payToMatch[1]) {
+    let rawBene = payToMatch[1]
+      .replace(/\r?\n/g, ' ')
+      .replace(/[*"“]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Check if the line right before "Pay to" has the first half of the title
+    const beforePayToMatch = text.match(/(?:^|\n)([^\n\r]*\b(?:DIRECTOR|OFFICER|CHAIRMAN|SECRETARY|SUPERINTENDENT|ENGINEER|COMMISSIONER|HOSPITAL|UNIVERSITY|AUTHORITY|DEPARTMENT|MINISTRY|M\/S|LIMITED|PVT|COMPANY|INSPECTOR|MANAGER)[^\n\r]*)\s*\n\s*Pay\s+to/i);
+    if (beforePayToMatch && beforePayToMatch[1]) {
+      const prefixTitle = beforePayToMatch[1].replace(/[*"“]/g, '').trim();
+      if (prefixTitle.length > 3) {
+        rawBene = `${prefixTitle} ${rawBene}`.replace(/\s+/g, ' ');
+      }
+    }
+
+    if (!/^(ORDER|CALL|DEPOSIT|RECEIPT|CASH|BEARER)\b/i.test(rawBene) && rawBene.length > 3) {
+      detectedBeneficiary = rawBene;
+    }
+  } else if (altBeneMatch && altBeneMatch[1]) {
+    let rawBene = altBeneMatch[1].split('\n')[0].replace(/(?:OR\s+ORDER|OR\s+BEARER|RUPEES|RS|PKR|THE\s+SUM).*$/i, '').trim();
+    if (!/^(ORDER|CALL|DEPOSIT|RECEIPT|CASH|BEARER)\b/i.test(rawBene) && rawBene.length > 3) {
+      detectedBeneficiary = rawBene;
+    }
+  }
+
+  let confidenceScore = 0;
+  if (detectedBank) confidenceScore += 25;
+  if (detectedNumber) confidenceScore += 25;
+  if (detectedAmount) confidenceScore += 25;
+  if (detectedDate) confidenceScore += 15;
+  if (detectedBeneficiary) confidenceScore += 10;
+
+  return {
+    instrument_type: detectedType,
+    instrument_number: detectedNumber,
+    bank_name: detectedBank + (detectedBranch ? ` - ${detectedBranch}` : ''),
+    bank_branch: detectedBranch,
+    amount: detectedAmount ? Number(detectedAmount).toLocaleString() : '',
+    raw_amount: detectedAmount ? parseFloat(detectedAmount) : 0,
+    date: detectedDate,
+    expiry_date: calculatedExpiry || detectedDate,
+    beneficiary: detectedBeneficiary,
+    confidence: confidenceScore,
+    raw_text_snippet: text.slice(0, 300)
+  };
+}
+
+router.post('/parse-instrument', authenticate, async (req, res) => {
+  try {
+    const { text, image, filename } = req.body;
+    let ocrText = text || '';
+
+    // If client supplied extracted text from Tesseract
+    const parsedData = parsePakistaniBankingInstrument(ocrText);
+
+    res.json({
+      success: true,
+      data: parsedData,
+      message: parsedData.confidence > 0 
+        ? `Instrument parsed successfully (${parsedData.confidence}% confidence)`
+        : 'Parsing completed with low confidence. Please verify fields.'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.parsePakistaniBankingInstrument = parsePakistaniBankingInstrument;
 module.exports = router;
+

@@ -311,8 +311,8 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
         try {
           await db.query(
             `INSERT INTO tender_items 
-             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size, item_variant)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
               createdOpp.id,
               itm.product_service_id || null,
@@ -322,25 +322,45 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
               itm.unit || 'PCS',
               parseFloat(itm.estimated_unit_price || 0),
               parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
-              itm.item_size || itm.size || null
+              itm.item_size || itm.size || null,
+              itm.item_variant || itm.variant || null
             ]
           );
         } catch (colErr) {
-          await db.query(
-            `INSERT INTO tender_items 
-             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [
-              createdOpp.id,
-              itm.product_service_id || null,
-              itm.item_name || 'Generic Item',
-              (itm.item_size ? `${itm.item_description || ''} (Size: ${itm.item_size})` : itm.item_description) || '',
-              parseFloat(itm.quantity || 1),
-              itm.unit || 'PCS',
-              parseFloat(itm.estimated_unit_price || 0),
-              parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
-            ]
-          );
+          try {
+            await db.query(
+              `INSERT INTO tender_items 
+               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [
+                createdOpp.id,
+                itm.product_service_id || null,
+                itm.item_name || 'Generic Item',
+                itm.item_description || '',
+                parseFloat(itm.quantity || 1),
+                itm.unit || 'PCS',
+                parseFloat(itm.estimated_unit_price || 0),
+                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
+                itm.item_size || itm.size || null
+              ]
+            );
+          } catch (fallbackErr) {
+            await db.query(
+              `INSERT INTO tender_items 
+               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                createdOpp.id,
+                itm.product_service_id || null,
+                itm.item_name || 'Generic Item',
+                (itm.item_size ? `${itm.item_description || ''} (Size: ${itm.item_size})` : itm.item_description) || '',
+                parseFloat(itm.quantity || 1),
+                itm.unit || 'PCS',
+                parseFloat(itm.estimated_unit_price || 0),
+                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
+              ]
+            );
+          }
         }
       }
     }
@@ -497,7 +517,7 @@ router.put('/:id', optionalAuth, async (req, res) => {
       estimated_value !== undefined ? parseFloat(estimated_value) : null,
       status || null,
       description || null,
-      workflow_gates ? JSON.stringify(workflow_gates) : null,
+      workflow_gates ? (typeof workflow_gates === 'object' ? JSON.stringify(workflow_gates) : workflow_gates) : null,
       business_profile_id || null,
       currency || null,
       req.params.id
@@ -525,8 +545,8 @@ router.put('/:id', optionalAuth, async (req, res) => {
           try {
             await db.query(
               `INSERT INTO tender_items 
-               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size, item_variant)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
               [
                 req.params.id,
                 itm.product_service_id || null,
@@ -536,25 +556,45 @@ router.put('/:id', optionalAuth, async (req, res) => {
                 itm.unit || 'PCS',
                 parseFloat(itm.estimated_unit_price || 0),
                 parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
-                itm.item_size || itm.size || null
+                itm.item_size || itm.size || null,
+                itm.item_variant || itm.variant || null
               ]
             );
           } catch (colErr) {
-            await db.query(
-              `INSERT INTO tender_items 
-               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [
-                req.params.id,
-                itm.product_service_id || null,
-                itm.item_name || itm.item_description || 'Scope Item',
-                (itm.item_size ? `${itm.item_description || itm.item_name || ''} (Size: ${itm.item_size})` : (itm.item_description || itm.item_name)) || '',
-                parseFloat(itm.quantity || 1),
-                itm.unit || 'PCS',
-                parseFloat(itm.estimated_unit_price || 0),
-                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
-              ]
-            );
+            try {
+              await db.query(
+                `INSERT INTO tender_items 
+                 (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                  req.params.id,
+                  itm.product_service_id || null,
+                  itm.item_name || itm.item_description || 'Scope Item',
+                  itm.item_description || itm.item_name || '',
+                  parseFloat(itm.quantity || 1),
+                  itm.unit || 'PCS',
+                  parseFloat(itm.estimated_unit_price || 0),
+                  parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
+                  itm.item_size || itm.size || null
+                ]
+              );
+            } catch (fallbackErr) {
+              await db.query(
+                `INSERT INTO tender_items 
+                 (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                  req.params.id,
+                  itm.product_service_id || null,
+                  itm.item_name || itm.item_description || 'Scope Item',
+                  (itm.item_size ? `${itm.item_description || itm.item_name || ''} (Size: ${itm.item_size})` : (itm.item_description || itm.item_name)) || '',
+                  parseFloat(itm.quantity || 1),
+                  itm.unit || 'PCS',
+                  parseFloat(itm.estimated_unit_price || 0),
+                  parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
+                ]
+              );
+            }
           }
         }
       } catch (itemErr) {

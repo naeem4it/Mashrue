@@ -214,6 +214,8 @@ CREATE TABLE IF NOT EXISTS products_services (
     current_stock NUMERIC(14, 4) DEFAULT 0.0000,
     reorder_level NUMERIC(14, 4) DEFAULT 10.0000,
     default_supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
+    sizes JSONB DEFAULT '[]'::jsonb,
+    variants JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -225,6 +227,8 @@ ALTER TABLE products_services ADD COLUMN IF NOT EXISTS cost_price_foreign NUMERI
 ALTER TABLE products_services ADD COLUMN IF NOT EXISTS current_stock NUMERIC(14, 4) DEFAULT 0.0000;
 ALTER TABLE products_services ADD COLUMN IF NOT EXISTS reorder_level NUMERIC(14, 4) DEFAULT 10.0000;
 ALTER TABLE products_services ADD COLUMN IF NOT EXISTS default_supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL;
+ALTER TABLE products_services ADD COLUMN IF NOT EXISTS sizes JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE products_services ADD COLUMN IF NOT EXISTS variants JSONB DEFAULT '[]'::jsonb;
 
 -- ============================================================================
 -- 4. TENDERS, DIRECT SALES & SELECTION WORKFLOW
@@ -286,8 +290,12 @@ CREATE TABLE IF NOT EXISTS tender_items (
     estimated_unit_price NUMERIC(18, 4) DEFAULT 0.0000,
     estimated_total_price NUMERIC(18, 4) DEFAULT 0.0000,
     item_size VARCHAR(255),
+    item_variant VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS item_size VARCHAR(255);
+ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS item_variant VARCHAR(255);
 
 CREATE TABLE IF NOT EXISTS opportunity_requirements (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -384,9 +392,13 @@ CREATE TABLE IF NOT EXISTS bid_securities (
     release_date DATE,
     release_reference VARCHAR(150),
     comments TEXT,
+    instrument_image_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS issue_date DATE DEFAULT CURRENT_DATE;
+ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS instrument_image_url TEXT;
 
 -- ============================================================================
 -- 7. BID SUBMISSION, EVALUATIONS & AWARD LETTERS

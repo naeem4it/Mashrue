@@ -8,13 +8,146 @@ let pendingPaidEmployeePayload = null;
 
 function initCustomDateTimePickers() {
   try {
+    // Standardize any native date inputs to text so DD/MM/YYYY works cleanly
+    document.querySelectorAll('input[type="date"]').forEach(el => {
+      try {
+        el.type = 'text';
+        el.classList.add('date-picker');
+        if (!el.placeholder) el.placeholder = 'DD/MM/YYYY';
+      } catch (e) {}
+    });
+
     if (typeof flatpickr !== 'undefined') {
-      flatpickr('.datetime-picker', { enableTime: true, dateFormat: 'Y-m-d H:i' });
-      flatpickr('.date-picker', { dateFormat: 'Y-m-d' });
+      flatpickr('.date-picker', {
+        dateFormat: 'd/m/Y',
+        allowInput: true,
+        monthSelectorType: 'dropdown',
+        prevArrow: '<span style="font-weight:700;">&larr;</span>',
+        nextArrow: '<span style="font-weight:700;">&rarr;</span>'
+      });
+      flatpickr('.datetime-picker', {
+        enableTime: true,
+        dateFormat: 'd/m/Y H:i',
+        allowInput: true,
+        time_24hr: false
+      });
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[Calendar Picker Init Warning]:', e.message);
+  }
 }
 window.initCustomDateTimePickers = initCustomDateTimePickers;
+
+/**
+ * Universal Search on All Visible Columns across Any Data Table
+ * Filters table rows in real-time matching query against any visible column text.
+ */
+function filterTableVisibleColumns(tableSelector, query) {
+  const table = typeof tableSelector === 'string' ? document.querySelector(tableSelector) : tableSelector;
+  if (!table) return;
+
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  const rows = tbody.querySelectorAll('tr');
+  const cleanQuery = (query || '').toLowerCase().trim();
+
+  let matchedCount = 0;
+  let totalDataRows = 0;
+
+  rows.forEach(row => {
+    // Skip no-search-match row or super-admin header divider rows
+    if (row.classList.contains('no-search-match-row')) return;
+    if (row.querySelector('td[colspan]')) return;
+
+    totalDataRows++;
+
+    if (!cleanQuery) {
+      row.style.display = '';
+      matchedCount++;
+      return;
+    }
+
+    // Search across ALL visible cells in this row
+    const cells = row.querySelectorAll('td');
+    let rowText = '';
+    cells.forEach(cell => {
+      // Exclude pure button actions text to avoid noise
+      const clone = cell.cloneNode(true);
+      clone.querySelectorAll('button, .edit-btn, .danger-btn, .secondary-btn, .primary-btn, .modal-close-btn').forEach(b => b.remove());
+      rowText += ' ' + (clone.innerText || clone.textContent || '');
+    });
+
+    if (rowText.toLowerCase().includes(cleanQuery)) {
+      row.style.display = '';
+      matchedCount++;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  // Handle "No matching records" feedback row
+  let noMatchRow = tbody.querySelector('.no-search-match-row');
+  if (cleanQuery && matchedCount === 0 && totalDataRows > 0) {
+    if (!noMatchRow) {
+      const colCount = table.querySelectorAll('thead th').length || 8;
+      noMatchRow = document.createElement('tr');
+      noMatchRow.className = 'no-search-match-row';
+      noMatchRow.innerHTML = `
+        <td colspan="${colCount}" style="text-align:center; padding:24px 16px; color:#64748b; background:#f8fafc; font-size:0.85rem;">
+          🔍 No records matching "<strong>${cleanQuery}</strong>" found across visible columns.
+        </td>
+      `;
+      tbody.appendChild(noMatchRow);
+    } else {
+      noMatchRow.style.display = '';
+      const strong = noMatchRow.querySelector('strong');
+      if (strong) strong.innerText = cleanQuery;
+    }
+  } else if (noMatchRow) {
+    noMatchRow.style.display = 'none';
+  }
+}
+window.filterTableVisibleColumns = filterTableVisibleColumns;
+
+function autoEnhanceDataTablesWithUniversalSearch() {
+  const tables = document.querySelectorAll('.data-table, table.table');
+  tables.forEach((tbl, idx) => {
+    // Generate or get table ID
+    if (!tbl.id) tbl.id = `auto-search-table-${idx + 1}`;
+    
+    // Find closest card or container
+    const card = tbl.closest('.card') || tbl.closest('.card-body')?.parentElement;
+    if (!card) return;
+    
+    const cardHeader = card.querySelector('.card-header');
+    if (!cardHeader) return;
+    
+    // Check if universal search input already exists
+    if (cardHeader.querySelector('.table-universal-search-input')) return;
+    
+    // Ensure flex layout on card header
+    cardHeader.style.display = 'flex';
+    cardHeader.style.justifyContent = 'space-between';
+    cardHeader.style.alignItems = 'center';
+    cardHeader.style.flexWrap = 'wrap';
+    cardHeader.style.gap = '10px';
+
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'table-universal-search-wrap';
+    searchWrap.style.cssText = 'display:inline-flex; align-items:center; position:relative; min-width:230px; margin-left:auto;';
+    searchWrap.innerHTML = `
+      <input type="text" 
+             class="form-input table-universal-search-input" 
+             placeholder="🔍 Search all columns..." 
+             style="font-size:0.8rem; padding:5px 28px 5px 10px; width:100%; border-radius:var(--radius-sm); border:1px solid #cbd5e1; background:#ffffff; box-shadow:0 1px 2px rgba(0,0,0,0.05);" 
+             oninput="filterTableVisibleColumns('#${tbl.id}', this.value)">
+      <span style="position:absolute; right:8px; pointer-events:none; font-size:0.8rem; color:#94a3b8;">🔍</span>
+    `;
+    cardHeader.appendChild(searchWrap);
+  });
+}
+window.autoEnhanceDataTablesWithUniversalSearch = autoEnhanceDataTablesWithUniversalSearch;
 
 // Enterprise Non-blocking Toast Notification Engine
 function showToast(message, type = 'info', duration = 4000) {
@@ -1422,6 +1555,13 @@ async function renderActiveView() {
       default:
         contentArea.innerHTML = `<div class="card"><div class="card-body"><h3>View not found</h3></div></div>`;
     }
+
+    try {
+      if (typeof initCustomDateTimePickers === 'function') initCustomDateTimePickers();
+      if (typeof autoEnhanceDataTablesWithUniversalSearch === 'function') autoEnhanceDataTablesWithUniversalSearch();
+    } catch (enhErr) {
+      console.warn('[View Enhancement Notice]:', enhErr.message);
+    }
   } catch (err) {
     console.error(`Error rendering active view (${State.activeView}):`, err);
     contentArea.innerHTML = `
@@ -1491,74 +1631,6 @@ async function renderDashboardHTML() {
     : (recVal >= 1000000 
       ? `PKR ${(recVal / 1000000).toFixed(1)}M` 
       : `PKR ${recVal.toLocaleString()}`);
-
-  // Calculate Bid Security Expiry Buckets
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  // Include active, submitted, and un-set status securities (case-insensitive)
-  const activeSecs = (securities || []).filter(s => {
-    const st = String(s.status || 'Active').toLowerCase();
-    return st === 'active' || st === 'submitted' || !s.status;
-  });
-
-  const criticalSecs = []; // <= 7 days
-  const upcomingSecs = []; // 8-30 days
-  const safeSecs = [];     // > 30 days
-
-  activeSecs.forEach(s => {
-    let expDate = null;
-    if (s.expiry_date) {
-      if (s.expiry_date instanceof Date) {
-        expDate = s.expiry_date;
-      } else {
-        const str = String(s.expiry_date).trim();
-        if (str.includes('/')) {
-          const p = str.split('/');
-          if (p.length === 3) {
-            // DD/MM/YYYY
-            expDate = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
-          }
-        } else if (str.includes('-')) {
-          const datePart = str.split('T')[0];
-          const p = datePart.split('-');
-          if (p.length === 3) {
-            if (p[0].length === 4) {
-              // YYYY-MM-DD
-              expDate = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
-            } else {
-              // DD-MM-YYYY
-              expDate = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10));
-            }
-          }
-        }
-        if (!expDate || isNaN(expDate.getTime())) {
-          expDate = new Date(s.expiry_date);
-        }
-      }
-    }
-
-    if (!expDate || isNaN(expDate.getTime())) {
-      safeSecs.push(s);
-      return;
-    }
-
-    // Exact calendar-day difference independent of time-of-day
-    const expMidnight = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate());
-    const diffDays = Math.round((expMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays <= 7) {
-      criticalSecs.push({ ...s, daysRemaining: diffDays });
-    } else if (diffDays <= 30) {
-      upcomingSecs.push({ ...s, daysRemaining: diffDays });
-    } else {
-      safeSecs.push({ ...s, daysRemaining: diffDays });
-    }
-  });
-
-  const criticalAmount = criticalSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
-  const upcomingAmount = upcomingSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
-
   // Determine Subscription Notification Banner
   const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
   const sub = State.getTenantSubscription(tid);
@@ -1644,37 +1716,6 @@ async function renderDashboardHTML() {
 
   return `
     ${subscriptionBanner}
-    <!-- ⚠️ Urgent Proactive Expiry Alert Banner (if critical or upcoming instruments exist) -->
-    ${criticalSecs.length > 0 ? `
-      <div style="background: linear-gradient(135deg, #fee2e2, #fef2f2); border: 2px solid #ef4444; border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 1.8rem;">🚨</span>
-          <div>
-            <strong style="color: #991b1b; font-size: 0.98rem; display: block;">
-              CRITICAL NOTICE: ${criticalSecs.length} Bid Security Instrument(s) (${formatCurrency(criticalAmount, 'PKR')}) Expiring Within 7 Days!
-            </strong>
-            <span style="font-size: 0.82rem; color: #b91c1c;">
-              Earnest money instruments for tenders: ${criticalSecs.map(s => `<strong>${s.opportunity_number || s.instrument_number}</strong> (${s.daysRemaining <= 0 ? 'EXPIRED' : `${s.daysRemaining}d left`})`).join(', ')}. Action required to renew or request official release from beneficiary.
-            </span>
-          </div>
-        </div>
-        <button class="primary-btn" style="background: #dc2626; white-space: nowrap; padding: 6px 14px; font-size: 0.82rem;" onclick="navigateToView('bid-securities')">
-          🛡️ Manage & Release CDRs &rarr;
-        </button>
-      </div>
-    ` : (upcomingSecs.length > 0 ? `
-      <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <span style="font-size: 1.4rem;">⚠️</span>
-          <div>
-            <strong style="color: #92400e; font-size: 0.92rem;">Upcoming Expiry: ${upcomingSecs.length} Bid Securities (${formatCurrency(upcomingAmount, 'PKR')}) maturing in 8–30 days</strong>
-            <p style="font-size: 0.78rem; color: #b45309; margin: 2px 0 0 0;">Review tender evaluation progress or prepare bank renewal letters.</p>
-          </div>
-        </div>
-        <button class="secondary-btn" style="padding: 4px 10px; font-size: 0.78rem;" onclick="navigateToView('bid-securities')">View Securities</button>
-      </div>
-    ` : '')}
-
     <div class="kpi-grid">
       <div class="kpi-card blue">
         <div class="kpi-card-header">
@@ -1713,52 +1754,14 @@ async function renderDashboardHTML() {
       </div>
     </div>
 
-    <!-- Bid Security Expiry Maturity Heatmap & Funnel Row -->
-    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px;">
-      <!-- Bid Security Maturity Heatmap -->
-      <div class="card" style="margin-bottom: 0;">
-        <div class="card-header" style="padding-bottom: 10px;">
-          <div class="card-title">🛡️ Bid Security Maturity & Bank Credit Heatmap</div>
-          <button class="secondary-btn" style="padding: 2px 8px; font-size: 0.75rem;" onclick="navigateToView('bid-securities')">All CDRs &rarr;</button>
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 14px 16px;">
-          <div style="background: ${criticalSecs.length > 0 ? '#fee2e2' : '#f8fafc'}; border: 1px solid ${criticalSecs.length > 0 ? '#fca5a5' : '#e2e8f0'}; border-radius: var(--radius-sm); padding: 12px; text-align: center;">
-            <span style="font-size: 0.75rem; font-weight: 700; color: ${criticalSecs.length > 0 ? '#b91c1c' : '#64748b'}; text-transform: uppercase;">🔴 Critical (&le; 7 Days)</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: ${criticalSecs.length > 0 ? '#dc2626' : '#1e293b'}; margin: 4px 0;">${criticalSecs.length} Instruments</div>
-            <div style="font-size: 0.78rem; font-weight: 600; color: #475569;">${formatCurrency(criticalAmount, 'PKR')}</div>
-          </div>
-          <div style="background: ${upcomingSecs.length > 0 ? '#fef3c7' : '#f8fafc'}; border: 1px solid ${upcomingSecs.length > 0 ? '#fcd34d' : '#e2e8f0'}; border-radius: var(--radius-sm); padding: 12px; text-align: center;">
-            <span style="font-size: 0.75rem; font-weight: 700; color: ${upcomingSecs.length > 0 ? '#92400e' : '#64748b'}; text-transform: uppercase;">🟡 Soon (8–30 Days)</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: ${upcomingSecs.length > 0 ? '#d97706' : '#1e293b'}; margin: 4px 0;">${upcomingSecs.length} Instruments</div>
-            <div style="font-size: 0.78rem; font-weight: 600; color: #475569;">${formatCurrency(upcomingAmount, 'PKR')}</div>
-          </div>
-          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 12px; text-align: center;">
-            <span style="font-size: 0.75rem; font-weight: 700; color: #166534; text-transform: uppercase;">🟢 Safe (> 30 Days)</span>
-            <div style="font-size: 1.4rem; font-weight: 800; color: #16a34a; margin: 4px 0;">${safeSecs.length} Instruments</div>
-            <div style="font-size: 0.78rem; font-weight: 600; color: #475569;">${formatCurrency(safeSecs.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0), 'PKR')}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Executive Action Center -->
-      <div class="card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
-        <div class="card-header" style="padding-bottom: 10px;">
-          <div class="card-title">⚡ Quick Actions</div>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px;">
-          ${State.hasPermission('opportunities', 'add') && !State.isReadOnly() ? `<button class="primary-btn" style="width:100%; justify-content:center;" onclick="openNewTenderModal()">+ Register New Tender</button>` : ''}
-          ${State.hasPermission('bid-securities', 'add') && !State.isReadOnly() ? `<button class="secondary-btn" style="width:100%; justify-content:center;" onclick="openModal('modal-add-bid-security')">🛡️ Issue Bid Security (CDR)</button>` : ''}
-          ${State.hasPermission('payments', 'add') && !State.isReadOnly() ? `<button class="secondary-btn" style="width:100%; justify-content:center;" onclick="openModal('modal-add-payment')">💵 Record Cheque Realization</button>` : ''}
-          ${State.hasPermission('expenses', 'add') && !State.isReadOnly() ? `<button class="secondary-btn" style="width:100%; justify-content:center;" onclick="openExpenseModal()">💸 Log Operating Expense</button>` : ''}
-        </div>
-      </div>
-    </div>
-
     <!-- Active Pipeline Table -->
     <div class="card">
       <div class="card-header">
         <div class="card-title">📑 Active Tenders & Bidding Status</div>
-        <button class="secondary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="navigateToView('opportunities')">View Full Pipeline &rarr;</button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          ${State.hasPermission('opportunities', 'add') && !State.isReadOnly() ? `<button class="primary-btn" style="padding:4px 12px; font-size:0.8rem;" onclick="openNewTenderModal()">+ Register New Tender</button>` : ''}
+          <button class="secondary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="navigateToView('opportunities')">View Full Pipeline &rarr;</button>
+        </div>
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -2045,7 +2048,7 @@ async function renderBidSecuritiesHTML() {
               <th>Beneficiary</th>
               <th>Amount (PKR)</th>
               <th>Bank & Branch</th>
-              <th>Expiry Date</th>
+              <th>Bid Security Date</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -6023,6 +6026,14 @@ function openModal(id) {
     }
 
     el.classList.add('open');
+    try {
+      if (typeof initCustomDateTimePickers === 'function') {
+        initCustomDateTimePickers();
+      }
+      if (typeof autoEnhanceDataTablesWithUniversalSearch === 'function') {
+        autoEnhanceDataTablesWithUniversalSearch();
+      }
+    } catch (e) {}
     const resetScroll = () => {
       el.scrollTop = 0;
       el.scrollLeft = 0;
@@ -6188,6 +6199,14 @@ async function openNewTenderModal() {
     const editIdEl = document.getElementById('tender-edit-id');
     if (editIdEl) editIdEl.value = '';
 
+    const nameEl = document.getElementById('tender-name');
+    if (nameEl) {
+      nameEl.readOnly = false;
+      nameEl.style.backgroundColor = '';
+      nameEl.style.cursor = '';
+      nameEl.removeAttribute('title');
+    }
+
     const modal = document.getElementById('modal-add-tender');
     if (modal) {
       const title = modal.querySelector('h2');
@@ -6209,6 +6228,7 @@ async function openNewTenderModal() {
       customers = cRes || [];
       profiles = pRes || [];
       window._cachedProducts = prRes || [];
+      window._cachedCustomers = customers;
     } catch (e) {
       console.warn('Fallback loading options:', e.message);
     }
@@ -6235,6 +6255,37 @@ async function openNewTenderModal() {
     if (currSelect) {
       currSelect.value = 'PKR';
       updateTenderCurrencyLabels('PKR');
+    }
+
+    // Initialize workflow gating checklist to standard defaults
+    const gateBid = document.getElementById('gate-bid-security');
+    const gatePbg = document.getElementById('gate-performance-guarantee');
+    const gateStamp = document.getElementById('gate-stamp-duty');
+    const gateDtl = document.getElementById('gate-dtl-inspection');
+    const gateFbr = document.getElementById('gate-fbr-e-invoice');
+    const gateDiary = document.getElementById('gate-diary-tracking');
+
+    if (gateBid) gateBid.checked = true;
+    if (gatePbg) gatePbg.checked = true;
+    if (gateStamp) gateStamp.checked = true;
+    if (gateDtl) gateDtl.checked = false;
+    if (gateFbr) gateFbr.checked = true;
+    if (gateDiary) gateDiary.checked = true;
+
+    // If pre-selected customer has configured gates, apply them
+    if (custSelect && custSelect.value) {
+      const selectedCust = customers.find(c => String(c.id) === String(custSelect.value));
+      if (selectedCust && selectedCust.workflow_gates) {
+        const cg = typeof selectedCust.workflow_gates === 'string' ? JSON.parse(selectedCust.workflow_gates) : selectedCust.workflow_gates;
+        if (cg) {
+          if (gateBid) gateBid.checked = cg.requires_bid_security !== false;
+          if (gatePbg) gatePbg.checked = cg.requires_performance_guarantee !== false;
+          if (gateStamp) gateStamp.checked = cg.requires_stamp_duty !== false;
+          if (gateDtl) gateDtl.checked = cg.requires_dtl_inspection === true;
+          if (gateFbr) gateFbr.checked = cg.requires_fbr_e_invoice !== false;
+          if (gateDiary) gateDiary.checked = cg.requires_diary_tracking !== false;
+        }
+      }
     }
 
     _tenderLineItems = [];
@@ -6304,6 +6355,7 @@ async function openEditTenderModal(id) {
       customers = cRes || [];
       profiles = pRes || [];
       window._cachedProducts = prRes || [];
+      window._cachedCustomers = customers;
     } catch (refErr) {
       console.warn('Edit modal references warning:', refErr.message);
     }
@@ -6327,7 +6379,13 @@ async function openEditTenderModal(id) {
     }
 
     const nameEl = document.getElementById('tender-name');
-    if (nameEl) nameEl.value = o.tender_name || o.title || '';
+    if (nameEl) {
+      nameEl.value = o.tender_name || o.title || '';
+      nameEl.readOnly = true;
+      nameEl.style.backgroundColor = '#f1f5f9';
+      nameEl.style.cursor = 'not-allowed';
+      nameEl.title = 'Tender Name is fixed in edit mode to preserve audit trail and contract references.';
+    }
     
     const srcSelect = document.getElementById('tender-source');
     const otherContainer = document.getElementById('tender-source-other-container');
@@ -6389,6 +6447,42 @@ async function openEditTenderModal(id) {
     if (inclusiveEl) inclusiveEl.checked = Boolean(o.is_gst_inclusive);
     if (rateEl) rateEl.value = o.gst_rate_pct !== undefined ? o.gst_rate_pct : 18;
 
+    // Populate workflow gating checklist from tender record
+    let g = o.workflow_gates;
+    if (typeof g === 'string') {
+      try { g = JSON.parse(g); } catch (e) { g = null; }
+    }
+    if (!g && o.customer_id && customers.length > 0) {
+      const cust = customers.find(c => String(c.id) === String(o.customer_id));
+      if (cust && cust.workflow_gates) {
+        g = typeof cust.workflow_gates === 'string' ? JSON.parse(cust.workflow_gates) : cust.workflow_gates;
+      }
+    }
+    if (!g) {
+      g = {
+        requires_bid_security: true,
+        requires_performance_guarantee: true,
+        requires_stamp_duty: true,
+        requires_dtl_inspection: false,
+        requires_fbr_e_invoice: true,
+        requires_diary_tracking: true
+      };
+    }
+
+    const gateBid = document.getElementById('gate-bid-security');
+    const gatePbg = document.getElementById('gate-performance-guarantee');
+    const gateStamp = document.getElementById('gate-stamp-duty');
+    const gateDtl = document.getElementById('gate-dtl-inspection');
+    const gateFbr = document.getElementById('gate-fbr-e-invoice');
+    const gateDiary = document.getElementById('gate-diary-tracking');
+
+    if (gateBid) gateBid.checked = g.requires_bid_security !== false;
+    if (gatePbg) gatePbg.checked = g.requires_performance_guarantee !== false;
+    if (gateStamp) gateStamp.checked = g.requires_stamp_duty !== false;
+    if (gateDtl) gateDtl.checked = g.requires_dtl_inspection === true;
+    if (gateFbr) gateFbr.checked = g.requires_fbr_e_invoice !== false;
+    if (gateDiary) gateDiary.checked = g.requires_diary_tracking !== false;
+
     _tenderLineItems = [];
     const tbody = document.getElementById('tender-items-tbody');
     if (tbody) tbody.innerHTML = '';
@@ -6426,6 +6520,23 @@ function addTenderItemRow(initialData = null) {
   const products = window._cachedProducts || [];
 
   const rowId = `tnd-row-${rowIndex}`;
+
+  // Check if product was selected and has predefined sizes and variants
+  const initialProdId = initialData?.product_service_id || initialData?.product_id || '';
+  const selectedProd = products.find(p => String(p.id) === String(initialProdId));
+
+  let prodSizes = [];
+  if (selectedProd && selectedProd.sizes) {
+    prodSizes = typeof selectedProd.sizes === 'string' ? JSON.parse(selectedProd.sizes || '[]') : selectedProd.sizes;
+  }
+  let prodVariants = [];
+  if (selectedProd && selectedProd.variants) {
+    prodVariants = typeof selectedProd.variants === 'string' ? JSON.parse(selectedProd.variants || '[]') : selectedProd.variants;
+  }
+
+  const currentSize = initialData?.item_size || initialData?.size || initialData?.specifications || '';
+  const currentVariant = initialData?.item_variant || initialData?.variant || '';
+
   const rowHtml = `
     <tr id="${rowId}" data-index="${rowIndex}">
       <td>
@@ -6441,8 +6552,27 @@ function addTenderItemRow(initialData = null) {
       <td>
         <input type="text" class="form-input tnd-item-desc" required placeholder="Item Scope / Technical Description" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_description || initialData?.item_name || ''}" oninput="recalculateTenderItemsSum()">
       </td>
-      <td>
-        <input type="text" class="form-input tnd-item-size" placeholder="Size / Spec" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_size || initialData?.size || initialData?.specifications || ''}">
+      <td class="tnd-size-cell">
+        ${(Array.isArray(prodSizes) && prodSizes.length > 0) ? `
+          <select class="form-select tnd-item-size" style="font-size:0.78rem; padding:4px 6px;">
+            <option value="">-- Select Size --</option>
+            ${prodSizes.map(s => `<option value="${s}" ${currentSize === s ? 'selected' : ''}>${s}</option>`).join('')}
+            ${(currentSize && !prodSizes.includes(currentSize)) ? `<option value="${currentSize}" selected>${currentSize}</option>` : ''}
+          </select>
+        ` : `
+          <input type="text" class="form-input tnd-item-size" placeholder="Size / Spec" style="font-size:0.78rem; padding:4px 6px;" value="${currentSize}">
+        `}
+      </td>
+      <td class="tnd-variant-cell">
+        ${(Array.isArray(prodVariants) && prodVariants.length > 0) ? `
+          <select class="form-select tnd-item-variant" style="font-size:0.78rem; padding:4px 6px;">
+            <option value="">-- Select Variant --</option>
+            ${prodVariants.map(v => `<option value="${v}" ${currentVariant === v ? 'selected' : ''}>${v}</option>`).join('')}
+            ${(currentVariant && !prodVariants.includes(currentVariant)) ? `<option value="${currentVariant}" selected>${currentVariant}</option>` : ''}
+          </select>
+        ` : `
+          <input type="text" class="form-input tnd-item-variant" placeholder="Variant / Type" style="font-size:0.78rem; padding:4px 6px;" value="${currentVariant}">
+        `}
       </td>
       <td>
         <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="font-size:0.78rem; padding:4px 6px;" oninput="recalculateTenderItemsSum()">
@@ -6467,7 +6597,8 @@ function addTenderItemRow(initialData = null) {
     index: rowIndex,
     product_service_id: initialData?.product_service_id || null,
     item_description: initialData?.item_description || '',
-    item_size: initialData?.item_size || initialData?.size || '',
+    item_size: currentSize,
+    item_variant: currentVariant,
     quantity: initialData?.quantity || 1,
     unit: initialData?.unit || 'PCS',
     estimated_unit_price: initialData?.estimated_unit_price || 0,
@@ -6485,17 +6616,70 @@ function onTenderProductSelect(rowIndex, productId) {
   const prod = products.find(p => p.id === productId);
 
   const descInput = row.querySelector('.tnd-item-desc');
-  const sizeInput = row.querySelector('.tnd-item-size');
+  const sizeCell = row.querySelector('.tnd-size-cell');
+  const variantCell = row.querySelector('.tnd-variant-cell');
   const unitInput = row.querySelector('.tnd-item-unit');
   const priceInput = row.querySelector('.tnd-item-price');
 
   if (prod) {
-    if (descInput) descInput.value = prod.name;
-    if (sizeInput) sizeInput.value = prod.specifications || prod.size || '';
+    // 1. Fix Item Description: display specification / description instead of product name
+    if (descInput) {
+      descInput.value = prod.description || prod.specifications || prod.name;
+    }
+
+    // 2. Dynamic Sizes dropdown
+    let prodSizes = [];
+    if (prod.sizes) {
+      prodSizes = typeof prod.sizes === 'string' ? JSON.parse(prod.sizes || '[]') : prod.sizes;
+    }
+    if (sizeCell) {
+      if (Array.isArray(prodSizes) && prodSizes.length > 0) {
+        sizeCell.innerHTML = `
+          <select class="form-select tnd-item-size" style="font-size:0.78rem; padding:4px 6px;">
+            <option value="">-- Select Size --</option>
+            ${prodSizes.map(s => `<option value="${s}">${s}</option>`).join('')}
+          </select>
+        `;
+      } else {
+        sizeCell.innerHTML = `
+          <input type="text" class="form-input tnd-item-size" placeholder="Size / Spec" style="font-size:0.78rem; padding:4px 6px;" value="${prod.specifications || prod.size || ''}">
+        `;
+      }
+    }
+
+    // 3. Dynamic Variants dropdown
+    let prodVariants = [];
+    if (prod.variants) {
+      prodVariants = typeof prod.variants === 'string' ? JSON.parse(prod.variants || '[]') : prod.variants;
+    }
+    if (variantCell) {
+      if (Array.isArray(prodVariants) && prodVariants.length > 0) {
+        variantCell.innerHTML = `
+          <select class="form-select tnd-item-variant" style="font-size:0.78rem; padding:4px 6px;">
+            <option value="">-- Select Variant --</option>
+            ${prodVariants.map(v => `<option value="${v}">${v}</option>`).join('')}
+          </select>
+        `;
+      } else {
+        variantCell.innerHTML = `
+          <input type="text" class="form-input tnd-item-variant" placeholder="Variant / Type" style="font-size:0.78rem; padding:4px 6px;" value="">
+        `;
+      }
+    }
+
+    // 4. Unit & Price auto-fill
     if (unitInput) unitInput.value = prod.unit || 'PCS';
     if (priceInput) {
       priceInput.value = prod.selling_price ? Number(prod.selling_price).toLocaleString() : '0';
       formatCurrencyInput(priceInput);
+    }
+  } else {
+    // Revert to open inputs if Custom Scope Item chosen
+    if (sizeCell) {
+      sizeCell.innerHTML = `<input type="text" class="form-input tnd-item-size" placeholder="Size / Spec" style="font-size:0.78rem; padding:4px 6px;">`;
+    }
+    if (variantCell) {
+      variantCell.innerHTML = `<input type="text" class="form-input tnd-item-variant" placeholder="Variant / Type" style="font-size:0.78rem; padding:4px 6px;">`;
     }
   }
 
@@ -6659,6 +6843,7 @@ async function submitNewTenderForm() {
       const prodId = row.querySelector('.tnd-item-product')?.value || null;
       const itemDesc = row.querySelector('.tnd-item-desc')?.value?.trim();
       const itemSize = row.querySelector('.tnd-item-size')?.value?.trim() || '';
+      const itemVariant = row.querySelector('.tnd-item-variant')?.value?.trim() || '';
       const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 1);
       const unit = row.querySelector('.tnd-item-unit')?.value || 'PCS';
       const unitPrice = parseCurrency(row.querySelector('.tnd-item-price')?.value);
@@ -6670,6 +6855,8 @@ async function submitNewTenderForm() {
           item_description: itemDesc,
           item_size: itemSize,
           size: itemSize,
+          item_variant: itemVariant,
+          variant: itemVariant,
           quantity: qty,
           unit: unit,
           estimated_unit_price: unitPrice,
@@ -6682,6 +6869,15 @@ async function submitNewTenderForm() {
     const isInclusive = document.getElementById('tender-gst-inclusive')?.checked || false;
     const gstRate = parseFloat(document.getElementById('tender-gst-rate')?.value || 18);
     const itemsSubtotal = items.reduce((acc, itm) => acc + (itm.estimated_total_price || 0), 0);
+
+    const workflowGates = {
+      requires_bid_security: document.getElementById('gate-bid-security')?.checked !== false,
+      requires_performance_guarantee: document.getElementById('gate-performance-guarantee')?.checked !== false,
+      requires_stamp_duty: document.getElementById('gate-stamp-duty')?.checked !== false,
+      requires_dtl_inspection: document.getElementById('gate-dtl-inspection')?.checked === true,
+      requires_fbr_e_invoice: document.getElementById('gate-fbr-e-invoice')?.checked !== false,
+      requires_diary_tracking: document.getElementById('gate-diary-tracking')?.checked !== false
+    };
 
     const payload = {
       tender_name: tenderName,
@@ -6700,7 +6896,8 @@ async function submitNewTenderForm() {
       is_gst_exempt: isExempt,
       is_gst_inclusive: isInclusive,
       gst_rate_pct: isExempt ? 0 : gstRate,
-      subtotal: itemsSubtotal
+      subtotal: itemsSubtotal,
+      workflow_gates: workflowGates
     };
 
     if (editId) {
@@ -6750,6 +6947,37 @@ async function submitNewTenderForm() {
     }
   }
 }
+window.submitNewTenderForm = submitNewTenderForm;
+
+function handleTenderCustomerChange(custId) {
+  const isEditing = Boolean(document.getElementById('tender-edit-id')?.value);
+  if (isEditing) return; // Do not override custom gates when user is editing an existing tender
+  if (!custId) return;
+  const customers = window._cachedCustomers || [];
+  const cust = customers.find(c => String(c.id) === String(custId));
+  if (cust && cust.workflow_gates) {
+    let g = cust.workflow_gates;
+    if (typeof g === 'string') {
+      try { g = JSON.parse(g); } catch (e) { g = null; }
+    }
+    if (g) {
+      const gateBid = document.getElementById('gate-bid-security');
+      const gatePbg = document.getElementById('gate-performance-guarantee');
+      const gateStamp = document.getElementById('gate-stamp-duty');
+      const gateDtl = document.getElementById('gate-dtl-inspection');
+      const gateFbr = document.getElementById('gate-fbr-e-invoice');
+      const gateDiary = document.getElementById('gate-diary-tracking');
+
+      if (gateBid) gateBid.checked = g.requires_bid_security !== false;
+      if (gatePbg) gatePbg.checked = g.requires_performance_guarantee !== false;
+      if (gateStamp) gateStamp.checked = g.requires_stamp_duty !== false;
+      if (gateDtl) gateDtl.checked = g.requires_dtl_inspection === true;
+      if (gateFbr) gateFbr.checked = g.requires_fbr_e_invoice !== false;
+      if (gateDiary) gateDiary.checked = g.requires_diary_tracking !== false;
+    }
+  }
+}
+window.handleTenderCustomerChange = handleTenderCustomerChange;
 
 async function handleTenderSecuritySearch(query) {
   const suggestionsBox = document.getElementById('sec-opp-suggestions');
@@ -6829,6 +7057,7 @@ function selectTenderForSecurity(oppId, tenderNameEnc, oppNo, estVal, customerNa
 }
 
 function promptAttachBidSecurity(oppId, tenderNameDecoded, oppNo = '', estVal = 0, custNameDecoded = '') {
+  if (typeof clearInstrumentFile === 'function') clearInstrumentFile();
   selectTenderForSecurity(oppId, tenderNameDecoded, oppNo, estVal, custNameDecoded);
   try { initCustomDateTimePickers(); } catch (e) {}
   openModal('modal-add-bid-security');
@@ -6869,7 +7098,7 @@ async function openAttachedBidSecurityModal(oppId) {
           <div><span style="color:#64748b;">Account Title:</span> <strong>${s.account_title || 'N/A'}</strong></div>
           <div><span style="color:#64748b;">Beneficiary:</span> <strong>${s.beneficiary || 'N/A'}</strong></div>
           <div><span style="color:#64748b;">Amount:</span> <strong style="color:#10b981;">PKR ${parseFloat(s.amount || 0).toLocaleString()}</strong></div>
-          <div><span style="color:#64748b;">Expiry Date:</span> <strong>${formatDateDDMMYYYY(s.expiry_date) || s.expiry_date || 'N/A'}</strong></div>
+          <div><span style="color:#64748b;">Bid Security Date:</span> <strong>${formatDateDDMMYYYY(s.expiry_date) || s.expiry_date || 'N/A'}</strong></div>
           <div style="grid-column: span 2;"><span style="color:#64748b;">Bank & Branch:</span> <strong>${s.bank_name || 'N/A'} ${s.bank_branch ? `(${s.bank_branch})` : ''}</strong></div>
           ${s.comments ? `<div style="grid-column: span 2;"><span style="color:#64748b;">Remarks:</span> <em>${s.comments}</em></div>` : ''}
         </div>
@@ -6888,6 +7117,176 @@ function openTenderDetailsModal(oppId) {
   openTender360Cockpit(oppId);
 }
 
+let _currentInstrumentDataUrl = null;
+
+function handleInstrumentFileSelect(event) {
+  const file = event.target.files?.[0];
+  if (file) {
+    processInstrumentFile(file);
+  }
+}
+window.handleInstrumentFileSelect = handleInstrumentFileSelect;
+
+function handleInstrumentDragOver(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const dropzone = document.getElementById('sec-upload-dropzone');
+  if (dropzone) {
+    dropzone.style.borderColor = '#2563eb';
+    dropzone.style.background = '#eff6ff';
+  }
+}
+window.handleInstrumentDragOver = handleInstrumentDragOver;
+
+function handleInstrumentDragLeave(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const dropzone = document.getElementById('sec-upload-dropzone');
+  if (dropzone) {
+    dropzone.style.borderColor = '#94a3b8';
+    dropzone.style.background = '#f8fafc';
+  }
+}
+window.handleInstrumentDragLeave = handleInstrumentDragLeave;
+
+function handleInstrumentDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const dropzone = document.getElementById('sec-upload-dropzone');
+  if (dropzone) {
+    dropzone.style.borderColor = '#94a3b8';
+    dropzone.style.background = '#f8fafc';
+  }
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    processInstrumentFile(file);
+  }
+}
+window.handleInstrumentDrop = handleInstrumentDrop;
+
+function clearInstrumentFile() {
+  _currentInstrumentDataUrl = null;
+  const fileInput = document.getElementById('sec-instrument-file');
+  if (fileInput) fileInput.value = '';
+
+  const preview = document.getElementById('sec-preview-container');
+  if (preview) preview.style.display = 'none';
+
+  const statusEl = document.getElementById('sec-scan-status');
+  if (statusEl) statusEl.style.display = 'none';
+
+  const imgEl = document.getElementById('sec-preview-img');
+  if (imgEl) imgEl.src = '';
+}
+window.clearInstrumentFile = clearInstrumentFile;
+
+async function processInstrumentFile(file) {
+  if (!file) return;
+
+  const statusEl = document.getElementById('sec-scan-status');
+  const statusText = document.getElementById('sec-scan-status-text');
+  const previewContainer = document.getElementById('sec-preview-container');
+  const previewImg = document.getElementById('sec-preview-img');
+  const previewFilename = document.getElementById('sec-preview-filename');
+  const previewMatchTag = document.getElementById('sec-preview-match-tag');
+
+  // 1. Read file as Data URL for local preview & persistence
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    _currentInstrumentDataUrl = e.target.result;
+    if (previewImg && file.type.startsWith('image/')) {
+      previewImg.src = _currentInstrumentDataUrl;
+      previewImg.style.display = 'block';
+    } else if (previewImg) {
+      previewImg.style.display = 'none';
+    }
+    if (previewFilename) previewFilename.innerText = file.name;
+    if (previewContainer) previewContainer.style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+
+  // 2. Trigger OCR if Tesseract is loaded and it's an image
+  if (statusEl) statusEl.style.display = 'block';
+  if (statusText) statusText.innerText = 'Scanning & reading instrument scan with OCR...';
+
+  let rawExtractedText = '';
+  try {
+    if (typeof Tesseract !== 'undefined' && file.type.startsWith('image/')) {
+      const ocrResult = await Tesseract.recognize(file, 'eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text' && statusText) {
+            const pct = Math.round((m.progress || 0) * 100);
+            statusText.innerText = `Extracting instrument text with OCR (${pct}%)...`;
+          }
+        }
+      });
+      rawExtractedText = ocrResult?.data?.text || '';
+    }
+  } catch (ocrErr) {
+    console.warn('[OCR Engine Warning]:', ocrErr.message);
+  }
+
+  // 3. Send extracted text and file metadata to Backend Banking Instrument Parser
+  try {
+    if (statusText) statusText.innerText = 'Analyzing Pakistani banking instrument data...';
+    const parseRes = await API.parseBidSecurityInstrument({
+      raw_text: rawExtractedText,
+      filename: file.name
+    });
+
+    if (parseRes && parseRes.success && parseRes.data) {
+      const d = parseRes.data;
+      if (d.instrument_type) {
+        const typeEl = document.getElementById('sec-instrument-type');
+        if (typeEl) typeEl.value = d.instrument_type;
+      }
+      if (d.instrument_number) {
+        const noEl = document.getElementById('sec-instrument-no');
+        if (noEl) noEl.value = d.instrument_number;
+      }
+      if (d.bank_name) {
+        const bankEl = document.getElementById('sec-bank-name');
+        if (bankEl) {
+          bankEl.value = d.bank_branch ? `${d.bank_name} (${d.bank_branch})` : d.bank_name;
+        }
+      }
+      if (d.amount && d.amount > 0) {
+        const amtEl = document.getElementById('sec-amount');
+        if (amtEl) {
+          amtEl.value = Number(d.amount).toLocaleString();
+          formatCurrencyInput(amtEl);
+        }
+      }
+      if (d.date) {
+        const dateEl = document.getElementById('sec-expiry-date');
+        if (dateEl) {
+          dateEl.value = d.date;
+          try { initCustomDateTimePickers(); } catch (e) {}
+        }
+      }
+      if (d.beneficiary) {
+        const benEl = document.getElementById('sec-beneficiary');
+        if (benEl && (!benEl.value || benEl.value.trim() === '')) {
+          benEl.value = d.beneficiary;
+        }
+      }
+
+      if (previewMatchTag) {
+        previewMatchTag.innerText = `✨ Successfully extracted: ${d.instrument_type || 'Instrument'} #${d.instrument_number || ''} ${d.bank_name ? `(${d.bank_name})` : ''} - PKR ${d.amount ? Number(d.amount).toLocaleString() : ''}`;
+      }
+      showToast(`✓ Auto-populated from instrument: ${d.instrument_type || 'PO/CDR'} #${d.instrument_number || ''}`, 'success');
+    } else {
+      if (previewMatchTag) previewMatchTag.innerText = 'Scan uploaded. Please verify or fill remaining fields.';
+    }
+  } catch (parseErr) {
+    console.warn('[Instrument Parsing Error]:', parseErr.message);
+    if (previewMatchTag) previewMatchTag.innerText = 'Scan uploaded. Please fill details manually.';
+  } finally {
+    if (statusEl) statusEl.style.display = 'none';
+  }
+}
+window.processInstrumentFile = processInstrumentFile;
+
 async function submitBidSecurityForm() {
   let oppId = document.getElementById('sec-opportunity-id')?.value;
   const oppTitleInput = document.getElementById('sec-opp-title')?.value || '';
@@ -6901,7 +7300,7 @@ async function submitBidSecurityForm() {
   const comments = document.getElementById('sec-comments')?.value;
 
   if (!accountTitle || !beneficiary || !instrumentType || !instrumentNo || !amount || !expiryDate) {
-    alert('All first 6 fields are mandatory (Account Title, Beneficiary, Instrument Type, Instrument Number, Amount, Expiry Date).');
+    alert('All first 6 fields are mandatory (Account Title, Beneficiary, Instrument Type, Instrument Number, Amount, Bid Security Date).');
     return;
   }
 
@@ -6941,7 +7340,8 @@ async function submitBidSecurityForm() {
     amount: amount,
     expiry_date: expiryDate,
     bank_name: bankName,
-    comments: comments
+    comments: comments,
+    instrument_image_url: _currentInstrumentDataUrl || null
   });
 
   if (!res || !res.success || !res.data?.id) {
@@ -6960,6 +7360,7 @@ async function submitBidSecurityForm() {
     }
   }
 
+  clearInstrumentFile();
   closeModal('modal-add-bid-security');
   showToast('✓ Bid Security successfully saved in database! Tender is now Ready to Submit.', 'success');
   await renderActiveView();
@@ -8653,14 +9054,108 @@ const PAKISTAN_CUSTOMS_HS_CATALOG = [
   { keyword: 'wire', code: '8544.4990', desc: 'Electric conductors & cables <= 1000V' },
   { keyword: 'breaker', code: '8536.2000', desc: 'Automatic circuit breakers <= 1000V' },
   { keyword: 'switchgear', code: '8536.2000', desc: 'Electrical switchgear and protection' },
-  { keyword: 'motor', code: '8501.5200', desc: 'AC Motors multi-phase 750W-75kW' },
-  { keyword: 'pump', code: '8413.7090', desc: 'Centrifugal and liquid pumps' },
   { keyword: 'medicine', code: '3004.9099', desc: 'Medicaments & pharmaceuticals' },
   { keyword: 'tablet', code: '3004.9099', desc: 'Medicaments & pharmaceutical formulations' },
   { keyword: 'disinfectant', code: '3808.9400', desc: 'Disinfectants & antiseptic chemical solutions' },
   { keyword: 'mask', code: '6307.9090', desc: 'Face masks, protective PPE articles' },
   { keyword: 'ppe', code: '6307.9090', desc: 'Protective gear, overalls & PPE articles' }
 ];
+
+let _currentProductSizes = [];
+let _currentProductVariants = [];
+
+function renderProductSizesBadges() {
+  const container = document.getElementById('prod-sizes-tags-container');
+  if (!container) return;
+  if (!_currentProductSizes || _currentProductSizes.length === 0) {
+    container.innerHTML = '<span style="color:#94a3b8; font-size:0.75rem; padding:2px 4px;">No sizes defined yet (e.g. 5ml, 10ml, or S, M, L)</span>';
+    return;
+  }
+  container.innerHTML = _currentProductSizes.map((sz, idx) => `
+    <span style="display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:12px;">
+      ${sz}
+      <button type="button" onclick="removeProductSizeTag(${idx})" style="background:none; border:none; color:#dc2626; font-weight:700; cursor:pointer; padding:0 2px; line-height:1;" title="Remove size">&times;</button>
+    </span>
+  `).join('');
+}
+window.renderProductSizesBadges = renderProductSizesBadges;
+
+function renderProductVariantsBadges() {
+  const container = document.getElementById('prod-variants-tags-container');
+  if (!container) return;
+  if (!_currentProductVariants || _currentProductVariants.length === 0) {
+    container.innerHTML = '<span style="color:#94a3b8; font-size:0.75rem; padding:2px 4px;">No variants defined yet (e.g. Luer Lock, White, Blue)</span>';
+    return;
+  }
+  container.innerHTML = _currentProductVariants.map((vr, idx) => `
+    <span style="display:inline-flex; align-items:center; gap:4px; background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:12px;">
+      ${vr}
+      <button type="button" onclick="removeProductVariantTag(${idx})" style="background:none; border:none; color:#dc2626; font-weight:700; cursor:pointer; padding:0 2px; line-height:1;" title="Remove variant">&times;</button>
+    </span>
+  `).join('');
+}
+window.renderProductVariantsBadges = renderProductVariantsBadges;
+
+function addProductSizeTag(customVal) {
+  const input = document.getElementById('prod-size-input');
+  const val = (customVal !== undefined ? customVal : input?.value)?.trim();
+  if (val && !_currentProductSizes.includes(val)) {
+    _currentProductSizes.push(val);
+    renderProductSizesBadges();
+  }
+  if (input) input.value = '';
+}
+window.addProductSizeTag = addProductSizeTag;
+
+function removeProductSizeTag(idx) {
+  if (idx >= 0 && idx < _currentProductSizes.length) {
+    _currentProductSizes.splice(idx, 1);
+    renderProductSizesBadges();
+  }
+}
+window.removeProductSizeTag = removeProductSizeTag;
+
+function addProductVariantTag(customVal) {
+  const input = document.getElementById('prod-variant-input');
+  const val = (customVal !== undefined ? customVal : input?.value)?.trim();
+  if (val && !_currentProductVariants.includes(val)) {
+    _currentProductVariants.push(val);
+    renderProductVariantsBadges();
+  }
+  if (input) input.value = '';
+}
+window.addProductVariantTag = addProductVariantTag;
+
+function removeProductVariantTag(idx) {
+  if (idx >= 0 && idx < _currentProductVariants.length) {
+    _currentProductVariants.splice(idx, 1);
+    renderProductVariantsBadges();
+  }
+}
+window.removeProductVariantTag = removeProductVariantTag;
+
+function applyProductPreset(presetType) {
+  if (presetType === 'syringe') {
+    _currentProductSizes = ['1ml', '2ml', '3ml', '5ml', '10ml', '20ml', '50ml', '60ml'];
+    _currentProductVariants = ['Standard Luer Slip', 'Luer Lock', 'Auto-Disable (AD)', 'Insulin 100IU', 'Safety Needle'];
+  } else if (presetType === 'cannula') {
+    _currentProductSizes = ['14G (Orange)', '16G (Grey)', '18G (Green)', '20G (Pink)', '22G (Blue)', '24G (Yellow)', '26G (Violet)'];
+    _currentProductVariants = ['With Port & Wings', 'Without Port', 'Safety IV Cannula', 'Pen-like'];
+  } else if (presetType === 'gloves') {
+    _currentProductSizes = ['6.0', '6.5', '7.0', '7.5', '8.0', '8.5'];
+    _currentProductVariants = ['Latex Powdered', 'Latex Powder-Free', 'Nitrile Examination', 'Sterile Surgical'];
+  } else if (presetType === 'gauze') {
+    _currentProductSizes = ['5cm x 5cm', '7.5cm x 7.5cm', '10cm x 10cm', '10cm x 5m (Roll)', '15cm x 5m (Roll)'];
+    _currentProductVariants = ['Sterile 8-Ply', 'Sterile 12-Ply', 'Non-Sterile Gauze Swab', 'X-Ray Detectable'];
+  } else if (presetType === 'shirt' || presetType === 'apparel') {
+    _currentProductSizes = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+    _currentProductVariants = ['White', 'Navy Blue', 'Black', 'Sky Blue', 'Grey', 'Light Green (OT Scrub)'];
+  }
+  renderProductSizesBadges();
+  renderProductVariantsBadges();
+  showToast(`✓ Applied ${presetType.toUpperCase()} sizes & variants preset.`, 'info');
+}
+window.applyProductPreset = applyProductPreset;
 
 function autoSuggestHsCode() {
   const prodName = (document.getElementById('prod-name')?.value || '').toLowerCase().trim();
@@ -8701,6 +9196,11 @@ window.setAdminClientFilter = setAdminClientFilter;
 async function openNewProductModal() {
   const form = document.getElementById('form-add-product');
   if (form) form.reset();
+
+  _currentProductSizes = [];
+  _currentProductVariants = [];
+  renderProductSizesBadges();
+  renderProductVariantsBadges();
 
   const suppliers = await API.getSuppliers();
   const supSelect = document.getElementById('prod-supplier-select') || document.getElementById('prod-supplier');
@@ -8797,6 +9297,32 @@ async function openEditProductModal(id) {
   const descEl = document.getElementById('prod-description');
   if (descEl) descEl.value = p.description || '';
 
+  // Load Sizes & Variants
+  try {
+    if (p.sizes) {
+      _currentProductSizes = typeof p.sizes === 'string' ? JSON.parse(p.sizes || '[]') : [...p.sizes];
+    } else if (p.specifications) {
+      _currentProductSizes = [p.specifications];
+    } else {
+      _currentProductSizes = [];
+    }
+  } catch (e) {
+    _currentProductSizes = [];
+  }
+
+  try {
+    if (p.variants) {
+      _currentProductVariants = typeof p.variants === 'string' ? JSON.parse(p.variants || '[]') : [...p.variants];
+    } else {
+      _currentProductVariants = [];
+    }
+  } catch (e) {
+    _currentProductVariants = [];
+  }
+
+  renderProductSizesBadges();
+  renderProductVariantsBadges();
+
   const delBtn = document.getElementById('btn-delete-product-modal');
   if (delBtn) delBtn.style.display = 'inline-block';
 
@@ -8872,6 +9398,8 @@ async function submitNewProductForm() {
       sku: sku,
       name: name,
       specifications: spec,
+      sizes: _currentProductSizes,
+      variants: _currentProductVariants,
       item_type: type,
       unit: unit,
       batch_number: batchNo,

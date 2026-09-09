@@ -1209,6 +1209,20 @@ const API = {
     }
   },
 
+  async parseBidSecurityInstrument(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/bid-securities/parse-instrument`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      console.warn('[API parseBidSecurityInstrument Error]:', e);
+      return { success: false, error: e.message };
+    }
+  },
+
   async releaseBidSecurity(id, release_reference = '') {
     try {
       const res = await fetch(`${API_BASE}/bid-securities/${id}/release`, {

@@ -349,7 +349,7 @@ router.get('/products', authenticate, requirePermission('inventory', 'view'), as
 });
 
 router.post('/products', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
-  const { item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id, tenant_id } = req.body;
+  const { item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id, tenant_id, sizes, variants } = req.body;
   
   if (!name) {
     return res.status(400).json({ success: false, message: 'Product/Item name is mandatory' });
@@ -403,6 +403,13 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       prodCols = new Set(['tenant_id', 'sku', 'name', 'unit', 'cost_price', 'selling_price', 'current_stock']);
     }
 
+    const parsedSizes = Array.isArray(sizes) 
+      ? JSON.stringify(sizes) 
+      : (typeof sizes === 'string' && sizes.trim().startsWith('[') ? sizes : JSON.stringify(sizes ? [sizes] : []));
+    const parsedVariants = Array.isArray(variants) 
+      ? JSON.stringify(variants) 
+      : (typeof variants === 'string' && variants.trim().startsWith('[') ? variants : JSON.stringify(variants ? [variants] : []));
+
     const candidateFields = {
       tenant_id: resolvedTenantId,
       item_type: item_type || 'Product',
@@ -416,7 +423,9 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       tax_category: tax_category || 'Standard 18%',
       current_stock: parseFloat(current_stock || 0),
       reorder_level: parseFloat(reorder_level || 5),
-      default_supplier_id: isUuid(default_supplier_id) ? default_supplier_id : null
+      default_supplier_id: isUuid(default_supplier_id) ? default_supplier_id : null,
+      sizes: parsedSizes,
+      variants: parsedVariants
     };
 
     const insertCols = [];
@@ -455,7 +464,9 @@ router.put('/products/:id', authenticate, requirePermission('inventory', 'edit')
     tax_category,
     current_stock,
     reorder_level,
-    default_supplier_id
+    default_supplier_id,
+    sizes,
+    variants
   } = req.body;
 
   if (!name && !sku) {
@@ -483,7 +494,9 @@ router.put('/products/:id', authenticate, requirePermission('inventory', 'edit')
       tax_category: tax_category || null,
       current_stock: current_stock !== undefined ? parseFloat(current_stock) : null,
       reorder_level: reorder_level !== undefined ? parseFloat(reorder_level) : null,
-      default_supplier_id: default_supplier_id || null
+      default_supplier_id: default_supplier_id || null,
+      sizes: sizes !== undefined ? (Array.isArray(sizes) ? JSON.stringify(sizes) : sizes) : null,
+      variants: variants !== undefined ? (Array.isArray(variants) ? JSON.stringify(variants) : variants) : null
     };
 
     const setClauses = [];

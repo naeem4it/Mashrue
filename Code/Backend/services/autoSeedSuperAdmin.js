@@ -68,17 +68,33 @@ async function autoSeedSuperAdmin() {
       console.log(`✅ [AutoSeed] Super Admin (${config.username}) provisioned successfully.`);
     } else {
       const existing = checkRes.rows[0];
-      await db.query(
-        `UPDATE users 
-         SET username = COALESCE(username, $1), 
-             role = 'SuperAdmin', 
-             tenant_id = NULL, 
-             status = 'Active', 
-             updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2`,
-        [config.username, existing.id]
-      );
-      console.log(`✅ [AutoSeed] Verified primary Super Admin account: ${existing.username || config.username}`);
+      const isPassValid = await bcrypt.compare(config.password, existing.password_hash || '');
+      if (!isPassValid) {
+        await db.query(
+          `UPDATE users 
+           SET username = COALESCE(username, $1), 
+               password_hash = $2,
+               role = 'SuperAdmin', 
+               tenant_id = NULL, 
+               status = 'Active', 
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE id = $3`,
+          [config.username, passwordHash, existing.id]
+        );
+        console.log(`✅ [AutoSeed] Synchronized primary Super Admin password for: ${existing.username || config.username}`);
+      } else {
+        await db.query(
+          `UPDATE users 
+           SET username = COALESCE(username, $1), 
+               role = 'SuperAdmin', 
+               tenant_id = NULL, 
+               status = 'Active', 
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE id = $2`,
+          [config.username, existing.id]
+        );
+        console.log(`✅ [AutoSeed] Verified primary Super Admin account: ${existing.username || config.username}`);
+      }
     }
   } catch (err) {
     console.error(`⚠️ [AutoSeed] Notice during Super Admin check:`, err.message);
