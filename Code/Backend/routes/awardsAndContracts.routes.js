@@ -13,7 +13,15 @@ router.get('/awards', optionalAuth, async (req, res) => {
     let queryText = `
       SELECT al.*, 
              o.opportunity_number, o.tender_name, o.title as opportunity_title,
-             c.business_name as customer_name
+             c.business_name as customer_name,
+             COALESCE(
+               (
+                 SELECT json_agg(ai.*)
+                 FROM award_items ai
+                 WHERE ai.award_letter_id = al.id
+               ),
+               '[]'::json
+             ) as items
       FROM award_letters al
       JOIN opportunities o ON al.opportunity_id = o.id
       LEFT JOIN customers c ON o.customer_id = c.id
@@ -45,7 +53,7 @@ router.get('/awards', optionalAuth, async (req, res) => {
 });
 
 router.post('/awards', optionalAuth, async (req, res) => {
-  const { opportunity_id, bid_id, award_number, award_date, award_amount, acceptance_deadline, remarks, document_url } = req.body;
+  const { opportunity_id, bid_id, award_number, award_date, award_amount, acceptance_deadline, remarks, document_url, items } = req.body;
 
   if (!award_number || !award_amount) {
     return res.status(400).json({ success: false, message: 'Award Number and Award Amount are mandatory' });
@@ -77,6 +85,39 @@ router.post('/awards', optionalAuth, async (req, res) => {
       ]
     );
 
+    // Save item-level awards if provided
+    const savedItems = [];
+    if (items && Array.isArray(items) && items.length > 0) {
+      for (const itm of items) {
+        try {
+          const itemRes = await db.query(
+            `INSERT INTO award_items 
+             (award_letter_id, product_service_id, item_name, item_description, tender_quantity, bid_quantity, awarded_quantity, unit, awarded_unit_price, awarded_total_price, is_awarded)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING *`,
+            [
+              result.rows[0].id,
+              itm.product_service_id || null,
+              itm.item_name || itm.item_description || 'Item Scope',
+              itm.item_description || itm.item_name || '',
+              parseFloat(itm.tender_quantity || itm.bid_quantity || 1),
+              parseFloat(itm.bid_quantity || itm.tender_quantity || 1),
+              parseFloat(itm.awarded_quantity || 0),
+              itm.unit || 'PCS',
+              parseFloat(itm.awarded_unit_price || 0),
+              parseFloat(itm.awarded_total_price || 0),
+              itm.is_awarded !== false
+            ]
+          );
+          if (itemRes.rows && itemRes.rows[0]) {
+            savedItems.push(itemRes.rows[0]);
+          }
+        } catch (itemErr) {
+          console.warn('Could not insert award_item row:', itemErr.message);
+        }
+      }
+    }
+
     // Update linked opportunity and bid to won
     if (opportunity_id) {
       await db.query(
@@ -91,7 +132,10 @@ router.post('/awards', optionalAuth, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      data: result.rows[0],
+      data: {
+        ...result.rows[0],
+        items: savedItems.length > 0 ? savedItems : (items || [])
+      },
       message: 'Award Letter registered successfully.'
     });
   } catch (err) {

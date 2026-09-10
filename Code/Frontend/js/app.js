@@ -7491,7 +7491,7 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
           <input type="hidden" id="award-item-unit-${idx}" value="${it.unit || 'PCS'}">
         </td>
         <td>
-          <input type="number" class="form-input" id="award-item-qty-${idx}" value="${it.quantity || 1}" min="0" max="${it.quantity || 999999}" step="any" style="width: 100px; padding: 4px 6px; font-weight:700;" oninput="updateAwardItemsTotal()">
+          <input type="number" class="form-input" id="award-item-qty-${idx}" value="${it.quantity || 1}" min="0" step="any" style="width: 100px; padding: 4px 6px; font-weight:700;" oninput="updateAwardItemsTotal()">
         </td>
         <td>${it.unit || 'PCS'}</td>
         <td>
@@ -7535,6 +7535,7 @@ function updateAwardItemsTotal() {
   if (amtInput) amtInput.value = grandTotal;
 
   updateAwardStampDutyCalc();
+  calculatePBGRequirement();
 }
 
 function updateAwardStampDutyCalc() {
@@ -7546,7 +7547,18 @@ function updateAwardStampDutyCalc() {
 }
 
 function calculatePBGRequirement(pct) {
-  // Visual helper
+  const pbgSelect = document.getElementById('award-pbg-pct');
+  const selectedPct = parseFloat(pct !== undefined ? pct : (pbgSelect?.value || 10));
+  const awardAmt = parseFloat(document.getElementById('award-amount')?.value || 0);
+  const pbgAmt = Math.round((awardAmt * selectedPct) / 100);
+  const pbgDisplay = document.getElementById('award-pbg-amount-display');
+  if (pbgDisplay) {
+    if (selectedPct > 0) {
+      pbgDisplay.innerText = `PBG Required: PKR ${pbgAmt.toLocaleString()} (${selectedPct}% of Award Value)`;
+    } else {
+      pbgDisplay.innerText = 'No PBG required for this contract';
+    }
+  }
 }
 
 async function submitAwardLetterForm() {

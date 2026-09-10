@@ -1456,7 +1456,12 @@ const API = {
       });
       const json = await res.json();
       if (res.ok && json && json.success && json.data?.id) {
-        State.saveTenantEntity('awards', json.data);
+        const fullAward = {
+          ...payload,
+          ...json.data,
+          items: (json.data.items && json.data.items.length) ? json.data.items : (payload.items || [])
+        };
+        State.saveTenantEntity('awards', fullAward);
         if (payload.opportunity_id) {
           const opps = State.getTenantEntityList('opportunities');
           const opp = opps.find(o => o.id === payload.opportunity_id);
