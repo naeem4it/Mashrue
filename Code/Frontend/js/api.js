@@ -1980,6 +1980,67 @@ const API = {
     }
   },
 
+  async getExpenseCategories(tier = 'all') {
+    let apiData = [];
+    try {
+      const url = tier && tier !== 'all' ? `${API_BASE}/expenses/categories?tier=${encodeURIComponent(tier)}` : `${API_BASE}/expenses/categories`;
+      const res = await fetch(url, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && Array.isArray(json.data)) apiData = json.data;
+    } catch (e) {}
+
+    const localList = State.getTenantEntityList('expenseCategories') || [];
+    const merged = [...apiData];
+    for (const c of localList) {
+      if (!merged.some(m => m.id === c.id || (m.name === c.name && m.tier === c.tier))) merged.push(c);
+    }
+    return merged;
+  },
+
+  async createExpenseCategory(payload) {
+    const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
+    try {
+      const res = await fetch(`${API_BASE}/expenses/categories`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ ...payload, tenant_id: tid })
+      });
+      const json = await res.json();
+      if (res.ok && json && json.success && json.data?.id) {
+        State.saveTenantEntity('expenseCategories', json.data);
+        return json;
+      }
+      return { success: false, status: res.status, message: json?.message || 'Failed to create category.' };
+    } catch (e) {
+      return { success: false, message: e.message || 'Network error creating category.' };
+    }
+  },
+
+  async updateExpenseCategory(id, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/expenses/categories/${id}`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Network error updating category.' };
+    }
+  },
+
+  async deleteExpenseCategory(id) {
+    try {
+      const res = await fetch(`${API_BASE}/expenses/categories/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Network error deleting category.' };
+    }
+  },
+
   // 16. Reports & Executive KPIs (STRICT DYNAMIC CALCULATION PER TENANT)
   async getDashboardKPIs(businessProfileId = 'all') {
     const opps = await this.getOpportunities(businessProfileId);

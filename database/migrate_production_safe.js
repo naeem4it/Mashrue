@@ -68,9 +68,71 @@ async function runSafeMigration() {
       ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS item_variant VARCHAR(255);
       ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS issue_date DATE;
       ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS instrument_image_url TEXT;
+      ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_tier VARCHAR(50) DEFAULT 'Tier 1 - Tender Direct';
+      
+      CREATE TABLE IF NOT EXISTS expense_categories (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+          tier VARCHAR(100) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          code VARCHAR(50),
+          is_active BOOLEAN DEFAULT TRUE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_categories_unique 
+        ON expense_categories (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), tier, name);
     `);
 
-    console.log('   ✓ Schema columns verified/added without disturbing existing data.');
+    // Seed master expense categories (30 standard categories across 3 Tiers)
+    const masterExpenseCategories = [
+      // Tier 1: Tender & Quotation Pre-Bid Direct Expenses
+      { tier: 'Tier 1 - Tender Direct', name: 'Tender / Bidding Document Fee', description: 'Procurement authority tender document purchases, bidding dossier download fees, RFP fees' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Lab Sample Testing & Certification', description: 'Third-party testing laboratory fees (PCSIR, CE, ISO, Dielectric, SGS, Bureau Veritas)' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Sample Procurement & Fabrication', description: 'Purchasing, custom tooling, sample batch fabrication, or prototyping for technical bidding' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Site Pre-Bid Survey / Inspection & Fuel', description: 'Engineer pre-bid field survey, ground inspection travel, vehicle fuel, site reconnaissance' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Bid Security Guarantee Bank Processing Fee', description: 'CDR / Bank Guarantee issuance commissions, bank service charges, stamp papers for securities' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Courier & Dispatch Charges for Bids', description: 'Urgent secured bidding dossier dispatch (TCS, DHL, Leopard courier) to client opening office' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Technical Consultant / Specialist Fee', description: 'Third-party technical consultant, structural engineer, or subject matter specialist drafting fees' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Client Pre-Bid Meeting Refreshments & Travel', description: 'Intercity travel, flight/train, lodging, and refreshments for pre-bid conference attendance' },
+      { tier: 'Tier 1 - Tender Direct', name: 'Other Pre-Bid Direct Expense', description: 'Miscellaneous tender-specific direct out-of-pocket costs prior to bid opening' },
+
+      // Tier 2: PO & Delivery Execution Logistics Costs
+      { tier: 'Tier 2 - PO Execution', name: 'Hired Freight / Trailer Transport', description: 'Long-haul freight truck, container transport, flatbed trailer hire for cargo transport' },
+      { tier: 'Tier 2 - PO Execution', name: '3PL Logistics & Courier (TCS / Leopard / M&P)', description: 'Parcel delivery, express cargo services, dispatch of delivery challans and invoices' },
+      { tier: 'Tier 2 - PO Execution', name: 'Loading & Unloading Labor', description: 'Coolie/labor charges for warehouse loading, site offloading, crane/forklift equipment hire' },
+      { tier: 'Tier 2 - PO Execution', name: 'Port Customs Clearance & Handling Charges', description: 'Seaport/dryport customs clearing agent commissions, wharfage, terminal handling, demurrage' },
+      { tier: 'Tier 2 - PO Execution', name: 'Transit Insurance & Security', description: 'Marine/transit cargo insurance policy premiums, armed security escort for high-value cargo' },
+      { tier: 'Tier 2 - PO Execution', name: 'Warehouse Storage & Material Handling', description: 'Temporary transit storage depot fees, pallet racking, staging warehouse rental' },
+      { tier: 'Tier 2 - PO Execution', name: 'Packaging & Palletization Supplies', description: 'Wooden pallets, heat-shrink wrap, bubble wrap, corrugated master cartons, strapping bands' },
+      { tier: 'Tier 2 - PO Execution', name: 'Site Installation & Field Assembly Labor', description: 'Technician on-site deployment, civil work fitting, commissioning, field labor charges' },
+      { tier: 'Tier 2 - PO Execution', name: 'QC Third-Party Inspection at Delivery', description: 'Third-party pre-dispatch inspection (PDI), factory acceptance testing (FAT) inspector fees' },
+      { tier: 'Tier 2 - PO Execution', name: 'Other Execution & Logistics Expense', description: 'Specialized delivery, route survey, toll taxes, weighbridge receipts, octroi charges' },
+
+      // Tier 3: General Business & Administrative Overheads
+      { tier: 'Tier 3 - General Overheads', name: 'Head Office Rent', description: 'Head office, regional branch, or executive commercial premises rental leases' },
+      { tier: 'Tier 3 - General Overheads', name: 'Office Utilities (Electricity, Gas, Water)', description: 'Monthly commercial utility charges (WAPDA, LESCO, KE, SNGPL, Water board)' },
+      { tier: 'Tier 3 - General Overheads', name: 'Staff Salaries & Wages', description: 'Permanent and contracted team monthly payroll, bonuses, and employee allowances' },
+      { tier: 'Tier 3 - General Overheads', name: 'Office Internet & Telephone', description: 'High-speed fiber internet connection, landlines, cellular corporate SIM bundles' },
+      { tier: 'Tier 3 - General Overheads', name: 'Stationery & Printing Supplies', description: 'Letterheads, envelopes, toner cartridges, photocopies, heavy-duty binder files' },
+      { tier: 'Tier 3 - General Overheads', name: 'Company Vehicle Fuel & Routine Maintenance', description: 'Fleet fuel cards, engine oil changes, tires, vehicle fitness inspections, motor tuning' },
+      { tier: 'Tier 3 - General Overheads', name: 'Bank Charges & Account Maintenance', description: 'Corporate bank account monthly maintenance fees, cheque book fees, wire transfer commissions' },
+      { tier: 'Tier 3 - General Overheads', name: 'Legal & Tax Advisory Fees', description: 'Corporate tax consultant retainer, SECP compliance advocate, legal opinion fees' },
+      { tier: 'Tier 3 - General Overheads', name: 'Software & ERP Subscriptions', description: 'Cloud hosting, accounting software, domain renewals, productivity licenses' },
+      { tier: 'Tier 3 - General Overheads', name: 'Office Refreshments & Hospitality', description: 'Kitchen supplies, staff tea/coffee, guest hospitality, water dispenser bottles' },
+      { tier: 'Tier 3 - General Overheads', name: 'Miscellaneous General Expense', description: 'General sundry expenses, office cleaning supplies, small repair and maintenance' }
+    ];
+
+    for (const cat of masterExpenseCategories) {
+      await db.query(`
+        INSERT INTO expense_categories (tier, name, description, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT DO NOTHING
+      `, [cat.tier, cat.name, cat.description]);
+    }
+
+    console.log('   ✓ Schema columns & 30 master expense categories verified/added.');
 
     // 3. Apply Non-Destructive Medical & Apparel Seeds (ON CONFLICT DO NOTHING)
     console.log('\n📦 Verifying / Seeding standard master items (Syringes, Shirts, Cannulas, Gloves)...');

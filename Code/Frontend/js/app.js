@@ -2903,8 +2903,28 @@ async function renderInventoryHTML() {
 // --------------------------------------------------------------------------
 // 10. 3-TIER EXPENSES & OVERHEADS LEDGER (TENDER DIRECT, PO LOGISTICS & OVERHEADS)
 // --------------------------------------------------------------------------
+// EXPENSES & OVERHEAD LEDGER WITH MASTER CATEGORIES CATALOG (DYNAMIC)
+// --------------------------------------------------------------------------
+
+let _activeExpenseTab = 'ledger';
+let _activeExpenseCatFilterTier = 'all';
+
+function switchExpenseTab(tab) {
+  _activeExpenseTab = tab;
+  renderActiveView();
+}
+
+function filterCategoryCatalogByTier(tier) {
+  _activeExpenseCatFilterTier = tier;
+  renderActiveView();
+}
+
 async function renderExpensesHTML() {
-  const expenses = await API.getExpenses(State.currentBusinessProfileId);
+  const [expenses, categories] = await Promise.all([
+    API.getExpenses(State.currentBusinessProfileId),
+    API.getExpenseCategories()
+  ]);
+  _cachedExpenseCategories = categories;
 
   // Segregate by 3 Tiers
   const tier1Expenses = expenses.filter(e => e.expense_tier === 'Tier 1 - Tender Direct' || e.expense_type === 'Tender Expense' || e.expense_type === 'Quotation Expense' || e.opportunity_id);
@@ -2915,6 +2935,15 @@ async function renderExpensesHTML() {
   const totalTier1 = tier1Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const totalTier2 = tier2Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const totalTier3 = tier3Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
+  // Group categories by tier
+  const tier1Cats = categories.filter(c => c.tier === 'Tier 1 - Tender Direct');
+  const tier2Cats = categories.filter(c => c.tier === 'Tier 2 - PO Execution');
+  const tier3Cats = categories.filter(c => c.tier === 'Tier 3 - General Overheads');
+
+  const filteredCategories = _activeExpenseCatFilterTier === 'all' 
+    ? categories 
+    : categories.filter(c => c.tier === _activeExpenseCatFilterTier);
 
   return `
     <!-- Top 3-Tier KPI Summary Cards -->
@@ -2927,94 +2956,256 @@ async function renderExpensesHTML() {
       <div class="kpi-card" style="border-left: 4px solid #0284c7;">
         <div class="kpi-title">🎯 Tier 1: Tender & Bidding Direct</div>
         <div class="kpi-value">${formatCurrency(totalTier1, 'PKR')}</div>
-        <div class="kpi-subtext">Gifting, Samples, Testing, Bidding Travel</div>
+        <div class="kpi-subtext">${tier1Cats.length} Master Categories (${tier1Expenses.length} Logged)</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
         <div class="kpi-title">🚚 Tier 2: PO Logistics & Freight</div>
         <div class="kpi-value">${formatCurrency(totalTier2, 'PKR')}</div>
-        <div class="kpi-subtext">3PL Freight, Customs, Port Demurrage</div>
+        <div class="kpi-subtext">${tier2Cats.length} Master Categories (${tier2Expenses.length} Logged)</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #64748b;">
         <div class="kpi-title">🏢 Tier 3: General Overheads</div>
         <div class="kpi-value">${formatCurrency(totalTier3, 'PKR')}</div>
-        <div class="kpi-subtext">Salaries, Rent, Utilities, Admin</div>
+        <div class="kpi-subtext">${tier3Cats.length} Master Categories (${tier3Expenses.length} Logged)</div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">💳 3-Tier Company & Project Expenditure Ledger</div>
-        ${!State.isReadOnly() && State.hasPermission('expenses', 'add') ? `<button class="primary-btn" onclick="openExpenseModal()">+ Record Expenditure</button>` : ''}
+    <!-- Navigation Sub-Tabs & Actions Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+      <div style="display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 8px; gap: 4px;">
+        <button type="button" class="btn-tab-toggle ${_activeExpenseTab === 'ledger' ? 'active' : ''}" onclick="switchExpenseTab('ledger')" style="padding: 7px 18px; font-size: 0.88rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_activeExpenseTab === 'ledger' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1);' : 'background: transparent; color: #475569;'}">
+          💳 3-Tier Expenditure Ledger (${expenses.length})
+        </button>
+        <button type="button" class="btn-tab-toggle ${_activeExpenseTab === 'categories' ? 'active' : ''}" onclick="switchExpenseTab('categories')" style="padding: 7px 18px; font-size: 0.88rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_activeExpenseTab === 'categories' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1);' : 'background: transparent; color: #475569;'}">
+          📁 Master Expense Categories (${categories.length} in DB)
+        </button>
       </div>
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Tier & Classification</th>
-              <th>Expense Title / Details</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th>Date</th>
-              <th>Paid To</th>
-              <th>Attributed Project / PO</th>
-              <th>Payment Mode</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${expenses.length === 0 ? `
+
+      <div style="display: flex; gap: 8px;">
+        <button class="secondary-btn" onclick="openAddExpenseCategoryModal()" style="font-size: 0.85rem; font-weight: 600;">
+          ➕ + Add Expense Category
+        </button>
+        ${!State.isReadOnly() && State.hasPermission('expenses', 'add') ? `
+          <button class="primary-btn" onclick="openExpenseModal()" style="font-size: 0.85rem; font-weight: 600;">
+            💳 + Record Expenditure
+          </button>
+        ` : ''}
+      </div>
+    </div>
+
+    ${_activeExpenseTab === 'ledger' ? `
+      <!-- TAB 1: 3-TIER EXPENDITURE TRANSACTIONS LEDGER -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">💳 3-Tier Company & Project Expenditure Ledger</div>
+          <div style="display:flex; gap:8px;">
+            <button class="secondary-btn" style="font-size:0.78rem; padding:4px 10px;" onclick="switchExpenseTab('categories')">View All ${categories.length} Categories in DB</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
               <tr>
-                <td colspan="9" style="text-align:center; padding:36px 20px; color:var(--text-muted);">
-                  💳 <strong>No expenditures recorded yet.</strong><br>
-                  <span style="font-size:0.85rem;">Click <strong>+ Record Expenditure</strong> above to log Tier 1 pre-bid expenses, Tier 2 logistics, or Tier 3 overheads.</span>
-                </td>
+                <th>Tier & Classification</th>
+                <th>Expense Title / Details</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Paid To</th>
+                <th>Attributed Project / PO</th>
+                <th>Payment Mode</th>
+                <th>Actions</th>
               </tr>
-            ` : expenses.map(e => {
-              const isTier1 = tier1Expenses.includes(e);
-              const isTier2 = tier2Expenses.includes(e);
-
-              let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
-              if (isTier1) {
-                tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
-              } else if (isTier2) {
-                tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
-              }
-
-              const projectRef = e.opportunity_number ? `
-                <strong style="color:var(--primary); font-size:0.82rem;">${e.opportunity_number}</strong><br>
-                <span style="font-size:0.72rem; color:var(--text-muted);">${e.tender_name || e.opportunity_title || ''}</span>
-              ` : (e.po_number || e.purchase_order_id ? `
-                <strong style="color:#059669; font-size:0.82rem;">PO: ${e.po_number || 'PO Ref'}</strong><br>
-                <span style="font-size:0.72rem; color:var(--text-muted);">${e.notes || ''}</span>
-              ` : `<span style="color:var(--text-muted); font-size:0.78rem;">General Overhead</span>`);
-
-              return `
+            </thead>
+            <tbody>
+              ${expenses.length === 0 ? `
                 <tr>
-                  <td>${tierBadge}</td>
-                  <td>
-                    <strong>${e.expense_name || e.category}</strong><br>
-                    <span style="font-size:0.72rem; color:var(--text-muted);">${e.remarks || e.notes || ''}</span>
-                  </td>
-                  <td>
-                    <span class="badge badge-sec-attached" style="font-size:0.72rem;">${e.category}</span>
-                  </td>
-                  <td>
-                    <strong style="color:#b45309; font-size:0.92rem;">${formatCurrency(e.amount, 'PKR')}</strong>
-                  </td>
-                  <td>${e.expense_date || 'Today'}</td>
-                  <td><strong>${e.paid_to || 'Vendor'}</strong></td>
-                  <td>${projectRef}</td>
-                  <td><span class="pill-source" style="font-size:0.72rem;">${e.payment_mode || 'Online'}</span></td>
-                  <td>
-                    ${!State.isReadOnly() && State.hasPermission('expenses', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('expense', '${e.id}')">✏️ Edit</button>` : ''}
+                  <td colspan="9" style="text-align:center; padding:36px 20px; color:var(--text-muted);">
+                    💳 <strong>No expenditures recorded yet.</strong><br>
+                    <span style="font-size:0.85rem;">Click <strong>+ Record Expenditure</strong> above to log Tier 1 pre-bid expenses, Tier 2 logistics, or Tier 3 overheads.</span>
                   </td>
                 </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
+              ` : expenses.map(e => {
+                const isTier1 = tier1Expenses.includes(e);
+                const isTier2 = tier2Expenses.includes(e);
+
+                let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
+                if (isTier1) {
+                  tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
+                } else if (isTier2) {
+                  tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
+                }
+
+                const projectRef = e.opportunity_number ? `
+                  <strong style="color:var(--primary); font-size:0.82rem;">${e.opportunity_number}</strong><br>
+                  <span style="font-size:0.72rem; color:var(--text-muted);">${e.tender_name || e.opportunity_title || ''}</span>
+                ` : (e.po_number || e.purchase_order_id ? `
+                  <strong style="color:#059669; font-size:0.82rem;">PO: ${e.po_number || 'PO Ref'}</strong><br>
+                  <span style="font-size:0.72rem; color:var(--text-muted);">${e.notes || ''}</span>
+                ` : `<span style="color:var(--text-muted); font-size:0.78rem;">General Overhead</span>`);
+
+                return `
+                  <tr>
+                    <td>${tierBadge}</td>
+                    <td>
+                      <strong>${e.expense_name || e.category}</strong><br>
+                      <span style="font-size:0.72rem; color:var(--text-muted);">${e.remarks || e.notes || ''}</span>
+                    </td>
+                    <td>
+                      <span class="badge badge-sec-attached" style="font-size:0.72rem;">${e.category}</span>
+                    </td>
+                    <td>
+                      <strong style="color:#b45309; font-size:0.92rem;">${formatCurrency(e.amount, 'PKR')}</strong>
+                    </td>
+                    <td>${e.expense_date || 'Today'}</td>
+                    <td><strong>${e.paid_to || 'Vendor'}</strong></td>
+                    <td>${projectRef}</td>
+                    <td><span class="pill-source" style="font-size:0.72rem;">${e.payment_mode || 'Online'}</span></td>
+                    <td>
+                      ${!State.isReadOnly() && State.hasPermission('expenses', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('expense', '${e.id}')">✏️ Edit</button>` : ''}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      <!-- Quick Category Directory Panel directly visible on the Main Screen -->
+      <div class="card" style="margin-top: 20px; background: #f8fafc; border: 1px solid #e2e8f0;">
+        <div class="card-header" style="background: transparent; border-bottom: 1px solid #e2e8f0;">
+          <div>
+            <h3 style="font-size: 0.96rem; font-weight: 700; color: #1e293b; margin: 0;">
+              📁 Configured Expense Categories Directory (${categories.length} Categories in Database)
+            </h3>
+            <span style="font-size: 0.78rem; color: #64748b;">Click any category below to immediately record an expenditure under that specific classification</span>
+          </div>
+          <button class="secondary-btn" style="font-size: 0.8rem; padding: 4px 10px;" onclick="openAddExpenseCategoryModal()">➕ Add Custom Category</button>
+        </div>
+        <div style="padding: 16px;">
+          <!-- Tier 1 -->
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 0.82rem; font-weight: 700; color: #0369a1; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <span>🎯 Tier 1: Tender & Quotation Pre-Bid Direct Expenses</span>
+              <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.7rem;">${tier1Cats.length} Categories</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${tier1Cats.map(c => `
+                <button type="button" class="btn-category-chip" onclick="openExpenseModal('Tier 1 - Tender Direct', '', '', '${c.name.replace(/'/g, "\\'")}')" style="background: #ffffff; border: 1px solid #bae6fd; color: #0369a1; padding: 4px 10px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s;" title="${c.description || c.name}">
+                  + ${c.name}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Tier 2 -->
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 0.82rem; font-weight: 700; color: #92400e; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <span>🚚 Tier 2: PO & Delivery Execution Logistics Costs</span>
+              <span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.7rem;">${tier2Cats.length} Categories</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${tier2Cats.map(c => `
+                <button type="button" class="btn-category-chip" onclick="openExpenseModal('Tier 2 - PO Execution', '', '', '${c.name.replace(/'/g, "\\'")}')" style="background: #ffffff; border: 1px solid #fde68a; color: #92400e; padding: 4px 10px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s;" title="${c.description || c.name}">
+                  + ${c.name}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Tier 3 -->
+          <div>
+            <div style="font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <span>🏢 Tier 3: General Business & Administrative Overheads</span>
+              <span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.7rem;">${tier3Cats.length} Categories</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${tier3Cats.map(c => `
+                <button type="button" class="btn-category-chip" onclick="openExpenseModal('Tier 3 - General Overheads', '', '', '${c.name.replace(/'/g, "\\'")}')" style="background: #ffffff; border: 1px solid #cbd5e1; color: #334155; padding: 4px 10px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s;" title="${c.description || c.name}">
+                  + ${c.name}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    ` : `
+      <!-- TAB 2: MASTER EXPENSE CATEGORIES & TIERS CATALOG -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+          <div>
+            <div class="card-title">📁 Master Expense Categories Catalog (${filteredCategories.length})</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Configured standard and custom expense classifications stored in database</div>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <button class="filter-chip ${_activeExpenseCatFilterTier === 'all' ? 'active' : ''}" onclick="filterCategoryCatalogByTier('all')">All Tiers (${categories.length})</button>
+            <button class="filter-chip ${_activeExpenseCatFilterTier === 'Tier 1 - Tender Direct' ? 'active' : ''}" onclick="filterCategoryCatalogByTier('Tier 1 - Tender Direct')">🎯 Tier 1 (${tier1Cats.length})</button>
+            <button class="filter-chip ${_activeExpenseCatFilterTier === 'Tier 2 - PO Execution' ? 'active' : ''}" onclick="filterCategoryCatalogByTier('Tier 2 - PO Execution')">🚚 Tier 2 (${tier2Cats.length})</button>
+            <button class="filter-chip ${_activeExpenseCatFilterTier === 'Tier 3 - General Overheads' ? 'active' : ''}" onclick="filterCategoryCatalogByTier('Tier 3 - General Overheads')">🏢 Tier 3 (${tier3Cats.length})</button>
+            <button class="primary-btn" style="font-size: 0.8rem; padding: 5px 12px;" onclick="openAddExpenseCategoryModal()">➕ Add Category</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 180px;">Tier & Classification</th>
+                <th style="width: 250px;">Category Name</th>
+                <th>Description / Expenditure Scope</th>
+                <th style="width: 140px;">Logged Activity</th>
+                <th style="width: 100px; text-align: center;">Status</th>
+                <th style="width: 140px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredCategories.map(c => {
+                const catExpenses = expenses.filter(e => e.category === c.name || (e.expense_tier === c.tier && e.expense_name === c.name));
+                const catTotal = catExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+
+                let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
+                if (c.tier === 'Tier 1 - Tender Direct') {
+                  tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
+                } else if (c.tier === 'Tier 2 - PO Execution') {
+                  tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
+                }
+
+                return `
+                  <tr>
+                    <td>${tierBadge}</td>
+                    <td>
+                      <strong style="color: #1e293b; font-size: 0.88rem;">${c.name}</strong>
+                    </td>
+                    <td style="color: #64748b; font-size: 0.82rem;">
+                      ${c.description || 'Standard business expenditure classification'}
+                    </td>
+                    <td>
+                      ${catExpenses.length > 0 ? `
+                        <strong style="color: #b45309; font-size: 0.84rem;">${formatCurrency(catTotal, 'PKR')}</strong><br>
+                        <span style="font-size: 0.72rem; color: #64748b;">${catExpenses.length} transaction${catExpenses.length > 1 ? 's' : ''}</span>
+                      ` : `<span style="color: #94a3b8; font-size: 0.78rem;">No transactions yet</span>`}
+                    </td>
+                    <td style="text-align: center;">
+                      <span class="badge badge-won" style="font-size: 0.72rem;">Active</span>
+                    </td>
+                    <td style="text-align: right;">
+                      <button class="primary-btn" style="padding: 4px 8px; font-size: 0.74rem; font-weight: 600;" onclick="openExpenseModal('${c.tier}', '', '', '${c.name.replace(/'/g, "\\'")}')">
+                        💳 Log Expense
+                      </button>
+                      ${c.tenant_id ? `
+                        <button class="edit-btn" style="padding: 4px 6px; font-size: 0.74rem;" onclick="openEditExpenseCategoryModal('${c.id}')">✏️</button>
+                        <button class="withdraw-btn" style="padding: 4px 6px; font-size: 0.74rem;" onclick="deleteExpenseCategory('${c.id}')">🗑️</button>
+                      ` : ''}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `}
   `;
 }
 
@@ -9639,8 +9830,18 @@ const EXPENSE_CATEGORIES_BY_TIER = {
 
 let _cachedExpenseOpportunities = [];
 let _cachedExpenseSuggestions = [];
+let _cachedExpenseCategories = [];
 
-async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', presetOppId = '', presetPoId = '') {
+async function loadExpenseCategories() {
+  try {
+    _cachedExpenseCategories = await API.getExpenseCategories();
+  } catch (e) {
+    _cachedExpenseCategories = [];
+  }
+  return _cachedExpenseCategories;
+}
+
+async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', presetOppId = '', presetPoId = '', presetCategory = '') {
   const el = document.getElementById('modal-add-expense');
   if (!el) return;
 
@@ -9658,7 +9859,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
   const menuEl = document.getElementById('exp-linked-dropdown');
 
   if (tierEl) tierEl.value = presetTier;
-  if (nameEl) nameEl.value = '';
+  if (nameEl) nameEl.value = presetCategory || '';
   if (oppIdEl) oppIdEl.value = presetOppId;
   if (poIdEl) poIdEl.value = presetPoId;
   if (searchEl) searchEl.value = '';
@@ -9674,6 +9875,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
   el.classList.add('open');
 
   try {
+    await loadExpenseCategories();
     _cachedExpenseOpportunities = await API.getOpportunities(State.currentBusinessProfileId);
     _cachedExpenseSuggestions = await API.getExpenseSuggestions();
   } catch (e) {
@@ -9691,7 +9893,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
     }
   } catch (e) {}
 
-  handleExpenseTierChange(presetTier);
+  handleExpenseTierChange(presetTier, presetCategory);
 
   if (presetOppId) {
     const matched = _cachedExpenseOpportunities.find(o => o.id === presetOppId);
@@ -9701,7 +9903,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
   }
 }
 
-function handleExpenseTierChange(tier) {
+function handleExpenseTierChange(tier, presetCategory = '') {
   const selectedTier = tier || document.getElementById('exp-tier')?.value || 'Tier 3 - General Overheads';
   const groupLinked = document.getElementById('group-exp-linked');
   const groupPOSelect = document.getElementById('group-exp-po-select');
@@ -9709,10 +9911,26 @@ function handleExpenseTierChange(tier) {
   const linkedLabel = document.getElementById('exp-linked-label');
   const linkedSearch = document.getElementById('exp-linked-search');
 
-  // Populate categories for tier
-  const categories = EXPENSE_CATEGORIES_BY_TIER[selectedTier] || EXPENSE_CATEGORIES_BY_TIER['Tier 3 - General Overheads'];
+  // Populate categories dynamically from database cache
+  let categories = (_cachedExpenseCategories || []).filter(c => c.tier === selectedTier && c.is_active !== false);
+  
+  // Fallback to static if cache not loaded yet
+  if (categories.length === 0 && EXPENSE_CATEGORIES_BY_TIER[selectedTier]) {
+    categories = EXPENSE_CATEGORIES_BY_TIER[selectedTier].map(name => ({ name, tier: selectedTier }));
+  }
+
   if (catSelect) {
-    catSelect.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    let optionsHtml = categories.map(c => `
+      <option value="${c.name}" ${(presetCategory && c.name === presetCategory) ? 'selected' : ''}>
+        ${c.name}
+      </option>
+    `).join('');
+    optionsHtml += `<option value="__ADD_NEW__" style="font-weight:700; color:var(--primary);">➕ + Add New Custom Category...</option>`;
+    catSelect.innerHTML = optionsHtml;
+    
+    if (presetCategory) {
+      catSelect.value = presetCategory;
+    }
   }
 
   if (selectedTier === 'Tier 1 - Tender Direct') {
@@ -9731,9 +9949,95 @@ function handleExpenseTierChange(tier) {
 }
 
 function handleExpenseCategorySelected(cat) {
+  if (cat === '__ADD_NEW__') {
+    const currentTier = document.getElementById('exp-tier')?.value || 'Tier 3 - General Overheads';
+    openAddExpenseCategoryModal(currentTier);
+    return;
+  }
   const nameEl = document.getElementById('exp-name');
-  if (nameEl && !nameEl.value) {
+  if (nameEl && (!nameEl.value || cat)) {
     nameEl.value = cat;
+  }
+}
+
+function openAddExpenseCategoryModal(presetTier = 'Tier 3 - General Overheads') {
+  const tierSelect = document.getElementById('exp-cat-tier');
+  const nameInput = document.getElementById('exp-cat-name');
+  const descInput = document.getElementById('exp-cat-desc');
+  const idInput = document.getElementById('exp-cat-id');
+  const titleEl = document.getElementById('modal-exp-cat-title');
+
+  if (titleEl) titleEl.innerText = '📁 Add Master Expense Category';
+  if (idInput) idInput.value = '';
+  if (nameInput) nameInput.value = '';
+  if (descInput) descInput.value = '';
+  if (tierSelect && presetTier) tierSelect.value = presetTier;
+
+  openModal('modal-add-expense-category');
+}
+
+function openEditExpenseCategoryModal(id) {
+  const cat = (_cachedExpenseCategories || []).find(c => c.id === id);
+  if (!cat) return;
+
+  const tierSelect = document.getElementById('exp-cat-tier');
+  const nameInput = document.getElementById('exp-cat-name');
+  const descInput = document.getElementById('exp-cat-desc');
+  const idInput = document.getElementById('exp-cat-id');
+  const titleEl = document.getElementById('modal-exp-cat-title');
+
+  if (titleEl) titleEl.innerText = '📁 Edit Master Expense Category';
+  if (idInput) idInput.value = cat.id;
+  if (nameInput) nameInput.value = cat.name;
+  if (descInput) descInput.value = cat.description || '';
+  if (tierSelect) tierSelect.value = cat.tier;
+
+  openModal('modal-add-expense-category');
+}
+
+async function submitExpenseCategoryForm() {
+  const id = document.getElementById('exp-cat-id')?.value;
+  const tier = document.getElementById('exp-cat-tier')?.value;
+  const name = document.getElementById('exp-cat-name')?.value?.trim();
+  const description = document.getElementById('exp-cat-desc')?.value?.trim();
+
+  if (!name || !tier) {
+    alert('Category Name and Tier are required.');
+    return;
+  }
+
+  if (id) {
+    const res = await API.updateExpenseCategory(id, { tier, name, description });
+    if (res && res.success) {
+      showToast('✓ Expense category updated in database.', 'success');
+    }
+  } else {
+    const res = await API.createExpenseCategory({ tier, name, description });
+    if (res && res.success) {
+      showToast(`✓ Master category "${name}" added to database!`, 'success');
+    }
+  }
+
+  closeModal('modal-add-expense-category');
+  await loadExpenseCategories();
+
+  // If the expense modal is open, refresh the dropdown with the new category selected
+  const expModal = document.getElementById('modal-add-expense');
+  if (expModal && expModal.classList.contains('open')) {
+    handleExpenseTierChange(tier, name);
+    const nameEl = document.getElementById('exp-name');
+    if (nameEl) nameEl.value = name;
+  } else {
+    await renderActiveView();
+  }
+}
+
+async function deleteExpenseCategory(id) {
+  if (confirm('Are you sure you want to remove this expense category?')) {
+    await API.deleteExpenseCategory(id);
+    showToast('Expense category deactivated.', 'info');
+    await loadExpenseCategories();
+    await renderActiveView();
   }
 }
 

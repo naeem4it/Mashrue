@@ -1954,6 +1954,45 @@
     </div>
   </div>
 
+  <!-- 9C. Master Expense Category Modal -->
+  <div class="modal-backdrop" id="modal-add-expense-category">
+    <div class="modal-card" style="max-width: 540px;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;" id="modal-exp-cat-title">📁 Add Master Expense Category</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-add-expense-category')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-expense-category" onsubmit="event.preventDefault(); submitExpenseCategoryForm();">
+          <input type="hidden" id="exp-cat-id">
+
+          <div class="form-group">
+            <label class="form-label">Expense Tier & Classification *</label>
+            <select class="form-select" id="exp-cat-tier" required>
+              <option value="Tier 1 - Tender Direct">🎯 Tier 1: Tender & Quotation Pre-Bid Direct Expense</option>
+              <option value="Tier 2 - PO Execution">🚚 Tier 2: PO & Delivery Execution Logistics Cost</option>
+              <option value="Tier 3 - General Overheads" selected>🏢 Tier 3: General Business & Administrative Overhead</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Category Name *</label>
+            <input type="text" class="form-input" id="exp-cat-name" required placeholder="e.g. Specialized Technical Review / Engineering Inspection">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Description & Cost Allocation Scope</label>
+            <textarea class="form-textarea" id="exp-cat-desc" rows="3" placeholder="Describe what expenses fall under this category..."></textarea>
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-add-expense-category')">Cancel</button>
+            <button type="submit" class="primary-btn">💾 Save Category to Database</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- 9B. Tender Loss & Grievance Lifecycle Modal -->
   <div class="modal-backdrop" id="modal-tender-loss-eval">
     <div class="modal-card modal-lg" style="max-width: 780px;">
