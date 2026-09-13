@@ -7606,7 +7606,10 @@ function promptWonBid(oppId, tenderNameDecoded) {
 let _cachedAwardTenderItems = [];
 
 async function promptAwardLetterModal(oppId, tenderNameDecoded) {
-  const name = decodeURIComponent(tenderNameDecoded);
+  let name = tenderNameDecoded || '';
+  try {
+    name = decodeURIComponent(tenderNameDecoded);
+  } catch (_) {}
   document.getElementById('award-opp-id').value = oppId;
 
   // Fetch live line items & tender details for this opportunity
@@ -7633,8 +7636,8 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
     oppTitleEl.innerHTML = `${oppNumber ? `<span style="color:var(--primary); font-family:monospace;">[${oppNumber}]</span> ` : ''}${targetOpp?.tender_name || targetOpp?.title || name}`;
   }
 
-  const shortCode = (oppNumber || name.slice(0, 5)).toUpperCase().replace(/[^A-Z0-9]/g, 'GOVT');
-  document.getElementById('award-no').value = 'LOA-' + shortCode + '-' + new Date().getFullYear() + '-' + Math.floor(100 + Math.random() * 900);
+  const cleanCode = (oppNumber || name).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 25);
+  document.getElementById('award-no').value = `LOA-${cleanCode || 'GOVT'}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
   document.getElementById('award-date').value = new Date().toISOString().slice(0, 10);
   
   const d = new Date();
@@ -7757,7 +7760,10 @@ async function submitAwardLetterForm() {
   const awardNo = document.getElementById('award-no')?.value;
   const awardDate = document.getElementById('award-date')?.value;
   const awardAmount = document.getElementById('award-amount')?.value;
-  const deadline = document.getElementById('award-deadline')?.value;
+  let deadline = document.getElementById('award-deadline')?.value || null;
+  if (deadline && (!/^\d{4}-\d{2}-\d{2}/.test(deadline) || isNaN(new Date(deadline).getTime()))) {
+    deadline = null;
+  }
   const pbgPct = document.getElementById('award-pbg-pct')?.value;
   const stampDutyPct = parseFloat(document.getElementById('award-stamp-duty-pct')?.value || 0.25);
   const stampDutyAmt = parseCurrency(document.getElementById('award-stamp-duty-amount')?.value);
@@ -7819,7 +7825,8 @@ async function submitAwardLetterForm() {
   });
 
   if (!res || !res.success || !res.data?.id) {
-    alert(`⚠️ Failed to record Letter of Award: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    console.error('[AWARD REGISTRATION FAILED]:', res);
+    alert(`⚠️ Failed to record Letter of Award: ${res?.message || res?.error || 'Database error. Record was NOT saved.'}`);
     return;
   }
 

@@ -1479,8 +1479,10 @@ const API = {
         }
         return json;
       }
-      return { success: false, status: res.status, message: json?.message || 'Failed to register award in database.' };
+      console.error('[API createAward failed]:', res.status, json);
+      return { success: false, status: res.status, message: json?.message || json?.error || 'Failed to register award in database.' };
     } catch (e) {
+      console.error('[API createAward network/parse exception]:', e);
       return { success: false, message: e.message || 'Network error registering award.' };
     }
   },

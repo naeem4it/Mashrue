@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { optionalAuth } = require('../middleware/auth.middleware');
+const logger = require('../services/logger.service');
+
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
 
 // ============================================================================
 // 1. AWARD LETTERS (LOA)
@@ -48,23 +51,91 @@ router.get('/awards', optionalAuth, async (req, res) => {
     const result = await db.query(queryText, params);
     res.json({ success: true, data: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    logger.error('[GET /awards] Error fetching awards:', err);
+    res.status(500).json({ success: false, message: err.message, error: err.message });
   }
 });
 
 router.post('/awards', optionalAuth, async (req, res) => {
   const { opportunity_id, bid_id, award_number, award_date, award_amount, acceptance_deadline, remarks, document_url, items } = req.body;
 
-  if (!award_number || !award_amount) {
+  const sanitizedAwardNo = String(award_number || '').trim().slice(0, 100);
+  if (!sanitizedAwardNo || !award_amount) {
     return res.status(400).json({ success: false, message: 'Award Number and Award Amount are mandatory' });
   }
 
   try {
-    let tenantId = req.user?.tenantId;
+    // 1. Resolve Opportunity and Tenant
+    let oppTenantId = null;
+    let targetOppId = opportunity_id;
+
+    if (opportunity_id && isUuid(opportunity_id)) {
+      const oppRes = await db.query(`SELECT id, tenant_id FROM opportunities WHERE id = $1`, [opportunity_id]);
+      if (oppRes.rows.length > 0) {
+        oppTenantId = oppRes.rows[0].tenant_id;
+        targetOppId = oppRes.rows[0].id;
+      }
+    } else {
+      const oppLookup = await db.query(
+        `SELECT id, tenant_id FROM opportunities 
+         WHERE (id::text = $1) OR (opportunity_number = $1) 
+         LIMIT 1`,
+        [String(opportunity_id || '')]
+      );
+      if (oppLookup.rows.length > 0) {
+        oppTenantId = oppLookup.rows[0].tenant_id;
+        targetOppId = oppLookup.rows[0].id;
+      }
+    }
+
+    if (!targetOppId || !isUuid(targetOppId)) {
+      logger.warn('[POST /awards] Invalid or missing opportunity_id:', { opportunity_id });
+      return res.status(400).json({
+        success: false,
+        message: `Valid Opportunity ID is required to record Letter of Award (received: ${opportunity_id || 'empty'}).`
+      });
+    }
+
+    // Determine Tenant ID (prefer oppTenantId, then req.user, then req.body, then system fallback)
+    let tenantId = oppTenantId;
+    if (!tenantId && req.user?.tenantId && isUuid(req.user.tenantId)) {
+      tenantId = req.user.tenantId;
+    }
+    if (!tenantId && req.body.tenant_id && isUuid(req.body.tenant_id)) {
+      tenantId = req.body.tenant_id;
+    }
     if (!tenantId) {
       const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
+
+    // 2. Sanitize Dates
+    let validAwardDate = new Date();
+    if (award_date && typeof award_date === 'string' && award_date.trim()) {
+      const parsedAwardDate = new Date(award_date);
+      if (!isNaN(parsedAwardDate.getTime())) {
+        validAwardDate = parsedAwardDate;
+      }
+    }
+
+    let validDeadline = null;
+    if (acceptance_deadline && typeof acceptance_deadline === 'string' && acceptance_deadline.trim()) {
+      const parsedDeadline = new Date(acceptance_deadline);
+      if (!isNaN(parsedDeadline.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(acceptance_deadline.trim())) {
+        validDeadline = acceptance_deadline.trim().slice(0, 10);
+      }
+    }
+
+    // 3. Sanitize Bid ID
+    const validBidId = (bid_id && isUuid(bid_id)) ? bid_id : null;
+
+    logger.info('[POST /awards] Registering Award Letter:', {
+      award_number: sanitizedAwardNo,
+      targetOppId,
+      tenantId,
+      award_amount,
+      itemsCount: Array.isArray(items) ? items.length : 0
+    });
 
     const result = await db.query(
       `INSERT INTO award_letters 
@@ -73,12 +144,12 @@ router.post('/awards', optionalAuth, async (req, res) => {
        RETURNING *`,
       [
         tenantId,
-        opportunity_id,
-        bid_id || null,
-        award_number,
-        award_date || new Date(),
-        parseFloat(award_amount),
-        acceptance_deadline || null,
+        targetOppId,
+        validBidId,
+        sanitizedAwardNo,
+        validAwardDate,
+        parseFloat(award_amount) || 0,
+        validDeadline,
         'Issued',
         document_url || null,
         remarks || null
@@ -90,6 +161,7 @@ router.post('/awards', optionalAuth, async (req, res) => {
     if (items && Array.isArray(items) && items.length > 0) {
       for (const itm of items) {
         try {
+          const validProdId = (itm.product_service_id && isUuid(itm.product_service_id)) ? itm.product_service_id : null;
           const itemRes = await db.query(
             `INSERT INTO award_items 
              (award_letter_id, product_service_id, item_name, item_description, tender_quantity, bid_quantity, awarded_quantity, unit, awarded_unit_price, awarded_total_price, is_awarded)
@@ -97,7 +169,7 @@ router.post('/awards', optionalAuth, async (req, res) => {
              RETURNING *`,
             [
               result.rows[0].id,
-              itm.product_service_id || null,
+              validProdId,
               itm.item_name || itm.item_description || 'Item Scope',
               itm.item_description || itm.item_name || '',
               parseFloat(itm.tender_quantity || itm.bid_quantity || 1),
@@ -113,22 +185,30 @@ router.post('/awards', optionalAuth, async (req, res) => {
             savedItems.push(itemRes.rows[0]);
           }
         } catch (itemErr) {
-          console.warn('Could not insert award_item row:', itemErr.message);
+          logger.warn('[POST /awards] Could not insert award_item row:', {
+            error: itemErr.message,
+            item_name: itm.item_name
+          });
         }
       }
     }
 
     // Update linked opportunity and bid to won
-    if (opportunity_id) {
+    if (targetOppId) {
       await db.query(
         `UPDATE opportunities SET status = 'won', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-        [opportunity_id]
+        [targetOppId]
       );
       await db.query(
         `UPDATE bids SET approval_status = 'Won', submission_status = 'Submitted', updated_at = CURRENT_TIMESTAMP WHERE opportunity_id = $1`,
-        [opportunity_id]
+        [targetOppId]
       );
     }
+
+    logger.info('[POST /awards] Award Letter registered successfully in database:', {
+      award_id: result.rows[0].id,
+      award_number
+    });
 
     res.status(201).json({
       success: true,
@@ -139,7 +219,12 @@ router.post('/awards', optionalAuth, async (req, res) => {
       message: 'Award Letter registered successfully.'
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    logger.error('[POST /awards] Database failure registering award:', err);
+    res.status(500).json({
+      success: false,
+      message: `Database error: ${err.message}`,
+      error: err.message
+    });
   }
 });
 
@@ -195,7 +280,8 @@ router.post('/awards/:id/accept', optionalAuth, async (req, res) => {
       message: 'Award accepted! Contract initialized. Now issue Performance Guarantee and Purchase Order.'
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    logger.error('[POST /awards/:id/accept] Error accepting award:', err);
+    res.status(500).json({ success: false, message: err.message, error: err.message });
   }
 });
 
@@ -341,10 +427,124 @@ router.get('/contracts', optionalAuth, async (req, res) => {
   }
 });
 
-// PUT update Award Letter
-router.put('/awards/:id', async (req, res) => {
-  const { award_number, award_amount, award_date, acceptance_deadline, status, remarks } = req.body;
+router.post('/contracts', optionalAuth, async (req, res) => {
+  const {
+    opportunity_id,
+    award_letter_id,
+    customer_id,
+    contract_number,
+    contract_value,
+    start_date,
+    end_date,
+    status,
+    remarks
+  } = req.body;
+
   try {
+    let targetOpp = null;
+    let targetOppId = (opportunity_id && isUuid(opportunity_id)) ? opportunity_id : null;
+    if (targetOppId) {
+      const oppRes = await db.query(`SELECT * FROM opportunities WHERE id = $1`, [targetOppId]);
+      targetOpp = oppRes.rows[0] || null;
+    }
+
+    let tenantId = targetOpp?.tenant_id || (req.user?.tenantId && isUuid(req.user.tenantId) ? req.user.tenantId : null);
+    if (!tenantId) {
+      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
+      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    }
+
+    let businessProfileId = targetOpp?.business_profile_id;
+    if (!businessProfileId || !isUuid(businessProfileId)) {
+      const bpRes = await db.query(`SELECT id FROM business_profiles WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+      businessProfileId = bpRes.rows[0]?.id;
+    }
+    if (!businessProfileId) {
+      const bpAny = await db.query(`SELECT id FROM business_profiles LIMIT 1`);
+      businessProfileId = bpAny.rows[0]?.id || 'b0000000-0000-0000-0000-000000000001';
+    }
+
+    let targetCustId = (customer_id && isUuid(customer_id)) ? customer_id : targetOpp?.customer_id;
+    if (!targetCustId || !isUuid(targetCustId)) {
+      const custRes = await db.query(`SELECT id FROM customers WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+      targetCustId = custRes.rows[0]?.id;
+    }
+    if (!targetCustId) {
+      const custAny = await db.query(`SELECT id FROM customers LIMIT 1`);
+      targetCustId = custAny.rows[0]?.id || 'c0000000-0000-0000-0000-000000000001';
+    }
+
+    const cNumber = String(contract_number || `CNT-${Date.now().toString().slice(-6)}`).trim().slice(0, 100);
+    const sDate = start_date && !isNaN(new Date(start_date).getTime()) ? new Date(start_date) : new Date();
+    const eDate = end_date && !isNaN(new Date(end_date).getTime()) ? new Date(end_date) : new Date(Date.now() + 365 * 86400000);
+    const validAlId = (award_letter_id && isUuid(award_letter_id)) ? award_letter_id : null;
+
+    logger.info('[POST /contracts] Registering Contract:', {
+      contract_number: cNumber,
+      tenantId,
+      businessProfileId,
+      targetCustId,
+      validAlId
+    });
+
+    const result = await db.query(
+      `INSERT INTO contracts 
+       (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        tenantId,
+        businessProfileId,
+        validAlId,
+        targetOppId,
+        targetCustId,
+        cNumber,
+        parseFloat(contract_value || 0),
+        sDate,
+        eDate,
+        status || 'Active',
+        remarks || 'Initialized upon LOA recording'
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      message: 'Contract registered successfully.'
+    });
+  } catch (err) {
+    logger.error('[POST /contracts] Error registering contract:', err);
+    res.status(500).json({ success: false, message: `Contract error: ${err.message}`, error: err.message });
+  }
+});
+
+// PUT update Award Letter
+router.put('/awards/:id', optionalAuth, async (req, res) => {
+  const { id } = req.params;
+  const { award_number, award_amount, award_date, acceptance_deadline, status, remarks } = req.body;
+
+  if (!isUuid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid Award ID format.' });
+  }
+
+  try {
+    const sanitizedAwardNo = award_number ? String(award_number).trim().slice(0, 100) : null;
+    let validAwardDate = null;
+    if (award_date && typeof award_date === 'string' && award_date.trim()) {
+      const p = new Date(award_date);
+      if (!isNaN(p.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(award_date.trim())) {
+        validAwardDate = award_date.trim().slice(0, 10);
+      }
+    }
+
+    let validDeadline = null;
+    if (acceptance_deadline && typeof acceptance_deadline === 'string' && acceptance_deadline.trim()) {
+      const p = new Date(acceptance_deadline);
+      if (!isNaN(p.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(acceptance_deadline.trim())) {
+        validDeadline = acceptance_deadline.trim().slice(0, 10);
+      }
+    }
+
     const result = await db.query(
       `UPDATE award_letters
        SET award_number = COALESCE($1, award_number),
@@ -357,25 +557,126 @@ router.put('/awards/:id', async (req, res) => {
        WHERE id = $7
        RETURNING *`,
       [
-        award_number || null,
-        award_amount !== undefined ? parseFloat(award_amount) : null,
-        award_date || null,
-        acceptance_deadline || null,
+        sanitizedAwardNo,
+        award_amount !== undefined && award_amount !== '' ? parseFloat(award_amount) : null,
+        validAwardDate,
+        validDeadline,
         status || null,
-        remarks || null,
-        req.params.id
+        remarks !== undefined ? remarks : null,
+        id
       ]
     );
-    res.json({ success: true, data: result.rows[0], message: 'Award Letter updated successfully' });
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Award Letter not found.' });
+    }
+
+    logger.info('[PUT /awards/:id] Award updated successfully:', { id, status: result.rows[0].status });
+    res.json({ success: true, data: result.rows[0], message: 'Award Letter updated successfully.' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    logger.error('[PUT /awards/:id] Database error:', err);
+    res.status(500).json({ success: false, message: `Database error: ${err.message}`, error: err.message });
+  }
+});
+
+// POST mark award decision (Accepted / Rejected / Pending)
+router.post('/awards/:id/decision', optionalAuth, async (req, res) => {
+  const { id } = req.params;
+  const { decision, reason, remarks, acceptance_date } = req.body;
+
+  if (!isUuid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid Award ID format.' });
+  }
+
+  const validDecisions = ['Accepted', 'Rejected', 'Pending'];
+  if (!decision || !validDecisions.includes(decision)) {
+    return res.status(400).json({ success: false, message: `Invalid decision. Allowed: ${validDecisions.join(', ')}` });
+  }
+
+  try {
+    let acceptDate = null;
+    if (decision === 'Accepted') {
+      acceptDate = acceptance_date && /^\d{4}-\d{2}-\d{2}/.test(String(acceptance_date))
+        ? acceptance_date
+        : new Date().toISOString().slice(0, 10);
+    }
+
+    const result = await db.query(
+      `UPDATE award_letters
+       SET status = $1::varchar,
+           acceptance_date = COALESCE($2::date, acceptance_date),
+           rejection_reason = CASE WHEN $1::varchar = 'Rejected' THEN COALESCE($3::text, rejection_reason) ELSE rejection_reason END,
+           remarks = CASE WHEN $4::text IS NOT NULL THEN COALESCE(remarks, '') || ' | ' || $4::text ELSE remarks END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5::uuid
+       RETURNING *`,
+      [
+        decision,
+        acceptDate,
+        reason || null,
+        remarks || null,
+        id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Award Letter not found.' });
+    }
+
+    const updatedAward = result.rows[0];
+
+    // If accepted, also auto-initialize contract if not yet created
+    if (decision === 'Accepted' && updatedAward.opportunity_id) {
+      const existingCnt = await db.query(`SELECT id FROM contracts WHERE award_letter_id = $1 LIMIT 1`, [id]);
+      if (existingCnt.rows.length === 0) {
+        const oppRes = await db.query(`SELECT * FROM opportunities WHERE id = $1`, [updatedAward.opportunity_id]);
+        const opp = oppRes.rows[0];
+        if (opp) {
+          const cNumber = `CNT-${updatedAward.award_number.replace(/^LOA-/, '')}`;
+          await db.query(
+            `INSERT INTO contracts 
+             (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, CURRENT_DATE + INTERVAL '1 year', 'Active', 'Auto-generated on LOA acceptance')`,
+            [
+              updatedAward.tenant_id,
+              opp.business_profile_id,
+              updatedAward.id,
+              opp.id,
+              opp.customer_id,
+              cNumber,
+              updatedAward.award_amount
+            ]
+          );
+        }
+      }
+    }
+
+    logger.info('[POST /awards/:id/decision] Award decision recorded:', { id, decision });
+    res.json({ success: true, data: updatedAward, message: `Award Letter marked as ${decision}.` });
+  } catch (err) {
+    logger.error('[POST /awards/:id/decision] Error updating award decision:', err);
+    res.status(500).json({ success: false, message: `Database error: ${err.message}`, error: err.message });
   }
 });
 
 // PUT update Performance Guarantee
-router.put('/guarantees/:id', async (req, res) => {
+router.put('/guarantees/:id', optionalAuth, async (req, res) => {
+  const { id } = req.params;
   const { guarantee_number, bank_name, amount, expiry_date, status, remarks } = req.body;
+
+  if (!isUuid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid Guarantee ID format.' });
+  }
+
   try {
+    let validExpiry = null;
+    if (expiry_date && typeof expiry_date === 'string' && expiry_date.trim()) {
+      const p = new Date(expiry_date);
+      if (!isNaN(p.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(expiry_date.trim())) {
+        validExpiry = expiry_date.trim().slice(0, 10);
+      }
+    }
+
     const result = await db.query(
       `UPDATE performance_guarantees
        SET guarantee_number = COALESCE($1, guarantee_number),
@@ -390,16 +691,22 @@ router.put('/guarantees/:id', async (req, res) => {
       [
         guarantee_number || null,
         bank_name || null,
-        amount !== undefined ? parseFloat(amount) : null,
-        expiry_date || null,
+        amount !== undefined && amount !== '' ? parseFloat(amount) : null,
+        validExpiry,
         status || null,
         remarks || null,
-        req.params.id
+        id
       ]
     );
-    res.json({ success: true, data: result.rows[0], message: 'Performance Guarantee updated successfully' });
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Performance Guarantee not found.' });
+    }
+
+    res.json({ success: true, data: result.rows[0], message: 'Performance Guarantee updated successfully.' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    logger.error('[PUT /guarantees/:id] Database error:', err);
+    res.status(500).json({ success: false, message: `Database error: ${err.message}`, error: err.message });
   }
 });
 

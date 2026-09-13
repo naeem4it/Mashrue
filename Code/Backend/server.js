@@ -2,12 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
+const logger = require('./services/logger.service');
 
 process.on('uncaughtException', (err) => {
-  console.error('CRITICAL Uncaught Exception:', err);
+  logger.error('CRITICAL Uncaught Exception:', err);
 });
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('CRITICAL Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('CRITICAL Unhandled Rejection at promise:', reason);
 });
 
 // Optional Security & Performance modules (with graceful fallbacks)
@@ -173,10 +174,10 @@ app.get('*', (req, res, next) => {
 
 // 11. Production Error Handler
 app.use((err, req, res, next) => {
-  console.error(`[SERVER ERROR] ${req.method} ${req.originalUrl}:`, err.message, err.stack);
+  logger.error(`[SERVER ERROR] ${req.method} ${req.originalUrl}:`, err);
   res.status(err.status || 500).json({
     success: false,
-    message: 'There is an error please contact to your administrator.'
+    message: err.message || 'There is an error please contact to your administrator.'
   });
 });
 
