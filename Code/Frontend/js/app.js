@@ -3,6 +3,17 @@
  * Comprehensive Controller, Authentication, RBAC & Dynamic View Renderer
  */
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+window.escapeHtml = escapeHtml;
+
 let pendingPaidCompanyPayload = null;
 let pendingPaidEmployeePayload = null;
 
@@ -26,10 +37,9 @@ function initCustomDateTimePickers() {
         nextArrow: '<span style="font-weight:700;">&rarr;</span>'
       });
       flatpickr('.datetime-picker', {
-        enableTime: true,
-        dateFormat: 'd/m/Y H:i',
-        allowInput: true,
-        time_24hr: false
+        enableTime: false,
+        dateFormat: 'd/m/Y',
+        allowInput: true
       });
     }
   } catch (e) {
@@ -244,35 +254,34 @@ function formatPhoneNumberInput(el) {
 }
 
 function formatDateDDMMYYYY(dateStr) {
-  if (!dateStr) return 'N/A';
+  if (!dateStr || dateStr === 'N/A' || dateStr === 'null' || dateStr === 'undefined') return 'N/A';
+  if (typeof dateStr === 'string') {
+    const trimmed = dateStr.trim();
+    // If it's already DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmyMatch) {
+      return `${String(dmyMatch[1]).padStart(2, '0')}/${String(dmyMatch[2]).padStart(2, '0')}/${dmyMatch[3]}`;
+    }
+    // If it starts with YYYY-MM-DD or YYYY/MM/DD (e.g. ISO string 2026-08-11T19:00:00.000Z)
+    const ymdMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (ymdMatch) {
+      return `${String(ymdMatch[3]).padStart(2, '0')}/${String(ymdMatch[2]).padStart(2, '0')}/${ymdMatch[1]}`;
+    }
+  }
   try {
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
+    if (isNaN(d.getTime())) return String(dateStr);
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
   } catch (e) {
-    return dateStr;
+    return String(dateStr);
   }
 }
 
 function formatDateTimeDDMMYYYY(dateStr) {
-  if (!dateStr) return 'N/A';
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    let hours = d.getHours();
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    return `${day}/${month}/${year} ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
-  } catch (e) {
-    return dateStr;
-  }
+  return formatDateDDMMYYYY(dateStr);
 }
 
 function sendEmailVerificationLink(inputId) {
@@ -1825,10 +1834,24 @@ async function renderDashboardHTML() {
 // 2. OPPORTUNITIES & TENDERS VIEW (WITH 360 COCKPIT & LOSS LIFECYCLE)
 // --------------------------------------------------------------------------
 async function renderOpportunitiesHTML() {
-  const [opps, securities] = await Promise.all([
+  const [oppsRaw, securities] = await Promise.all([
     API.getOpportunities(State.currentBusinessProfileId),
     API.getBidSecurities(State.currentBusinessProfileId)
   ]);
+  const opps = Array.isArray(oppsRaw) ? [...oppsRaw] : [];
+  opps.sort((a, b) => {
+    const parseSortDate = (dStr) => {
+      if (!dStr) return 0;
+      if (typeof dStr === 'string' && dStr.includes('/')) {
+        const parts = dStr.split('/');
+        if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime() || 0;
+      }
+      return new Date(dStr).getTime() || 0;
+    };
+    const dateA = parseSortDate(a.opening_date) || parseSortDate(a.closing_date) || parseSortDate(a.created_at);
+    const dateB = parseSortDate(b.opening_date) || parseSortDate(b.closing_date) || parseSortDate(b.created_at);
+    return dateB - dateA;
+  });
   const isAdmin = State.currentUser?.role === 'CompanyAdmin' || State.isClientAdmin();
 
   return `
@@ -1859,7 +1882,7 @@ async function renderOpportunitiesHTML() {
               <th>Tender Name / Ref #</th>
               <th>Source</th>
               <th>Customer & Org Type</th>
-              <th>Deadline</th>
+              <th>Opening & Closing Date</th>
               <th class="amount-header">Est. Value</th>
               <th>Bid Security Gate</th>
               <th>Status</th>
@@ -1889,7 +1912,10 @@ async function renderOpportunitiesHTML() {
                   <strong>${o.customer_name || 'N/A'}</strong><br>
                   <span style="font-size:0.72rem; color:var(--text-muted);">${o.customer_org_type || 'Government'}</span>
                 </td>
-                <td>${formatDateDDMMYYYY(o.closing_date)}</td>
+                <td>
+                  ${o.opening_date ? `<span style="font-weight:700; color:#0284c7; display:block;">📂 Open: ${formatDateDDMMYYYY(o.opening_date)}</span>` : ''}
+                  <span style="font-size:0.75rem; color:var(--text-muted);">⌛ Close: ${formatDateDDMMYYYY(o.closing_date)}</span>
+                </td>
                 <td class="amount-cell">
                   ${State.canSeeBiddingPrices() 
                     ? `<strong>${formatCurrency(o.estimated_value, o.currency || 'PKR')}</strong>` 
@@ -2072,7 +2098,7 @@ async function renderBidSecuritiesHTML() {
                 <td><strong>${s.beneficiary}</strong></td>
                 <td><strong>${formatCurrency(s.amount, 'PKR')}</strong></td>
                 <td>${s.bank_name || 'Corporate Branch'}</td>
-                <td>${s.expiry_date}</td>
+                <td>${formatDateDDMMYYYY(s.expiry_date)}</td>
                 <td>
                   <span class="badge badge-${(s.status || 'active').toLowerCase()}">${s.status || 'Active'}</span>
                 </td>
@@ -2161,14 +2187,23 @@ async function renderAwardsHTML() {
               const childPOs = pos.filter(p => p.award_letter_id === a.id || p.opportunity_id === a.opportunity_id);
               const itemsCount = (a.items && a.items.length) ? a.items.length : 1;
               const awardedItemsCount = (a.items && a.items.length) ? a.items.filter(i => i.is_awarded !== false).length : 1;
-              const stampDutyAmt = parseFloat(a.stamp_duty_amount) || Math.round((parseFloat(a.award_amount) || 0) * (parseFloat(a.stamp_duty_pct || 0.25) / 100));
+              const oppGates = a.opportunity_workflow_gates || a.workflow_gates;
+              let gatesObj = oppGates;
+              if (typeof gatesObj === 'string') {
+                try { gatesObj = JSON.parse(gatesObj); } catch (_) { gatesObj = null; }
+              }
+              const isSdRequired = a.stamp_duty_required !== false && 
+                (gatesObj ? (gatesObj.requires_stamp_duty !== false && gatesObj.requires_stamp_duty !== 'false' && gatesObj.requires_stamp_duty !== 0) : true) && 
+                (a.stamp_duty_status !== 'Not Required') && 
+                (parseFloat(a.stamp_duty_amount || 0) > 0 || (a.stamp_duty_pct !== undefined && parseFloat(a.stamp_duty_pct) > 0));
+              const stampDutyAmt = isSdRequired ? (parseFloat(a.stamp_duty_amount) || Math.round((parseFloat(a.award_amount) || 0) * (parseFloat(a.stamp_duty_pct || 0.25) / 100))) : 0;
               const isSdPaid = (a.stamp_duty_status === 'Paid');
 
               return `
                 <tr>
                   <td>
                     <strong>${a.award_number}</strong><br>
-                    <span style="font-size:0.75rem; color:var(--text-muted);">${a.award_date}</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted);">${formatDateDDMMYYYY(a.award_date)}</span>
                   </td>
                   <td>
                     <strong>${a.opportunity_number ? `<span style="color:var(--primary); font-family:monospace;">[${a.opportunity_number}]</span> ` : ''}${a.tender_name || 'Won Project'}</strong><br>
@@ -2184,17 +2219,19 @@ async function renderAwardsHTML() {
                     <span style="font-size:0.75rem; color:var(--text-muted);">${childPOs.length} Child PO(s) generated</span>
                   </td>
                   <td>
-                    ${isSdPaid ? `
+                    ${!isSdRequired ? `
+                      <span class="badge" style="font-size:0.75rem; background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;">Stamp Duty Not Applied</span>
+                    ` : (isSdPaid ? `
                       <span class="badge badge-won" style="font-size:0.75rem;">✓ Paid (Challan: ${a.stamp_duty_challan_no || 'Verified'})</span>
                     ` : `
                       <span class="badge badge-loss" style="font-size:0.75rem; ${!State.isReadOnly() ? 'cursor:pointer;' : ''}" ${!State.isReadOnly() ? `onclick="openStampDutyModal('${a.id}', '${a.award_number}', ${stampDutyAmt})"` : ''} title="Record Stamp Duty E-Challan">
                         ⚠️ Unpaid: ${formatCurrency(stampDutyAmt, 'PKR')} ${!State.isReadOnly() ? '(+ Pay)' : ''}
                       </span>
-                    `}
+                    `)}
                   </td>
                   <td>
                     <span style="font-size:0.82rem;">
-                      ${a.acceptance_deadline ? `Deadline: <strong>${a.acceptance_deadline}</strong>` : 'Standard (10 Days)'}
+                      ${a.acceptance_deadline ? `Deadline: <strong>${formatDateDDMMYYYY(a.acceptance_deadline)}</strong>` : 'Standard (10 Days)'}
                     </span>
                   </td>
                   <td>
@@ -2228,18 +2265,19 @@ async function renderAwardsHTML() {
     <!-- Performance Guarantees (PBG) Table -->
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🏦 Bank Performance Guarantees (PBG / Performance Bonds)</div>
-        ${!State.isReadOnly() && State.hasPermission('awards', 'add') ? `<button class="primary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openModal('modal-add-guarantee')">+ Issue Performance Guarantee</button>` : ''}
+        <div class="card-title">🏦 Bank Performance Guarantees (PBG / Performance Bonds) Registry</div>
+        ${!State.isReadOnly() && State.hasPermission('awards', 'add') ? `<button class="primary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="promptAttachPBGForAward()">+ Issue Performance Guarantee</button>` : ''}
       </div>
       <div class="table-responsive">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Guarantee / PBG No</th>
-              <th>Contract / Award Ref</th>
-              <th>Issuing Bank & Branch</th>
-              <th>Amount</th>
-              <th>Expiry Date</th>
+              <th>Instrument Type & No</th>
+              <th>Account Title</th>
+              <th>Beneficiary</th>
+              <th>Amount (PKR)</th>
+              <th>Bank & Branch</th>
+              <th>Performance Guarantee Date</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -2247,25 +2285,32 @@ async function renderAwardsHTML() {
           <tbody>
             ${guarantees.length === 0 ? `
               <tr>
-                <td colspan="7" style="text-align:center; padding:36px 20px; color:#64748b;">
-                  🏦 <strong>No Performance Guarantees issued yet.</strong><br>
-                  <span style="font-size:0.85rem;">Public tenders require a 5% to 10% Performance Bank Guarantee (PBG) upon LOA acceptance before PO execution.</span>
+                <td colspan="8" style="text-align:center; padding:45px 20px; color:var(--text-muted);">
+                  <div style="font-size:2.2rem; margin-bottom:8px;">🏦</div>
+                  <strong style="font-size:1.05rem; color:var(--text-primary); display:block; margin-bottom:4px;">No Performance Guarantees Registered</strong>
+                  <p style="font-size:0.85rem; margin:0 auto; max-width:480px;">No Bank Guarantees, CDRs, or Performance Bonds found. Click <strong>+ Issue Performance Guarantee</strong> above to register an instrument.</p>
                 </td>
               </tr>
             ` : guarantees.map(g => `
               <tr>
-                <td><strong>${g.guarantee_number}</strong></td>
-                <td>${g.contract_number || g.award_number || 'Contract Award'}</td>
-                <td>${g.bank_name || 'Bank Guarantee Branch'}</td>
+                <td>
+                  <strong>${g.instrument_type || 'BG'} #${g.instrument_number || g.guarantee_number || 'N/A'}</strong><br>
+                  <span style="font-size:0.75rem; color:var(--text-muted);">${g.contract_number || g.award_number || g.tender_title || g.opportunity_title || ''}</span>
+                </td>
+                <td>${g.account_title || '-'}</td>
+                <td><strong>${g.beneficiary || g.customer_name || '-'}</strong></td>
                 <td><strong style="color:#059669;">${formatCurrency(g.amount, 'PKR')}</strong></td>
-                <td>${g.expiry_date}</td>
-                <td><span class="badge badge-${g.status === 'Active' ? 'active' : 'released'}">${g.status}</span></td>
+                <td>${g.bank_name || g.bank_branch || '-'}</td>
+                <td>${formatDateDDMMYYYY(g.expiry_date)}</td>
+                <td>
+                  <span class="badge badge-${(g.status || 'Active').toLowerCase() === 'active' ? 'active' : 'released'}">${g.status || 'Active'}</span>
+                </td>
                 <td>
                   <div class="action-buttons-group">
                     ${!State.isReadOnly() && State.hasPermission('awards', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('guarantee', '${g.id}')">✏️ Edit</button>` : ''}
                     ${g.status === 'Active' ? `
                       ${!State.isReadOnly() && State.hasPermission('awards', 'edit') ? `<button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="handleReleaseGuarantee('${g.id}')">🔓 Release</button>` : ''}
-                    ` : `<span style="font-size:0.75rem; color:var(--text-muted);">Released</span>`}
+                    ` : `<span style="font-size:0.75rem; color:var(--text-muted);">Released / Closed</span>`}
                   </div>
                 </td>
               </tr>
@@ -2599,12 +2644,13 @@ async function renderInvoicesHTML() {
               <th>Pending Receivable</th>
               <th>PO Direct Expenses</th>
               <th>Net Profit Margin</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             ${pos.length === 0 ? `
               <tr>
-                <td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">
+                <td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">
                   No active Purchase Orders to reconcile.
                 </td>
               </tr>
@@ -2660,6 +2706,13 @@ async function renderInvoicesHTML() {
                     </strong>
                     <span class="badge ${poNetProfit >= 0 ? 'badge-won' : 'badge-withdraw'}" style="font-size:0.7rem; margin-left:4px;">${State.canSeeBiddingPrices() ? `${poMarginPct}%` : '🔒'}</span>
                   </td>
+                  <td>
+                    ${!State.isReadOnly() && State.hasPermission('invoices', 'add') ? `
+                      <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#0284c7; white-space:nowrap;" onclick="openNewInvoiceModal('${p.id}')">
+                        🧾 Issue Invoice
+                      </button>
+                    ` : '<span style="color:#94a3b8; font-size:0.75rem;">View Only</span>'}
+                  </td>
                 </tr>
               `;
             }).join('')}
@@ -2672,7 +2725,10 @@ async function renderInvoicesHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🧾 Commercial Invoices & FBR Tax Registry</div>
-        ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="primary-btn" onclick="openModal('modal-add-payment')">💵 Record Cheque Payment</button>` : ''}
+        <div style="display:flex; gap:8px;">
+          ${!State.isReadOnly() && State.hasPermission('invoices', 'add') ? `<button class="primary-btn" style="background:#0284c7;" onclick="openNewInvoiceModal()">🧾 Generate Invoice</button>` : ''}
+          ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="secondary-btn" onclick="openModal('modal-add-payment')">💵 Record Cheque Payment</button>` : ''}
+        </div>
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -2725,6 +2781,9 @@ async function renderInvoicesHTML() {
                   <div class="action-buttons-group">
                     <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; background:#0284c7; color:white; font-weight:700;" onclick="open3WayMatchModal('${inv.purchase_order_id || ''}', '${inv.id}')" title="Audit 3-Way Match for this Invoice">
                       🔍 3-Way Match
+                    </button>
+                    <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; background:#7c3aed; color:white; font-weight:600;" onclick="openViewInvoiceModal('${inv.id}')" title="View full invoice details">
+                      👁️ View
                     </button>
                     ${!State.isReadOnly() && State.hasPermission('invoices', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('invoice', '${inv.id}')">✏️ Edit</button>` : ''}
                     ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `
@@ -2920,11 +2979,13 @@ function filterCategoryCatalogByTier(tier) {
 }
 
 async function renderExpensesHTML() {
-  const [expenses, categories] = await Promise.all([
+  const [expenses, categories, opps] = await Promise.all([
     API.getExpenses(State.currentBusinessProfileId),
-    API.getExpenseCategories()
+    API.getExpenseCategories(),
+    API.getOpportunities(State.currentBusinessProfileId).catch(() => [])
   ]);
   _cachedExpenseCategories = categories;
+  _cachedExpenseOpportunities = opps || [];
 
   // Segregate by 3 Tiers
   const tier1Expenses = expenses.filter(e => e.expense_tier === 'Tier 1 - Tender Direct' || e.expense_type === 'Tender Expense' || e.expense_type === 'Quotation Expense' || e.opportunity_id);
@@ -3006,13 +3067,13 @@ async function renderExpensesHTML() {
           <table class="data-table">
             <thead>
               <tr>
-                <th>Tier & Classification</th>
+                <th>Tender Name</th>
                 <th>Expense Title / Details</th>
                 <th>Category</th>
                 <th>Amount</th>
                 <th>Date</th>
                 <th>Paid To</th>
-                <th>Attributed Project / PO</th>
+                <th>Classification / Tier</th>
                 <th>Payment Mode</th>
                 <th>Actions</th>
               </tr>
@@ -3036,31 +3097,57 @@ async function renderExpensesHTML() {
                   tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
                 }
 
-                const projectRef = e.opportunity_number ? `
-                  <strong style="color:var(--primary); font-size:0.82rem;">${e.opportunity_number}</strong><br>
-                  <span style="font-size:0.72rem; color:var(--text-muted);">${e.tender_name || e.opportunity_title || ''}</span>
-                ` : (e.po_number || e.purchase_order_id ? `
-                  <strong style="color:#059669; font-size:0.82rem;">PO: ${e.po_number || 'PO Ref'}</strong><br>
-                  <span style="font-size:0.72rem; color:var(--text-muted);">${e.notes || ''}</span>
-                ` : `<span style="color:var(--text-muted); font-size:0.78rem;">General Overhead</span>`);
+                const matchedOpp = (_cachedExpenseOpportunities || []).find(o => o.id === e.opportunity_id) ||
+                                   (State.opportunities || []).find(o => o.id === e.opportunity_id);
+                const tenderTitle = e.tender_name || e.opportunity_title || matchedOpp?.tender_name || matchedOpp?.title || '';
+                const tenderRef = e.opportunity_number || matchedOpp?.opportunity_number || '';
+                let tenderDisplay = '';
+                if (tenderTitle) {
+                  tenderDisplay = `
+                    <div style="line-height:1.35;">
+                      <strong style="color:#0f172a; font-size:0.88rem; font-weight:700;">${escapeHtml(tenderTitle)}</strong>
+                      ${tenderRef ? `<br><span style="font-size:0.73rem; color:var(--primary); font-weight:600;">${escapeHtml(tenderRef)}</span>` : ''}
+                    </div>
+                  `;
+                } else if (e.po_number) {
+                  tenderDisplay = `
+                    <div style="line-height:1.35;">
+                      <strong style="color:#059669; font-size:0.86rem; font-weight:700;">PO: ${escapeHtml(e.po_number)}</strong>
+                      ${e.customer_name ? `<br><span style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(e.customer_name)}</span>` : ''}
+                    </div>
+                  `;
+                } else if (isTier1) {
+                  tenderDisplay = `
+                    <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem;">🎯 Tender Direct (General / Unassigned)</span>
+                  `;
+                } else {
+                  tenderDisplay = `<span style="color:#64748b; font-size:0.82rem; font-style:italic;">General Overhead (No Tender)</span>`;
+                }
+
+                let classificationHtml = tierBadge;
+                if (e.po_number || e.purchase_order_id) {
+                  classificationHtml += `<br><span style="font-size:0.72rem; color:#059669; font-weight:600;">PO: ${escapeHtml(e.po_number || 'PO Ref')}</span>`;
+                } else if (e.contract_number) {
+                  classificationHtml += `<br><span style="font-size:0.72rem; color:#2563eb; font-weight:600;">CNT: ${escapeHtml(e.contract_number)}</span>`;
+                }
 
                 return `
                   <tr>
-                    <td>${tierBadge}</td>
+                    <td>${tenderDisplay}</td>
                     <td>
-                      <strong>${e.expense_name || e.category}</strong><br>
-                      <span style="font-size:0.72rem; color:var(--text-muted);">${e.remarks || e.notes || ''}</span>
+                      <strong>${escapeHtml(e.expense_name || e.category)}</strong><br>
+                      <span style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(e.remarks || e.notes || '')}</span>
                     </td>
                     <td>
-                      <span class="badge badge-sec-attached" style="font-size:0.72rem;">${e.category}</span>
+                      <span class="badge badge-sec-attached" style="font-size:0.72rem;">${escapeHtml(e.category)}</span>
                     </td>
                     <td>
                       <strong style="color:#b45309; font-size:0.92rem;">${formatCurrency(e.amount, 'PKR')}</strong>
                     </td>
                     <td>${e.expense_date || 'Today'}</td>
-                    <td><strong>${e.paid_to || 'Vendor'}</strong></td>
-                    <td>${projectRef}</td>
-                    <td><span class="pill-source" style="font-size:0.72rem;">${e.payment_mode || 'Online'}</span></td>
+                    <td><strong>${escapeHtml(e.paid_to || 'Vendor')}</strong></td>
+                    <td>${classificationHtml}</td>
+                    <td><span class="pill-source" style="font-size:0.72rem;">${escapeHtml(e.payment_mode || 'Online')}</span></td>
                     <td>
                       ${!State.isReadOnly() && State.hasPermission('expenses', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('expense', '${e.id}')">✏️ Edit</button>` : ''}
                     </td>
@@ -6463,22 +6550,6 @@ async function openNewTenderModal() {
     if (gateFbr) gateFbr.checked = true;
     if (gateDiary) gateDiary.checked = true;
 
-    // If pre-selected customer has configured gates, apply them
-    if (custSelect && custSelect.value) {
-      const selectedCust = customers.find(c => String(c.id) === String(custSelect.value));
-      if (selectedCust && selectedCust.workflow_gates) {
-        const cg = typeof selectedCust.workflow_gates === 'string' ? JSON.parse(selectedCust.workflow_gates) : selectedCust.workflow_gates;
-        if (cg) {
-          if (gateBid) gateBid.checked = cg.requires_bid_security !== false;
-          if (gatePbg) gatePbg.checked = cg.requires_performance_guarantee !== false;
-          if (gateStamp) gateStamp.checked = cg.requires_stamp_duty !== false;
-          if (gateDtl) gateDtl.checked = cg.requires_dtl_inspection === true;
-          if (gateFbr) gateFbr.checked = cg.requires_fbr_e_invoice !== false;
-          if (gateDiary) gateDiary.checked = cg.requires_diary_tracking !== false;
-        }
-      }
-    }
-
     _tenderLineItems = [];
     const tbody = document.getElementById('tender-items-tbody');
     if (tbody) tbody.innerHTML = '';
@@ -6643,12 +6714,6 @@ async function openEditTenderModal(id) {
     if (typeof g === 'string') {
       try { g = JSON.parse(g); } catch (e) { g = null; }
     }
-    if (!g && o.customer_id && customers.length > 0) {
-      const cust = customers.find(c => String(c.id) === String(o.customer_id));
-      if (cust && cust.workflow_gates) {
-        g = typeof cust.workflow_gates === 'string' ? JSON.parse(cust.workflow_gates) : cust.workflow_gates;
-      }
-    }
     if (!g) {
       g = {
         requires_bid_security: true,
@@ -6766,7 +6831,7 @@ function addTenderItemRow(initialData = null) {
         `}
       </td>
       <td>
-        <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="font-size:0.78rem; padding:4px 6px;" oninput="recalculateTenderItemsSum()">
+        <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="min-width:95px; width:100%; font-size:0.85rem; padding:4px 6px; text-align:center; font-weight:700;" oninput="recalculateTenderItemsSum()">
       </td>
       <td>
         <input list="uom-datalist" type="text" class="form-input tnd-item-unit" value="${initialData?.unit || 'PCS'}" style="font-size:0.78rem; padding:4px 6px;" placeholder="e.g. PCS, Nos">
@@ -7141,32 +7206,8 @@ async function submitNewTenderForm() {
 window.submitNewTenderForm = submitNewTenderForm;
 
 function handleTenderCustomerChange(custId) {
-  const isEditing = Boolean(document.getElementById('tender-edit-id')?.value);
-  if (isEditing) return; // Do not override custom gates when user is editing an existing tender
+  // Workflow gates are managed exclusively per tender, not inherited or overridden by customer selection
   if (!custId) return;
-  const customers = window._cachedCustomers || [];
-  const cust = customers.find(c => String(c.id) === String(custId));
-  if (cust && cust.workflow_gates) {
-    let g = cust.workflow_gates;
-    if (typeof g === 'string') {
-      try { g = JSON.parse(g); } catch (e) { g = null; }
-    }
-    if (g) {
-      const gateBid = document.getElementById('gate-bid-security');
-      const gatePbg = document.getElementById('gate-performance-guarantee');
-      const gateStamp = document.getElementById('gate-stamp-duty');
-      const gateDtl = document.getElementById('gate-dtl-inspection');
-      const gateFbr = document.getElementById('gate-fbr-e-invoice');
-      const gateDiary = document.getElementById('gate-diary-tracking');
-
-      if (gateBid) gateBid.checked = g.requires_bid_security !== false;
-      if (gatePbg) gatePbg.checked = g.requires_performance_guarantee !== false;
-      if (gateStamp) gateStamp.checked = g.requires_stamp_duty !== false;
-      if (gateDtl) gateDtl.checked = g.requires_dtl_inspection === true;
-      if (gateFbr) gateFbr.checked = g.requires_fbr_e_invoice !== false;
-      if (gateDiary) gateDiary.checked = g.requires_diary_tracking !== false;
-    }
-  }
 }
 window.handleTenderCustomerChange = handleTenderCustomerChange;
 
@@ -7604,6 +7645,7 @@ function promptWonBid(oppId, tenderNameDecoded) {
 }
 
 let _cachedAwardTenderItems = [];
+let _currentAwardRequiresStampDuty = true;
 
 async function promptAwardLetterModal(oppId, tenderNameDecoded) {
   let name = tenderNameDecoded || '';
@@ -7615,10 +7657,14 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
   // Fetch live line items & tender details for this opportunity
   let oppNumber = '';
   let items = [];
+  let oppWorkflowGates = null;
+  let targetOpp = null;
   try {
     const oppDetails = await API.getOpportunityById(oppId);
     if (oppDetails && oppDetails.data) {
+      targetOpp = oppDetails.data;
       oppNumber = oppDetails.data.opportunity_number || '';
+      oppWorkflowGates = oppDetails.data.workflow_gates || null;
       if (oppDetails.data.items && oppDetails.data.items.length > 0) {
         items = oppDetails.data.items;
       }
@@ -7627,9 +7673,58 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
     console.warn('Could not fetch opp details from API:', e.message);
   }
 
-  const opps = State.getTenantEntityList('opportunities');
-  const targetOpp = opps.find(o => o.id === oppId);
+  if (!targetOpp) {
+    const opps = State.getTenantEntityList('opportunities') || [];
+    targetOpp = opps.find(o => String(o.id) === String(oppId) || String(o.opportunity_number) === String(oppId));
+  }
+  if (!targetOpp) {
+    try {
+      const allOpps = await API.getOpportunities('all');
+      if (Array.isArray(allOpps)) {
+        targetOpp = allOpps.find(o => String(o.id) === String(oppId) || String(o.opportunity_number) === String(oppId));
+      }
+    } catch (_) {}
+  }
+
+  const bids = State.getTenantEntityList('bids') || [];
+  let targetBid = bids.find(b => String(b.opportunity_id) === String(oppId) || String(b.id) === String(oppId));
+  if (!targetBid) {
+    try {
+      const allBids = await API.getBids('all');
+      if (Array.isArray(allBids)) {
+        targetBid = allBids.find(b => String(b.opportunity_id) === String(oppId) || String(b.id) === String(oppId));
+      }
+    } catch (_) {}
+  }
+
   if (!oppNumber && targetOpp) oppNumber = targetOpp.opportunity_number || '';
+  if (!oppWorkflowGates && targetOpp) {
+    oppWorkflowGates = targetOpp.workflow_gates || null;
+  }
+
+  let gates = oppWorkflowGates;
+  if (typeof gates === 'string') {
+    try { gates = JSON.parse(gates); } catch (_) { gates = null; }
+  }
+
+  const requiresStampDuty = gates ? (gates.requires_stamp_duty !== false && gates.requires_stamp_duty !== 'false' && gates.requires_stamp_duty !== 0) : true;
+  _currentAwardRequiresStampDuty = requiresStampDuty;
+
+  const sdGroup = document.getElementById('award-stamp-duty-group');
+  const finRow = document.getElementById('award-financials-row');
+  const sdPctInput = document.getElementById('award-stamp-duty-pct');
+  const sdAmtInput = document.getElementById('award-stamp-duty-amount');
+
+  if (!requiresStampDuty) {
+    if (sdGroup) sdGroup.style.display = 'none';
+    if (finRow) finRow.style.gridTemplateColumns = '1fr 1fr';
+    if (sdPctInput) { sdPctInput.value = '0'; sdPctInput.required = false; }
+    if (sdAmtInput) { sdAmtInput.value = '0'; sdAmtInput.required = false; }
+  } else {
+    if (sdGroup) sdGroup.style.display = 'block';
+    if (finRow) finRow.style.gridTemplateColumns = '1fr 1fr 1fr';
+    if (sdPctInput) { sdPctInput.value = '0.25'; sdPctInput.required = true; }
+  }
 
   const oppTitleEl = document.getElementById('award-opp-title');
   if (oppTitleEl) {
@@ -7644,10 +7739,16 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
   d.setDate(d.getDate() + 10);
   document.getElementById('award-deadline').value = d.toISOString().slice(0, 10);
 
-  if (items.length === 0) {
-    const bids = State.getTenantEntityList('bids');
-    const targetBid = bids.find(b => b.opportunity_id === oppId || b.id === oppId);
+  const fallbackVal = parseFloat(
+    targetOpp?.estimated_value || 
+    targetOpp?.budget_amount || 
+    targetBid?.final_bid_price || 
+    targetBid?.final_price || 
+    targetBid?.supplier_cost_total || 
+    0
+  );
 
+  if (!items || items.length === 0) {
     if (targetOpp && targetOpp.items && targetOpp.items.length > 0) {
       items = targetOpp.items;
     } else if (targetBid && targetBid.items && targetBid.items.length > 0) {
@@ -7656,20 +7757,35 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
       items = [
         {
           id: 'it-1',
-          item_name: name,
-          item_description: name + ' (Primary Scope / Lot 1)',
+          item_name: targetOpp?.tender_name || targetOpp?.title || name,
+          item_description: targetOpp?.tender_name || targetOpp?.title || name,
           quantity: 1,
           unit: 'LOT',
-          estimated_unit_price: parseFloat(targetOpp?.estimated_value || 0)
+          estimated_unit_price: fallbackVal
         }
       ];
     }
   }
+
+  if (items.length === 1) {
+    const currentRate = parseFloat(items[0].estimated_unit_price || items[0].unit_price || items[0].rate || 0);
+    if (currentRate === 0 && fallbackVal > 0) {
+      const q = parseFloat(items[0].quantity) || 1;
+      items[0].estimated_unit_price = fallbackVal / q;
+    }
+  }
+
   _cachedAwardTenderItems = items;
 
   const tbody = document.getElementById('award-items-tbody');
   if (tbody) {
-    tbody.innerHTML = items.map((it, idx) => `
+    tbody.innerHTML = items.map((it, idx) => {
+      const tenderQty = parseFloat(it.quantity || it.tender_quantity || 1);
+      let itemRate = parseFloat(it.estimated_unit_price || it.unit_price || it.awarded_unit_price || it.rate || 0);
+      if (itemRate === 0 && items.length === 1 && fallbackVal > 0) {
+        itemRate = fallbackVal / tenderQty;
+      }
+      return `
       <tr id="award-row-${idx}">
         <td style="text-align: center;">
           <input type="checkbox" id="award-item-check-${idx}" checked onchange="updateAwardItemsTotal()">
@@ -7680,22 +7796,23 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
           <input type="hidden" id="award-item-prod-id-${idx}" value="${it.product_service_id || ''}">
         </td>
         <td>
-          <span style="font-weight: 600;">${it.quantity || 1} ${it.unit || 'PCS'}</span>
-          <input type="hidden" id="award-item-tender-qty-${idx}" value="${it.quantity || 1}">
+          <span style="font-weight: 600;">${tenderQty} ${it.unit || 'PCS'}</span>
+          <input type="hidden" id="award-item-tender-qty-${idx}" value="${tenderQty}">
           <input type="hidden" id="award-item-unit-${idx}" value="${it.unit || 'PCS'}">
         </td>
         <td>
-          <input type="number" class="form-input" id="award-item-qty-${idx}" value="${it.quantity || 1}" min="0" step="any" style="width: 100px; padding: 4px 6px; font-weight:700;" oninput="updateAwardItemsTotal()">
+          <input type="number" class="form-input" id="award-item-qty-${idx}" value="${tenderQty}" min="0" step="any" style="width: 100px; padding: 4px 6px; font-weight:700;" oninput="updateAwardItemsTotal()">
         </td>
         <td>${it.unit || 'PCS'}</td>
         <td>
-          <input type="number" class="form-input" id="award-item-rate-${idx}" value="${it.estimated_unit_price || it.unit_price || 0}" min="0" step="any" style="width: 130px; padding: 4px 6px;" oninput="updateAwardItemsTotal()">
+          <input type="number" class="form-input" id="award-item-rate-${idx}" value="${itemRate}" min="0" step="any" style="width: 130px; padding: 4px 6px;" oninput="updateAwardItemsTotal()">
         </td>
         <td>
-          <strong id="award-item-total-${idx}" style="color: #059669;">PKR ${((it.quantity || 1) * (it.estimated_unit_price || it.unit_price || 0)).toLocaleString()}</strong>
+          <strong id="award-item-total-${idx}" style="color: #059669;">PKR ${(tenderQty * itemRate).toLocaleString()}</strong>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   updateAwardItemsTotal();
@@ -7733,6 +7850,13 @@ function updateAwardItemsTotal() {
 }
 
 function updateAwardStampDutyCalc() {
+  if (!_currentAwardRequiresStampDuty) {
+    const sdInput = document.getElementById('award-stamp-duty-amount');
+    if (sdInput) sdInput.value = '0';
+    const sdPct = document.getElementById('award-stamp-duty-pct');
+    if (sdPct) sdPct.value = '0';
+    return;
+  }
   const amt = parseFloat(document.getElementById('award-amount')?.value || 0);
   const pct = parseFloat(document.getElementById('award-stamp-duty-pct')?.value || 0.25);
   const sdAmt = Math.round((amt * pct) / 100);
@@ -7765,8 +7889,18 @@ async function submitAwardLetterForm() {
     deadline = null;
   }
   const pbgPct = document.getElementById('award-pbg-pct')?.value;
-  const stampDutyPct = parseFloat(document.getElementById('award-stamp-duty-pct')?.value || 0.25);
-  const stampDutyAmt = parseCurrency(document.getElementById('award-stamp-duty-amount')?.value);
+  let stampDutyPct = 0;
+  let stampDutyAmt = 0;
+  let stampDutyStatus = 'Not Required';
+  let stampDutyRequired = false;
+
+  if (_currentAwardRequiresStampDuty) {
+    stampDutyPct = parseFloat(document.getElementById('award-stamp-duty-pct')?.value || 0.25);
+    stampDutyAmt = parseCurrency(document.getElementById('award-stamp-duty-amount')?.value);
+    stampDutyStatus = 'Unpaid';
+    stampDutyRequired = true;
+  }
+
   const remarks = document.getElementById('award-remarks')?.value;
 
   if (!awardNo || !awardAmount || parseFloat(awardAmount) <= 0) {
@@ -7817,9 +7951,10 @@ async function submitAwardLetterForm() {
     acceptance_deadline: deadline,
     status: 'Accepted',
     pbg_required_pct: parseFloat(pbgPct || 10),
+    stamp_duty_required: stampDutyRequired,
     stamp_duty_pct: stampDutyPct,
     stamp_duty_amount: stampDutyAmt,
-    stamp_duty_status: 'Unpaid',
+    stamp_duty_status: stampDutyStatus,
     items: awardItems,
     remarks: remarks
   });
@@ -7838,7 +7973,10 @@ async function submitAwardLetterForm() {
     contract_number: 'CNT-' + awardNo.replace('LOA-', ''),
     contract_value: parseFloat(awardAmount),
     start_date: awardDate,
-    status: 'Active'
+    status: 'Active',
+    stamp_duty_required: stampDutyRequired,
+    stamp_duty_rate_pct: stampDutyPct,
+    stamp_duty_amount: stampDutyAmt
   });
 
   closeModal('modal-add-award');
@@ -7881,6 +8019,21 @@ async function submitStampDutyPayment() {
     return;
   }
 
+  const payload = {
+    stamp_duty_status: 'Paid',
+    stamp_duty_challan_no: challanNo,
+    stamp_duty_paid_date: paidDate,
+    stamp_duty_amount: amount,
+    stamp_duty_bank: bank
+  };
+
+  const res = await API.recordAwardStampDuty(awardId, payload);
+  if (!res || !res.success) {
+    console.error('[STAMP DUTY PAYMENT FAILED]:', res);
+    alert(`❌ Failed to record Stamp Duty in database:\n${res?.message || res?.error || 'Server error'}`);
+    return;
+  }
+
   const awards = State.getTenantEntityList('awards');
   const award = awards.find(a => a.id === awardId);
   if (award) {
@@ -7892,82 +8045,694 @@ async function submitStampDutyPayment() {
     State.saveTenantEntity('awards', award);
   }
 
-  try {
-    await fetch(`${API_BASE}/awards/${awardId}/decision`, {
-      method: 'POST',
-      headers: API.getHeaders(),
-      body: JSON.stringify({
-        decision: 'Accepted',
-        stamp_duty_status: 'Paid',
-        stamp_duty_challan_no: challanNo,
-        stamp_duty_paid_date: paidDate,
-        stamp_duty_amount: amount,
-        stamp_duty_bank: bank
-      })
-    });
-  } catch (e) {}
-
   closeModal('modal-record-stamp-duty');
-  showToast(`✓ Stamp Duty E-Challan #${challanNo} recorded as Paid!`, 'success');
+  showToast(`✓ Stamp Duty E-Challan #${challanNo} recorded as Paid in database!`, 'success');
   await renderActiveView();
 }
 
-function promptAttachPBGForAward(awardId, awardNo, pbgAmount) {
-  document.getElementById('pg-contract-id').value = awardId;
-  document.getElementById('pg-contract-no').value = awardNo;
-  document.getElementById('pg-number').value = 'PBG-' + (awardNo.replace(/[^0-9]/g, '') || '2026') + '-' + Math.floor(100 + Math.random() * 900);
-  document.getElementById('pg-bank').value = 'Meezan Bank Ltd Corporate Branch';
-  document.getElementById('pg-amount').value = pbgAmount || 1450000;
-  
-  const d = new Date();
-  d.setFullYear(d.getFullYear() + 1);
-  document.getElementById('pg-expiry').value = d.toISOString().slice(0, 10);
-  
-  openModal('modal-add-guarantee');
+// ============================================================================
+// PERFORMANCE GUARANTEE (PBG) CONTROLLER & DRAG-AND-DROP SCANNER
+// Replicating Bid Security screen architecture & field structure (Separate DB entity)
+// ============================================================================
+let _currentPBGInstrumentDataUrl = null;
+let _currentPBGBasisValue = 0;
+
+function handlePBGInstrumentFileSelect(event) {
+  const file = event.target.files?.[0];
+  if (file) {
+    processPBGInstrumentFile(file);
+  }
 }
+window.handlePBGInstrumentFileSelect = handlePBGInstrumentFileSelect;
 
-async function submitPerformanceGuaranteeForm() {
-  const contractId = document.getElementById('pg-contract-id')?.value;
-  const contractNo = document.getElementById('pg-contract-no')?.value;
-  const number = document.getElementById('pg-number')?.value;
-  const bank = document.getElementById('pg-bank')?.value;
-  const amount = document.getElementById('pg-amount')?.value;
-  const expiry = document.getElementById('pg-expiry')?.value;
+function handlePBGInstrumentDragOver(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const dropzone = document.getElementById('pbg-upload-dropzone');
+  if (dropzone) {
+    dropzone.style.borderColor = '#2563eb';
+    dropzone.style.background = '#eff6ff';
+  }
+}
+window.handlePBGInstrumentDragOver = handlePBGInstrumentDragOver;
 
-  if (!number || !bank || !amount || !expiry) {
-    alert('PBG Number, Issuing Bank, Amount, and Expiry Date are mandatory.');
+function handlePBGInstrumentDragLeave(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const dropzone = document.getElementById('pbg-upload-dropzone');
+  if (dropzone) {
+    dropzone.style.borderColor = '#94a3b8';
+    dropzone.style.background = '#f8fafc';
+  }
+}
+window.handlePBGInstrumentDragLeave = handlePBGInstrumentDragLeave;
+
+function handlePBGInstrumentDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const dropzone = document.getElementById('pbg-upload-dropzone');
+  if (dropzone) {
+    dropzone.style.borderColor = '#94a3b8';
+    dropzone.style.background = '#f8fafc';
+  }
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    processPBGInstrumentFile(file);
+  }
+}
+window.handlePBGInstrumentDrop = handlePBGInstrumentDrop;
+
+function clearPBGInstrumentFile() {
+  _currentPBGInstrumentDataUrl = null;
+  const fileInput = document.getElementById('pbg-instrument-file');
+  if (fileInput) fileInput.value = '';
+
+  const preview = document.getElementById('pbg-preview-container');
+  if (preview) preview.style.display = 'none';
+
+  const statusEl = document.getElementById('pbg-scan-status');
+  if (statusEl) statusEl.style.display = 'none';
+
+  const imgEl = document.getElementById('pbg-preview-img');
+  if (imgEl) imgEl.src = '';
+}
+window.clearPBGInstrumentFile = clearPBGInstrumentFile;
+
+async function processPBGInstrumentFile(file) {
+  if (!file) return;
+
+  const statusEl = document.getElementById('pbg-scan-status');
+  const statusText = document.getElementById('pbg-scan-status-text');
+  const previewContainer = document.getElementById('pbg-preview-container');
+  const previewImg = document.getElementById('pbg-preview-img');
+  const previewFilename = document.getElementById('pbg-preview-filename');
+  const previewMatchTag = document.getElementById('pbg-preview-match-tag');
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    _currentPBGInstrumentDataUrl = e.target.result;
+    if (previewImg && file.type.startsWith('image/')) {
+      previewImg.src = _currentPBGInstrumentDataUrl;
+      previewImg.style.display = 'block';
+    } else if (previewImg) {
+      previewImg.style.display = 'none';
+    }
+    if (previewFilename) previewFilename.innerText = file.name;
+    if (previewContainer) previewContainer.style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+
+  if (statusEl) statusEl.style.display = 'block';
+  if (statusText) statusText.innerText = 'Scanning & reading PBG instrument with OCR...';
+
+  let rawExtractedText = '';
+  try {
+    if (typeof Tesseract !== 'undefined' && file.type.startsWith('image/')) {
+      const ocrResult = await Tesseract.recognize(file, 'eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text' && statusText) {
+            const pct = Math.round((m.progress || 0) * 100);
+            statusText.innerText = `Extracting instrument text with OCR (${pct}%)...`;
+          }
+        }
+      });
+      rawExtractedText = ocrResult?.data?.text || '';
+    }
+  } catch (ocrErr) {
+    console.warn('[OCR PBG Warning]:', ocrErr.message);
+  }
+
+  try {
+    if (statusText) statusText.innerText = 'Analyzing Pakistani banking guarantee data...';
+    const parseRes = await API.parseBidSecurityInstrument({
+      raw_text: rawExtractedText,
+      filename: file.name
+    });
+
+    if (parseRes && parseRes.success && parseRes.data) {
+      const d = parseRes.data;
+      if (d.instrument_type) {
+        const typeEl = document.getElementById('pg-instrument-type');
+        if (typeEl) typeEl.value = d.instrument_type === 'PO' || d.instrument_type === 'CDR' ? d.instrument_type : 'BG';
+      }
+      if (d.instrument_number) {
+        const noEl = document.getElementById('pg-number');
+        if (noEl) noEl.value = d.instrument_number;
+      }
+      if (d.bank_name) {
+        const bankEl = document.getElementById('pg-bank');
+        if (bankEl) {
+          bankEl.value = d.bank_branch ? `${d.bank_name} (${d.bank_branch})` : d.bank_name;
+        }
+      }
+      if (d.amount && d.amount > 0) {
+        const amtEl = document.getElementById('pg-amount');
+        if (amtEl) {
+          amtEl.value = Number(d.amount).toLocaleString();
+          formatCurrencyInput(amtEl);
+        }
+      }
+      if (d.date) {
+        const dateEl = document.getElementById('pg-expiry');
+        if (dateEl) {
+          dateEl.value = d.date;
+          try { initCustomDateTimePickers(); } catch (e) {}
+        }
+      }
+      if (d.beneficiary) {
+        const benEl = document.getElementById('pg-beneficiary');
+        if (benEl && (!benEl.value || benEl.value.trim() === '')) {
+          benEl.value = d.beneficiary;
+        }
+      }
+
+      if (previewMatchTag) {
+        previewMatchTag.innerText = `✨ Successfully extracted: ${d.instrument_type || 'PBG'} #${d.instrument_number || ''} ${d.bank_name ? `(${d.bank_name})` : ''} - PKR ${d.amount ? Number(d.amount).toLocaleString() : ''}`;
+      }
+      showToast(`✓ Auto-populated from guarantee: ${d.instrument_type || 'PBG'} #${d.instrument_number || ''}`, 'success');
+    } else {
+      if (previewMatchTag) previewMatchTag.innerText = 'Scan uploaded. Please verify or fill remaining fields.';
+    }
+  } catch (parseErr) {
+    console.warn('[PBG Parsing Error]:', parseErr.message);
+    if (previewMatchTag) previewMatchTag.innerText = 'Scan uploaded. Please fill details manually.';
+  } finally {
+    if (statusEl) statusEl.style.display = 'none';
+  }
+}
+window.processPBGInstrumentFile = processPBGInstrumentFile;
+
+async function handlePBGTargetSearch(query) {
+  const suggestionsBox = document.getElementById('pg-target-suggestions');
+  if (!suggestionsBox) return;
+
+  const [awards, contracts, opps] = await Promise.all([
+    API.getAwards().catch(() => []),
+    API.getContracts().catch(() => []),
+    API.getOpportunities(State.currentBusinessProfileId).catch(() => [])
+  ]);
+
+  const candidates = [];
+
+  // Add Awards
+  (awards || []).forEach(a => {
+    candidates.push({
+      targetType: 'award',
+      id: a.id,
+      awardId: a.id,
+      contractId: null,
+      oppId: a.opportunity_id || null,
+      bizProfileId: a.business_profile_id || null,
+      refNo: a.award_number || 'LOA',
+      title: a.tender_name || a.opportunity_title || 'Won Award',
+      customerName: a.customer_name || '',
+      totalVal: parseFloat(a.award_amount || 0)
+    });
+  });
+
+  // Add Contracts
+  (contracts || []).forEach(c => {
+    candidates.push({
+      targetType: 'contract',
+      id: c.id,
+      awardId: c.award_letter_id || null,
+      contractId: c.id,
+      oppId: c.opportunity_id || null,
+      bizProfileId: c.business_profile_id || null,
+      refNo: c.contract_number || 'CNT',
+      title: c.title || c.tender_name || 'Contract Agreement',
+      customerName: c.customer_name || '',
+      totalVal: parseFloat(c.contract_value || 0)
+    });
+  });
+
+  // Add Won Tenders that don't have awards yet
+  (opps || []).filter(o => o.stage === 'Won' || o.status === 'Won').forEach(o => {
+    if (!candidates.some(c => c.oppId === o.id)) {
+      candidates.push({
+        targetType: 'opportunity',
+        id: o.id,
+        awardId: null,
+        contractId: null,
+        oppId: o.id,
+        bizProfileId: o.business_profile_id || null,
+        refNo: o.opportunity_number || 'TND',
+        title: o.tender_name || o.title || 'Won Tender',
+        customerName: o.customer_name || '',
+        totalVal: parseFloat(o.estimated_value || 0)
+      });
+    }
+  });
+
+  const cleanQuery = (query || '').toLowerCase().trim();
+  const matched = cleanQuery 
+    ? candidates.filter(c => 
+        c.refNo.toLowerCase().includes(cleanQuery) ||
+        c.title.toLowerCase().includes(cleanQuery) ||
+        c.customerName.toLowerCase().includes(cleanQuery)
+      )
+    : candidates;
+
+  if (matched.length === 0) {
+    suggestionsBox.innerHTML = `
+      <div style="padding:10px; color:#64748b; font-size:0.8rem; text-align:center;">
+        No awards, contracts, or won tenders found matching "${query || ''}"
+      </div>
+    `;
+    suggestionsBox.style.display = 'block';
     return;
   }
 
-  await API.createGuarantee({
-    contract_id: contractId,
-    award_letter_id: contractId,
-    contract_number: contractNo,
-    guarantee_number: number,
-    bank_name: bank,
-    amount: parseFloat(amount),
-    expiry_date: expiry,
+  suggestionsBox.innerHTML = matched.slice(0, 10).map(c => `
+    <div class="autocomplete-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; transition:background 0.2s;" 
+         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"
+         onclick="selectTargetForPBG('${c.targetType}', '${c.id}', '${encodeURIComponent(c.title)}', '${encodeURIComponent(c.refNo)}', ${c.totalVal}, '${encodeURIComponent(c.customerName)}', '${c.oppId || ''}', '${c.bizProfileId || ''}')">
+      <div style="font-weight:700; font-size:0.85rem; color:#0f172a;">
+        [${c.refNo}] ${c.title}
+      </div>
+      <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between; margin-top:2px;">
+        <span>Customer: <strong>${c.customerName || 'Department'}</strong></span>
+        <span style="color:#059669; font-weight:600;">Value: ${formatCurrency(c.totalVal, 'PKR')}</span>
+      </div>
+    </div>
+  `).join('');
+  suggestionsBox.style.display = 'block';
+}
+window.handlePBGTargetSearch = handlePBGTargetSearch;
+
+function selectTargetForPBG(targetType, id, titleEnc, refNoEnc, totalVal, customerNameEnc, oppId = '', bizProfileId = '') {
+  const title = decodeURIComponent(titleEnc || '');
+  const refNo = decodeURIComponent(refNoEnc || '');
+  const customerName = decodeURIComponent(customerNameEnc || '');
+
+  const titleEl = document.getElementById('pg-target-title');
+  if (titleEl) titleEl.value = refNo ? `[${refNo}] ${title}` : title;
+
+  const contractIdEl = document.getElementById('pg-contract-id');
+  const awardIdEl = document.getElementById('pg-award-id');
+  const oppIdEl = document.getElementById('pg-opportunity-id');
+  const bizEl = document.getElementById('pg-business-profile-id');
+
+  if (targetType === 'contract') {
+    if (contractIdEl) contractIdEl.value = id;
+  } else if (targetType === 'award') {
+    if (awardIdEl) awardIdEl.value = id;
+    if (contractIdEl) contractIdEl.value = id;
+  } else if (targetType === 'opportunity') {
+    if (oppIdEl) oppIdEl.value = id;
+  }
+  if (oppId && oppIdEl) oppIdEl.value = oppId;
+  if (bizProfileId && bizEl) bizEl.value = bizProfileId;
+
+  _currentPBGBasisValue = totalVal || 0;
+  const basisHint = document.getElementById('pg-calc-basis-hint');
+  if (basisHint) {
+    basisHint.innerText = `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')}`;
+  }
+
+  // Pre-fill 10% standard PBG amount
+  if (totalVal > 0) {
+    const suggestedAmt = Math.round(totalVal * 0.10);
+    const amtEl = document.getElementById('pg-amount');
+    if (amtEl) amtEl.value = suggestedAmt.toLocaleString();
+  }
+
+  // Pre-fill Beneficiary with Customer
+  if (customerName) {
+    const benEl = document.getElementById('pg-beneficiary');
+    if (benEl && !benEl.value) benEl.value = customerName;
+  }
+
+  // Pre-fill default Account Title with active company
+  const currentProfile = State.getCurrentBusinessProfile();
+  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
+    const accEl = document.getElementById('pg-account-title');
+    if (accEl && !accEl.value) accEl.value = currentProfile.business_name;
+  }
+
+  // Suggested PBG instrument number if blank
+  const noEl = document.getElementById('pg-number');
+  if (noEl && (!noEl.value || noEl.value.trim() === '')) {
+    const cleanRef = (refNo || '2026').replace(/[^0-9A-Za-z]/g, '');
+    noEl.value = `PBG-${cleanRef}-${Math.floor(100 + Math.random() * 900)}`;
+  }
+
+  const suggestionsBox = document.getElementById('pg-target-suggestions');
+  if (suggestionsBox) suggestionsBox.style.display = 'none';
+}
+window.selectTargetForPBG = selectTargetForPBG;
+
+function applyPBGModalPct(pct) {
+  if (!_currentPBGBasisValue || _currentPBGBasisValue <= 0) {
+    alert('Please select an Award, Contract, or Won Tender first to calculate the percentage amount.');
+    return;
+  }
+  const calculatedAmt = Math.round(_currentPBGBasisValue * (pct / 100));
+  const amtEl = document.getElementById('pg-amount');
+  if (amtEl) {
+    amtEl.value = calculatedAmt.toLocaleString();
+    formatCurrencyInput(amtEl);
+  }
+}
+window.applyPBGModalPct = applyPBGModalPct;
+
+async function handlePBGTargetSearch(query) {
+  const suggestionsBox = document.getElementById('pg-target-suggestions');
+  if (!suggestionsBox) return;
+
+  let awards = [];
+  let contracts = [];
+  try {
+    awards = await API.getAwards();
+  } catch (e) {
+    awards = State.getTenantEntityList('awards') || [];
+  }
+  try {
+    contracts = await API.getContracts();
+  } catch (e) {
+    contracts = State.getTenantEntityList('contracts') || [];
+  }
+
+  const cleanQuery = (query || '').toLowerCase().trim();
+
+  const items = [];
+  for (const a of (awards || [])) {
+    items.push({
+      type: 'Award Letter',
+      id: a.id,
+      award_id: a.id,
+      contract_id: a.contract_id || '',
+      opportunity_id: a.opportunity_id || '',
+      business_profile_id: a.business_profile_id || '',
+      number: a.award_number || 'LOA',
+      title: a.tender_name || a.title || 'Won Tender Award',
+      customer_name: a.customer_name || '',
+      amount: parseFloat(a.award_amount || 0)
+    });
+  }
+  for (const c of (contracts || [])) {
+    items.push({
+      type: 'Contract',
+      id: c.id,
+      award_id: c.award_letter_id || '',
+      contract_id: c.id,
+      opportunity_id: c.opportunity_id || '',
+      business_profile_id: c.business_profile_id || '',
+      number: c.contract_number || 'CNT',
+      title: c.title || 'Contract Agreement',
+      customer_name: c.customer_name || '',
+      amount: parseFloat(c.contract_value || 0)
+    });
+  }
+
+  const matched = cleanQuery
+    ? items.filter(item => 
+        (item.number && item.number.toLowerCase().includes(cleanQuery)) ||
+        (item.title && item.title.toLowerCase().includes(cleanQuery)) ||
+        (item.customer_name && item.customer_name.toLowerCase().includes(cleanQuery))
+      )
+    : items;
+
+  if (matched.length === 0) {
+    suggestionsBox.innerHTML = `
+      <div style="padding:10px; color:#64748b; font-size:0.8rem; text-align:center;">
+        No awards or contracts found matching "${query || ''}"
+      </div>
+    `;
+    suggestionsBox.style.display = 'block';
+    return;
+  }
+
+  suggestionsBox.innerHTML = matched.slice(0, 8).map(item => `
+    <div class="autocomplete-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; transition:background 0.2s;" 
+         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"
+         onclick="selectTargetForPBG('${item.award_id}', '${item.contract_id}', '${encodeURIComponent(item.number)}', '${encodeURIComponent(item.title)}', ${item.amount}, '${encodeURIComponent(item.customer_name)}', '${item.opportunity_id}', '${item.business_profile_id}')">
+      <div style="font-weight:700; font-size:0.85rem; color:#0f172a;">
+        <span style="display:inline-block; padding:1px 6px; font-size:0.72rem; border-radius:3px; background:#eff6ff; color:#1d4ed8; margin-right:4px;">${item.type}</span>
+        [${item.number}] ${item.title}
+      </div>
+      <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between; margin-top:2px;">
+        <span>Beneficiary: <strong>${item.customer_name || 'Organization'}</strong></span>
+        <span style="color:#2563eb; font-weight:600;">Val: ${formatCurrency(item.amount, 'PKR')}</span>
+      </div>
+    </div>
+  `).join('');
+  suggestionsBox.style.display = 'block';
+}
+window.handlePBGTargetSearch = handlePBGTargetSearch;
+
+function selectTargetForPBG(awardId, contractId, numberEnc, titleEnc, amountVal, custNameEnc, oppId, bizProfileId) {
+  const number = decodeURIComponent(numberEnc || '');
+  const title = decodeURIComponent(titleEnc || '');
+  const custName = decodeURIComponent(custNameEnc || '');
+
+  const awardIdEl = document.getElementById('pg-award-id');
+  const contractIdEl = document.getElementById('pg-contract-id');
+  const oppIdEl = document.getElementById('pg-opportunity-id');
+  const bizProfileIdEl = document.getElementById('pg-business-profile-id');
+  const titleEl = document.getElementById('pg-target-title');
+  const noEl = document.getElementById('pg-number');
+  const benEl = document.getElementById('pg-beneficiary');
+  const accEl = document.getElementById('pg-account-title');
+  const amtEl = document.getElementById('pg-amount');
+  const bankEl = document.getElementById('pg-bank');
+
+  if (awardIdEl) awardIdEl.value = awardId || '';
+  if (contractIdEl) contractIdEl.value = contractId || '';
+  if (oppIdEl) oppIdEl.value = oppId || '';
+  if (bizProfileIdEl) bizProfileIdEl.value = bizProfileId || '';
+
+  if (titleEl) titleEl.value = number ? `[${number}] ${title}` : title;
+  if (noEl && !noEl.value) {
+    noEl.value = `PBG-${(number || '2026').replace(/[^0-9A-Za-z]/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
+  }
+  if (custName && benEl) benEl.value = custName;
+
+  const currentProfile = State.getCurrentBusinessProfile();
+  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
+    if (accEl && !accEl.value) accEl.value = currentProfile.business_name;
+  }
+  if (bankEl && !bankEl.value) bankEl.value = 'Meezan Bank Ltd Corporate Branch';
+
+  _currentPBGBasisValue = amountVal || 0;
+  if (_currentPBGBasisValue > 0 && amtEl) {
+    amtEl.value = Math.round(_currentPBGBasisValue * 0.10).toLocaleString();
+    formatCurrencyInput(amtEl);
+  }
+  const basisHint = document.getElementById('pg-calc-basis-hint');
+  if (basisHint) {
+    basisHint.innerText = _currentPBGBasisValue > 0 ? `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')}` : 'Based on award / contract value';
+  }
+
+  const suggestionsBox = document.getElementById('pg-target-suggestions');
+  if (suggestionsBox) suggestionsBox.style.display = 'none';
+}
+window.selectTargetForPBG = selectTargetForPBG;
+
+function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '', custName = '', totalVal = 0) {
+  clearPBGInstrumentFile();
+
+  const contractIdEl = document.getElementById('pg-contract-id');
+  const awardIdEl = document.getElementById('pg-award-id');
+  const oppIdEl = document.getElementById('pg-opportunity-id');
+  const bizProfileIdEl = document.getElementById('pg-business-profile-id');
+  const titleEl = document.getElementById('pg-target-title');
+  const noEl = document.getElementById('pg-number');
+  const bankEl = document.getElementById('pg-bank');
+  const amtEl = document.getElementById('pg-amount');
+  const expiryEl = document.getElementById('pg-expiry');
+  const accEl = document.getElementById('pg-account-title');
+  const benEl = document.getElementById('pg-beneficiary');
+  const remarksEl = document.getElementById('pg-remarks');
+
+  // CRITICAL: Clear contractIdEl first - awardId is NOT a contract_id!
+  if (contractIdEl) contractIdEl.value = '';
+  if (awardIdEl) awardIdEl.value = awardId || '';
+  if (oppIdEl) oppIdEl.value = oppId || '';
+  if (bizProfileIdEl) bizProfileIdEl.value = '';
+  if (remarksEl) remarksEl.value = '';
+
+  // Look up matching award in state/cache to resolve contract, opp, and customer if missing
+  if (awardId) {
+    try {
+      const awards = State.getTenantEntityList('awards') || [];
+      const matchedAward = awards.find(a => String(a.id) === String(awardId));
+      if (matchedAward) {
+        if (!awardNo && matchedAward.award_number) awardNo = matchedAward.award_number;
+        if (!oppId && matchedAward.opportunity_id) {
+          oppId = matchedAward.opportunity_id;
+          if (oppIdEl) oppIdEl.value = oppId;
+        }
+        if (matchedAward.business_profile_id && bizProfileIdEl) {
+          bizProfileIdEl.value = matchedAward.business_profile_id;
+        }
+        if (!custName && matchedAward.customer_name) custName = matchedAward.customer_name;
+        if (!totalVal && matchedAward.award_amount) totalVal = parseFloat(matchedAward.award_amount);
+        if (matchedAward.contract_id && contractIdEl) {
+          contractIdEl.value = matchedAward.contract_id;
+        }
+      }
+      if (contractIdEl && !contractIdEl.value) {
+        const contracts = State.getTenantEntityList('contracts') || [];
+        const matchedContract = contracts.find(c => String(c.award_letter_id) === String(awardId));
+        if (matchedContract) {
+          contractIdEl.value = matchedContract.id;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (awardNo) {
+    if (titleEl) titleEl.value = `[${awardNo}] Award Letter`;
+    if (noEl) noEl.value = `PBG-${awardNo.replace(/[^0-9A-Za-z]/g, '') || '2026'}-${Math.floor(100 + Math.random() * 900)}`;
+  } else {
+    if (titleEl) titleEl.value = '';
+    if (noEl) noEl.value = '';
+  }
+
+  if (custName && benEl) benEl.value = custName;
+
+  const currentProfile = State.getCurrentBusinessProfile();
+  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
+    if (accEl) accEl.value = currentProfile.business_name;
+  }
+
+  if (bankEl && !bankEl.value) bankEl.value = 'Meezan Bank Ltd Corporate Branch';
+  
+  _currentPBGBasisValue = totalVal || (pbgAmount ? pbgAmount * 10 : 0);
+  if (pbgAmount && amtEl) {
+    amtEl.value = Number(pbgAmount).toLocaleString();
+    formatCurrencyInput(amtEl);
+  } else if (_currentPBGBasisValue > 0 && amtEl) {
+    amtEl.value = Math.round(_currentPBGBasisValue * 0.10).toLocaleString();
+    formatCurrencyInput(amtEl);
+  }
+
+  const basisHint = document.getElementById('pg-calc-basis-hint');
+  if (basisHint) {
+    basisHint.innerText = _currentPBGBasisValue > 0 ? `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')}` : 'Based on award / contract value';
+  }
+
+  if (expiryEl) {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    expiryEl.value = `${day}/${month}/${d.getFullYear()}`;
+  }
+
+  try { initCustomDateTimePickers(); } catch (e) {}
+  openModal('modal-add-guarantee');
+}
+window.promptAttachPBGForAward = promptAttachPBGForAward;
+
+async function submitPerformanceGuaranteeForm() {
+  let contractId = document.getElementById('pg-contract-id')?.value || null;
+  let awardId = document.getElementById('pg-award-id')?.value || null;
+  let oppId = document.getElementById('pg-opportunity-id')?.value || null;
+  let bizProfileId = document.getElementById('pg-business-profile-id')?.value || null;
+  const targetTitle = document.getElementById('pg-target-title')?.value || '';
+
+  // Crucial guard: If contractId was mistakenly set to awardId, null it out
+  if (contractId && contractId === awardId) {
+    contractId = null;
+  }
+
+  // Fallback target resolution if user typed title manually without selecting suggestion
+  if (!awardId && !contractId && targetTitle.trim()) {
+    try {
+      const awards = State.getTenantEntityList('awards') || [];
+      const cleanTitle = targetTitle.toLowerCase().trim();
+      const matchedAward = awards.find(a => 
+        (a.award_number && cleanTitle.includes(a.award_number.toLowerCase())) ||
+        (a.opportunity_number && cleanTitle.includes(a.opportunity_number.toLowerCase())) ||
+        (a.tender_name && cleanTitle.includes(a.tender_name.toLowerCase()))
+      );
+      if (matchedAward) {
+        awardId = matchedAward.id;
+        oppId = oppId || matchedAward.opportunity_id;
+        bizProfileId = bizProfileId || matchedAward.business_profile_id;
+        if (matchedAward.contract_id) contractId = matchedAward.contract_id;
+      }
+    } catch (e) {}
+  }
+
+  const accountTitle = document.getElementById('pg-account-title')?.value;
+  const beneficiary = document.getElementById('pg-beneficiary')?.value;
+  const instrumentType = document.getElementById('pg-instrument-type')?.value;
+  const instrumentNo = document.getElementById('pg-number')?.value;
+  const amount = parseCurrency(document.getElementById('pg-amount')?.value);
+  const expiryDate = document.getElementById('pg-expiry')?.value;
+  const bankName = document.getElementById('pg-bank')?.value || 'Meezan Bank Ltd Corporate Branch';
+  const remarks = document.getElementById('pg-remarks')?.value;
+
+  // Exact 6 mandatory fields matching Bid Security
+  if (!accountTitle || !beneficiary || !instrumentType || !instrumentNo || !amount || !expiryDate) {
+    alert('All first 6 fields are mandatory (Account Title, Beneficiary, Instrument Type, Instrument Number, Amount, Performance Guarantee Date).');
+    return;
+  }
+
+  if (!bizProfileId && State.currentBusinessProfileId && State.currentBusinessProfileId !== 'all') {
+    bizProfileId = State.currentBusinessProfileId;
+  }
+
+  const res = await API.createGuarantee({
+    contract_id: contractId || null,
+    award_letter_id: awardId || null,
+    opportunity_id: oppId || null,
+    business_profile_id: bizProfileId || null,
+    account_title: accountTitle,
+    beneficiary: beneficiary,
+    instrument_type: instrumentType,
+    instrument_number: instrumentNo,
+    guarantee_number: instrumentNo,
+    amount: amount,
+    expiry_date: expiryDate,
+    bank_name: bankName,
+    bank_branch: bankName,
+    comments: remarks,
+    remarks: remarks,
+    instrument_image_url: _currentPBGInstrumentDataUrl || null,
     status: 'Active'
   });
 
+  if (!res || !res.success || !res.data?.id) {
+    console.error('[ATTACH PERFORMANCE GUARANTEE FAILED]:', res);
+    alert(`❌ Performance Guarantee NOT saved in database!\n\nReason: ${res?.message || res?.error || 'Database rejected guarantee record.'}`);
+    return;
+  }
+
+  clearPBGInstrumentFile();
   closeModal('modal-add-guarantee');
-  showToast(`✓ Performance Guarantee ${number} issued successfully.`, 'success');
-  navigateToView('awards');
+  showToast(`✓ Performance Guarantee ${instrumentNo} issued successfully in database!`, 'success');
+  await renderActiveView();
 }
+window.submitPerformanceGuaranteeForm = submitPerformanceGuaranteeForm;
 
 async function handleAwardDecision(awardId, decision) {
   await API.decideAward(awardId, decision);
   showToast(`Award Letter marked as ${decision}.`, 'info');
   await renderActiveView();
 }
+window.handleAwardDecision = handleAwardDecision;
 
 async function handleReleaseGuarantee(id) {
-  if (confirm('Are you sure you want to release this Performance Guarantee upon contract completion?')) {
-    await API.releaseGuarantee(id);
-    showToast('Performance Guarantee successfully released!', 'success');
+  const ref = prompt('Enter release reference number or letter note:', 'PBG Release & Handover Certificate # 205');
+  if (ref) {
+    const res = await API.releaseGuarantee(id, {
+      release_reference: ref,
+      comments: `Released: ${ref}`,
+      release_date: new Date().toISOString().split('T')[0]
+    });
+    if (!res || res.success === false) {
+      alert(`⚠️ Failed to release Performance Guarantee: ${res?.message || 'Database error'}`);
+      return;
+    }
+    showToast('✓ Performance Guarantee has been marked as Released in database.', 'success');
     await renderActiveView();
   }
 }
+window.handleReleaseGuarantee = handleReleaseGuarantee;
 
 // --------------------------------------------------------------------------
 // MULTI-PURCHASE ORDER (1 AWARD -> N POs) ENGINE (WITH UNIVERSAL GST)
@@ -7989,9 +8754,20 @@ async function openNewPOModal(preselectedAwardId) {
   const selectedAward = preselectedAwardId ? awards.find(a => a.id === preselectedAwardId) : acceptedAwards[0];
   _cachedPOAward = selectedAward;
 
+  let targetCustId = selectedAward.customer_id || '';
+  let targetBizId = selectedAward.business_profile_id || '';
+  if (!targetCustId && selectedAward.opportunity_id) {
+    const allOpps = State.getTenantEntityList('opportunities');
+    const matchedOpp = allOpps.find(o => String(o.id) === String(selectedAward.opportunity_id));
+    if (matchedOpp) {
+      if (matchedOpp.customer_id) targetCustId = matchedOpp.customer_id;
+      if (matchedOpp.business_profile_id) targetBizId = matchedOpp.business_profile_id;
+    }
+  }
+
   document.getElementById('po-award-id').value = selectedAward.id;
   document.getElementById('po-opp-id').value = selectedAward.opportunity_id || '';
-  document.getElementById('po-cust-id').value = selectedAward.customer_id || '';
+  document.getElementById('po-cust-id').value = targetCustId;
 
   const refEl = document.getElementById('po-award-ref-display');
   const custEl = document.getElementById('po-cust-name-display');
@@ -8010,8 +8786,8 @@ async function openNewPOModal(preselectedAwardId) {
   const d = new Date();
   d.setDate(d.getDate() + 30);
   document.getElementById('po-deadline').value = d.toISOString().slice(0, 10);
-  document.getElementById('po-delivery-location').value = 'Central Warehouse / Client Site (Sheikhupura Road)';
-  document.getElementById('po-department').value = selectedAward.customer_name ? `${selectedAward.customer_name} Engineering Wing` : 'Procurement Directorate';
+  document.getElementById('po-delivery-location').value = '';
+  document.getElementById('po-department').value = '';
 
   const gstRateInput = document.getElementById('po-gst-rate');
   if (gstRateInput) gstRateInput.value = '18';
@@ -8025,8 +8801,7 @@ async function openNewPOModal(preselectedAwardId) {
         item_name: selectedAward.tender_name || 'Electrical & Hardware Supply',
         awarded_quantity: 1,
         unit: 'LOT',
-        awarded_unit_price: parseFloat(selectedAward.award_amount || 0),
-        is_awarded: true
+        awarded_unit_price: parseFloat(selectedAward.awarded_value || selectedAward.contract_value || 0)
       }
     ];
   }
@@ -8044,76 +8819,59 @@ async function openNewPOModal(preselectedAwardId) {
         }
       });
 
-      const awardedQty = parseFloat(it.awarded_quantity || it.quantity || 1);
-      const availableQty = Math.max(0, awardedQty - priorAllocated);
-      const defaultPOQty = availableQty; // Default to allocating remaining balance
+      const maxRemaining = Math.max(0, (parseFloat(it.awarded_quantity || it.quantity || 1) - priorAllocated));
+      const defaultAllocate = maxRemaining > 0 ? maxRemaining : 0;
+      const rate = parseFloat(it.awarded_unit_price || it.unit_price || 0);
 
       return `
-        <tr id="po-row-${idx}">
+        <tr>
           <td>
-            <strong>${it.item_name || it.item_description || 'Item Scope'}</strong>
-            <input type="hidden" id="po-item-name-${idx}" value="${(it.item_name || it.item_description || '').replace(/"/g, '&quot;')}">
+            <strong>${it.item_name || it.item_description}</strong><br>
+            <span style="font-size:0.75rem; color:#64748b;">Awarded Spec Item</span>
+            <input type="hidden" id="po-item-name-${idx}" value="${escapeHtml(it.item_name || it.item_description || '')}">
             <input type="hidden" id="po-item-award-id-${idx}" value="${it.id || ''}">
             <input type="hidden" id="po-item-prod-id-${idx}" value="${it.product_service_id || ''}">
             <input type="hidden" id="po-item-unit-${idx}" value="${it.unit || 'PCS'}">
           </td>
-          <td>${awardedQty} ${it.unit || 'PCS'}</td>
-          <td style="color:#64748b;">${priorAllocated} ${it.unit || 'PCS'}</td>
+          <td>${parseFloat(it.awarded_quantity || it.quantity || 1).toLocaleString()} ${it.unit || 'PCS'}</td>
+          <td style="color:#2563eb; font-weight:600;">${priorAllocated.toLocaleString()}</td>
           <td>
-            <span class="badge ${availableQty > 0 ? 'badge-won' : 'badge-withdraw'}">
-              ${availableQty} ${it.unit || 'PCS'}
-            </span>
-            <input type="hidden" id="po-item-avail-qty-${idx}" value="${availableQty}">
+            <input type="number" class="form-input" id="po-item-qty-${idx}" 
+                   value="${defaultAllocate}" min="0" max="${maxRemaining + priorAllocated}" step="any"
+                   style="width:90px; padding:4px 6px; font-weight:700;"
+                   oninput="recalculatePOMarginsAndTotals()">
           </td>
           <td>
-            <input type="number" class="form-input" id="po-item-qty-${idx}" value="${defaultPOQty}" min="0" max="${availableQty}" step="any" style="width: 100px; padding: 4px 6px; font-weight: 700;" oninput="updatePOAllocationTotal(${idx})">
+            <input type="number" class="form-input" id="po-item-rate-${idx}" 
+                   value="${rate}" step="any" readonly
+                   style="width:110px; padding:4px 6px; background:#f8fafc; font-size:0.8rem;">
           </td>
-          <td>
-            <span style="font-weight: 600;">PKR ${parseFloat(it.awarded_unit_price || it.unit_price || 0).toLocaleString()}</span>
-            <input type="hidden" id="po-item-rate-${idx}" value="${it.awarded_unit_price || it.unit_price || 0}">
-          </td>
-          <td>
-            <strong id="po-item-total-${idx}" style="color: #0284c7;">PKR ${(defaultPOQty * parseFloat(it.awarded_unit_price || it.unit_price || 0)).toLocaleString()}</strong>
+          <td id="po-item-subtotal-${idx}" style="font-weight:700; text-align:right;">
+            PKR ${(defaultAllocate * rate).toLocaleString()}
           </td>
         </tr>
       `;
     }).join('');
   }
 
-  updatePOAllocationTotal();
+  recalculatePOMarginsAndTotals();
   openModal('modal-add-po');
 }
 
-function updatePOAllocationTotal(changedIdx) {
+function recalculatePOMarginsAndTotals() {
   let subtotalSum = 0;
-
   _cachedPOAwardItems.forEach((it, idx) => {
-    const qtyInput = document.getElementById(`po-item-qty-${idx}`);
-    const availQty = parseFloat(document.getElementById(`po-item-avail-qty-${idx}`)?.value || 0);
+    const qty = parseFloat(document.getElementById(`po-item-qty-${idx}`)?.value || 0);
     const rate = parseFloat(document.getElementById(`po-item-rate-${idx}`)?.value || 0);
-    const totalEl = document.getElementById(`po-item-total-${idx}`);
+    const lineTotal = qty * rate;
+    subtotalSum += lineTotal;
 
-    if (qtyInput) {
-      let qty = parseFloat(qtyInput.value) || 0;
-      if (qty > availQty) {
-        qtyInput.style.borderColor = '#ef4444';
-        qtyInput.style.background = '#fef2f2';
-        alert(`Allocation Error: Cannot allocate ${qty} units. Maximum remaining available quantity for "${it.item_name}" is ${availQty} units.`);
-        qty = availQty;
-        qtyInput.value = availQty;
-      } else {
-        qtyInput.style.borderColor = 'var(--border)';
-        qtyInput.style.background = '#ffffff';
-      }
-
-      const lineTotal = qty * rate;
-      subtotalSum += lineTotal;
-      if (totalEl) totalEl.innerText = `PKR ${lineTotal.toLocaleString()}`;
-    }
+    const lineTotalEl = document.getElementById(`po-item-subtotal-${idx}`);
+    if (lineTotalEl) lineTotalEl.innerText = 'PKR ' + lineTotal.toLocaleString();
   });
 
   const gstRate = parseFloat(document.getElementById('po-gst-rate')?.value || 18);
-  const gstAmount = Math.round((subtotalSum * gstRate) / 100);
+  const gstAmount = (subtotalSum * gstRate) / 100;
   const grandTotal = subtotalSum + gstAmount;
 
   const subtotalEl = document.getElementById('po-subtotal-amount');
@@ -8126,9 +8884,11 @@ function updatePOAllocationTotal(changedIdx) {
 }
 
 async function submitCreatePOForm() {
+  const isUuid = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
   const awardId = document.getElementById('po-award-id')?.value;
   const oppId = document.getElementById('po-opp-id')?.value;
-  const custId = document.getElementById('po-cust-id')?.value;
+  let custId = document.getElementById('po-cust-id')?.value;
   const poNumber = document.getElementById('po-number')?.value;
   const poDate = document.getElementById('po-date')?.value;
   const deadline = document.getElementById('po-deadline')?.value;
@@ -8147,26 +8907,43 @@ async function submitCreatePOForm() {
     return;
   }
 
+  // Fallback resolution if custId is blank or not a UUID
+  if (!isUuid(custId) && _cachedPOAward) {
+    if (isUuid(_cachedPOAward.customer_id)) {
+      custId = _cachedPOAward.customer_id;
+    } else if (oppId) {
+      const allOpps = State.getTenantEntityList('opportunities');
+      const matchedOpp = allOpps.find(o => String(o.id) === String(oppId));
+      if (matchedOpp && isUuid(matchedOpp.customer_id)) {
+        custId = matchedOpp.customer_id;
+      }
+    }
+  }
+
+  // Safely resolve customer details
+  const allCustomers = State.getTenantEntityList('customers') || [];
+  const cust = allCustomers.find(c => String(c.id) === String(custId));
+  const customerName = cust?.business_name || cust?.customer_name || _cachedPOAward?.customer_name || 'Customer Account';
+
   // Collect item allocations for this PO
   const poItems = [];
   let totalAllocatedUnits = 0;
 
   _cachedPOAwardItems.forEach((it, idx) => {
     const qtyInput = document.getElementById(`po-item-qty-${idx}`);
-    const itemName = document.getElementById(`po-item-name-${idx}`)?.value;
+    const itemName = document.getElementById(`po-item-name-${idx}`)?.value || it.item_name || 'Supply Item';
     const awardItemId = document.getElementById(`po-item-award-id-${idx}`)?.value;
     const prodId = document.getElementById(`po-item-prod-id-${idx}`)?.value;
-    const unit = document.getElementById(`po-item-unit-${idx}`)?.value;
-    const rate = parseFloat(document.getElementById(`po-item-rate-${idx}`)?.value || 0);
+    const unit = document.getElementById(`po-item-unit-${idx}`)?.value || it.unit || 'PCS';
+    const rate = parseFloat(document.getElementById(`po-item-rate-${idx}`)?.value || it.unit_price || it.awarded_unit_price || 0);
 
     if (qtyInput) {
       const qty = parseFloat(qtyInput.value) || 0;
       if (qty > 0) {
         totalAllocatedUnits += qty;
         poItems.push({
-          id: 'poi-' + Date.now() + '-' + idx,
-          award_item_id: awardItemId || null,
-          product_service_id: prodId || null,
+          award_item_id: (awardItemId && isUuid(awardItemId)) ? awardItemId : null,
+          product_service_id: (prodId && isUuid(prodId)) ? prodId : null,
           item_name: itemName,
           item_description: itemName,
           awarded_quantity: parseFloat(it.awarded_quantity || it.quantity || qty),
@@ -8184,15 +8961,26 @@ async function submitCreatePOForm() {
     return;
   }
 
-  const customers = await API.getCustomers();
-  const cust = customers.find(c => c.id === custId) || { business_name: 'Customer Account' };
+  let bizProfileId = _cachedPOAward?.business_profile_id;
+  if (!isUuid(bizProfileId) && oppId) {
+    const allOpps = State.getTenantEntityList('opportunities');
+    const matchedOpp = allOpps.find(o => String(o.id) === String(oppId));
+    if (matchedOpp && isUuid(matchedOpp.business_profile_id)) {
+      bizProfileId = matchedOpp.business_profile_id;
+    }
+  }
+  if (!isUuid(bizProfileId) && isUuid(State.currentBusinessProfileId)) {
+    bizProfileId = State.currentBusinessProfileId;
+  }
 
   const res = await API.createPurchaseOrder({
+    business_profile_id: isUuid(bizProfileId) ? bizProfileId : undefined,
     award_letter_id: awardId,
+    contract_id: _cachedPOAward?.contract_id || null,
     award_number: _cachedPOAward?.award_number || 'Award LOA',
     opportunity_id: oppId,
     customer_id: custId,
-    customer_name: cust.business_name || _cachedPOAward?.customer_name || 'Customer Account',
+    customer_name: customerName,
     po_number: poNumber,
     po_date: poDate,
     delivery_deadline: deadline,
@@ -8368,7 +9156,11 @@ async function openNewDCModal(preselectedPoId) {
   }
 
   if (whSelect) {
-    whSelect.innerHTML = warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city})</option>`).join('');
+    if (warehouses && warehouses.length > 0) {
+      whSelect.innerHTML = warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city})</option>`).join('');
+    } else {
+      whSelect.innerHTML = '<option value="22000000-0000-0000-0000-000000000001">Central Warehouse - Kot Lakhpat (Lahore)</option>';
+    }
   }
 
   if (supSelect) {
@@ -8382,15 +9174,17 @@ async function openNewDCModal(preselectedPoId) {
   document.getElementById('dc-number').value = 'DC-CE-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000);
   document.getElementById('dc-date').value = new Date().toISOString().slice(0, 10);
   document.getElementById('dc-delivery-mode').value = 'Own Warehouse';
+  const originLocEl = document.getElementById('dc-origin-location');
+  if (originLocEl) originLocEl.value = '';
   handleDCDeliveryModeChanged('Own Warehouse');
 
-  document.getElementById('dc-logistics-provider').value = 'Bilal Cargo / 22-Wheeler Fleet';
-  document.getElementById('dc-tracking').value = 'BLT-LHR-' + Math.floor(10000 + Math.random() * 90000);
-  document.getElementById('dc-vehicle').value = 'TK-' + Math.floor(1000 + Math.random() * 9000) + ' (Flatbed)';
-  document.getElementById('dc-driver').value = 'Muhammad Arshad (0302-8819201)';
-  document.getElementById('dc-freight-cost').value = '75000';
-  document.getElementById('dc-customs-cost').value = '0';
-  document.getElementById('dc-remarks').value = 'Lot 1 Supply. Requires site inspection certificate on delivery.';
+  document.getElementById('dc-logistics-provider').value = '';
+  document.getElementById('dc-tracking').value = '';
+  document.getElementById('dc-vehicle').value = '';
+  document.getElementById('dc-driver').value = '';
+  document.getElementById('dc-freight-cost').value = '';
+  document.getElementById('dc-customs-cost').value = '';
+  document.getElementById('dc-remarks').value = '';
 
   openModal('modal-add-dc');
 }
@@ -8402,16 +9196,13 @@ async function promptCreateDCForPO(poId, poNumber) {
 function handleDCDeliveryModeChanged(mode) {
   const whContainer = document.getElementById('dc-wh-container');
   const supContainer = document.getElementById('dc-sup-container');
-  const originInput = document.getElementById('dc-origin-location');
 
   if (mode === 'Direct Drop-Shipment') {
     if (whContainer) whContainer.style.display = 'none';
     if (supContainer) supContainer.style.display = 'block';
-    if (originInput) originInput.value = 'Port Qasim Terminal 2 / Supplier Factory Direct';
   } else {
     if (whContainer) whContainer.style.display = 'block';
     if (supContainer) supContainer.style.display = 'none';
-    if (originInput) originInput.value = 'Central Warehouse (Sheikhupura Road Depot)';
   }
 }
 
@@ -8561,6 +9352,7 @@ async function submitDeliveryChallanForm() {
 
   const res = await API.createDeliveryChallan({
     purchase_order_id: poId,
+    business_profile_id: _cachedDCPO?.business_profile_id || State.currentBusinessProfileId || null,
     po_number: _cachedDCPO?.po_number || 'PO Ref',
     opportunity_id: _cachedDCPO?.opportunity_id || null,
     customer_id: _cachedDCPO?.customer_id || null,
@@ -8568,9 +9360,9 @@ async function submitDeliveryChallanForm() {
     dc_number: dcNumber,
     delivery_date: delDate,
     delivery_mode: mode,
-    warehouse_id: mode === 'Own Warehouse' ? whId : null,
+    warehouse_id: mode === 'Own Warehouse' ? (whId || null) : null,
     warehouse_name: mode === 'Own Warehouse' ? (targetWh?.warehouse_name || 'Central Warehouse') : null,
-    supplier_id: mode === 'Direct Drop-Shipment' ? supId : null,
+    supplier_id: mode === 'Direct Drop-Shipment' ? (supId || null) : null,
     supplier_name: mode === 'Direct Drop-Shipment' ? (targetSup?.supplier_name || 'OEM Supplier') : null,
     origin_location: originLoc,
     destination_site: destSite,
@@ -8671,14 +9463,16 @@ async function promptGenerateInvoiceFromDC(dcId, dcNumber, customerName) {
     const cust = customers.find(c => c.id === targetDC?.customer_id || c.business_name.includes(customerName.slice(0, 8))) || customers[0];
 
     const res = await API.createInvoice({
+      business_profile_id: targetDC?.business_profile_id || targetPO?.business_profile_id || State.currentBusinessProfileId || undefined,
       delivery_challan_id: dcId,
       dc_number: dcNumber,
       purchase_order_id: targetDC?.purchase_order_id || null,
       po_number: targetDC?.po_number || null,
-      customer_id: cust?.id,
+      customer_id: cust?.id || targetDC?.customer_id,
       customer_name: cust?.business_name || customerName,
       invoice_number: invNum,
       invoice_date: new Date().toISOString().slice(0, 10),
+      due_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
       subtotal: calculatedSubtotal,
       tax_amount: taxAmount,
       total_amount: totalInvoiceAmount,
@@ -8696,6 +9490,184 @@ async function promptGenerateInvoiceFromDC(dcId, dcNumber, customerName) {
     alert(`✓ Invoice ${res.data.invoice_number || invNum} generated and recorded in database!`);
     navigateToView('invoices');
   }
+}
+
+let _cachedInvoicePO = null;
+let _cachedInvoicePOs = [];
+
+async function openNewInvoiceModal(preselectedPoId) {
+  const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+  _cachedInvoicePOs = pos;
+
+  if (pos.length === 0) {
+    alert('No approved Purchase Orders available to invoice. Please issue a Purchase Order first.');
+    navigateToView('purchase-orders');
+    return;
+  }
+
+  const poSelect = document.getElementById('inv-po-select');
+  if (poSelect) {
+    poSelect.innerHTML = pos.map(p => `
+      <option value="${p.id}" ${p.id === preselectedPoId ? 'selected' : ''}>
+        ${p.po_number} - ${p.customer_name || 'Customer'} (PKR ${parseFloat(p.net_amount || p.total_amount || 0).toLocaleString()})
+      </option>
+    `).join('');
+  }
+
+  const initialPoId = preselectedPoId || pos[0]?.id;
+  await handleInvoicePOChanged(initialPoId);
+
+  document.getElementById('inv-number').value = 'INV-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000);
+  document.getElementById('inv-date').value = new Date().toISOString().slice(0, 10);
+  const due = new Date();
+  due.setDate(due.getDate() + 30);
+  document.getElementById('inv-due-date').value = due.toISOString().slice(0, 10);
+  document.getElementById('inv-gst-rate').value = '18';
+  document.getElementById('inv-diary-no').value = '';
+  document.getElementById('inv-dealing-officer').value = '';
+  document.getElementById('inv-remarks').value = '';
+
+  openModal('modal-add-invoice');
+}
+
+async function handleInvoicePOChanged(poId) {
+  const selectedPO = _cachedInvoicePOs.find(p => p.id === poId) || _cachedInvoicePOs[0];
+  _cachedInvoicePO = selectedPO;
+  if (!selectedPO) return;
+
+  // Set hidden metadata
+  const custIdEl = document.getElementById('inv-cust-id');
+  const oppIdEl = document.getElementById('inv-opp-id');
+  const contractIdEl = document.getElementById('inv-contract-id');
+  const custNameEl = document.getElementById('inv-customer-name');
+  const siteEl = document.getElementById('inv-delivery-site');
+
+  if (custIdEl) custIdEl.value = selectedPO.customer_id || '';
+  if (oppIdEl) oppIdEl.value = selectedPO.opportunity_id || '';
+  if (contractIdEl) contractIdEl.value = selectedPO.contract_id || '';
+  if (custNameEl) custNameEl.value = selectedPO.customer_name || 'Customer Account';
+  if (siteEl) siteEl.value = selectedPO.delivery_location || 'Designated Customer Site';
+
+  // Find linked Delivery Challans
+  const dcs = State.getTenantEntityList('deliveryChallans') || [];
+  const linkedDCs = dcs.filter(d => d.purchase_order_id === selectedPO.id || d.po_number === selectedPO.po_number);
+  const dcSelect = document.getElementById('inv-dc-select');
+  if (dcSelect) {
+    dcSelect.innerHTML = `<option value="">-- Direct PO Invoicing (No DC Attached) --</option>` +
+      linkedDCs.map(d => `<option value="${d.id}">${d.dc_number} (${d.status || 'Dispatched'} - ${d.delivery_date ? d.delivery_date.slice(0,10) : 'Date'})</option>`).join('');
+  }
+
+  // Calculate remaining unbilled balance for this PO
+  const invoices = State.getTenantEntityList('invoices') || [];
+  const poInvoices = invoices.filter(inv => inv.purchase_order_id === selectedPO.id || inv.po_number === selectedPO.po_number);
+  const totalBilled = poInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total_amount) || 0), 0);
+  const poNetValue = parseFloat(selectedPO.net_amount || selectedPO.total_amount || 0);
+  const remainingUnbilled = Math.max(0, poNetValue - totalBilled);
+
+  // Compute subtotal (excluding 18% GST)
+  const gstRate = parseFloat(document.getElementById('inv-gst-rate')?.value || 18);
+  const suggestedSubtotal = Math.round((remainingUnbilled > 0 ? remainingUnbilled : poNetValue) / (1 + (gstRate / 100)));
+
+  const subtotalInput = document.getElementById('inv-subtotal');
+  if (subtotalInput) subtotalInput.value = suggestedSubtotal > 0 ? suggestedSubtotal : 0;
+
+  const unbilledBadge = document.getElementById('inv-unbilled-badge');
+  if (unbilledBadge) {
+    unbilledBadge.innerText = `Unbilled Remaining PO: PKR ${remainingUnbilled.toLocaleString()}`;
+  }
+
+  calculateInvoiceNetTotals();
+}
+
+function handleInvoiceDCChanged(dcId) {
+  if (!dcId) return;
+  const dcs = State.getTenantEntityList('deliveryChallans') || [];
+  const targetDC = dcs.find(d => d.id === dcId);
+  if (!targetDC) return;
+
+  if (targetDC.items && Array.isArray(targetDC.items) && targetDC.items.length > 0) {
+    let dcSubtotal = 0;
+    targetDC.items.forEach(dci => {
+      const matchPOItem = _cachedInvoicePO?.items?.find(pi => pi.item_name === dci.item_name || pi.id === dci.purchase_order_item_id);
+      const unitRate = parseFloat(matchPOItem?.unit_price || 0);
+      dcSubtotal += (parseFloat(dci.quantity) || 1) * unitRate;
+    });
+    if (dcSubtotal > 0) {
+      document.getElementById('inv-subtotal').value = dcSubtotal;
+      calculateInvoiceNetTotals();
+    }
+  }
+}
+
+function calculateInvoiceNetTotals() {
+  const subtotal = parseFloat(document.getElementById('inv-subtotal')?.value || 0);
+  const gstRate = parseFloat(document.getElementById('inv-gst-rate')?.value || 18);
+  const gstAmount = Math.round((subtotal * gstRate) / 100);
+  const totalPayable = subtotal + gstAmount;
+
+  const gstAmtEl = document.getElementById('inv-gst-amount');
+  const totalEl = document.getElementById('inv-total-amount');
+
+  if (gstAmtEl) gstAmtEl.value = 'PKR ' + gstAmount.toLocaleString();
+  if (totalEl) totalEl.value = 'PKR ' + totalPayable.toLocaleString();
+}
+
+async function submitGenerateInvoiceForm() {
+  const poId = document.getElementById('inv-po-select')?.value;
+  const dcId = document.getElementById('inv-dc-select')?.value || null;
+  const invNumber = document.getElementById('inv-number')?.value?.trim();
+  const invDate = document.getElementById('inv-date')?.value;
+  const dueDate = document.getElementById('inv-due-date')?.value;
+  const subtotal = parseFloat(document.getElementById('inv-subtotal')?.value || 0);
+  const gstRate = parseFloat(document.getElementById('inv-gst-rate')?.value || 18);
+  const gstAmount = Math.round((subtotal * gstRate) / 100);
+  const totalAmount = subtotal + gstAmount;
+  const diaryNo = document.getElementById('inv-diary-no')?.value?.trim();
+  const officerName = document.getElementById('inv-dealing-officer')?.value?.trim();
+  const remarks = document.getElementById('inv-remarks')?.value?.trim();
+
+  if (!poId || !invNumber || !invDate || !dueDate || subtotal <= 0) {
+    alert('Purchase Order, Invoice Number, Dates, and a positive Subtotal amount are mandatory.');
+    return;
+  }
+
+  const selectedPO = _cachedInvoicePO || _cachedInvoicePOs.find(p => p.id === poId);
+  const dcs = State.getTenantEntityList('deliveryChallans') || [];
+  const selectedDC = dcId ? dcs.find(d => d.id === dcId) : null;
+
+  const res = await API.createInvoice({
+    business_profile_id: selectedPO?.business_profile_id || State.currentBusinessProfileId || undefined,
+    purchase_order_id: poId,
+    po_number: selectedPO?.po_number || null,
+    delivery_challan_id: dcId || null,
+    dc_number: selectedDC?.dc_number || null,
+    opportunity_id: selectedPO?.opportunity_id || null,
+    contract_id: selectedPO?.contract_id || null,
+    customer_id: selectedPO?.customer_id,
+    customer_name: selectedPO?.customer_name || 'Customer Account',
+    invoice_number: invNumber,
+    invoice_date: invDate,
+    due_date: dueDate,
+    subtotal: subtotal,
+    tax_amount: gstAmount,
+    total_amount: totalAmount,
+    paid_amount: 0,
+    outstanding_amount: totalAmount,
+    status: 'Submitted',
+    fbr_integration_required: true,
+    submission_diary_no: diaryNo || null,
+    dealing_officer_name: officerName || null,
+    remarks: remarks || null
+  });
+
+  if (!res || !res.success || !res.data?.id) {
+    alert(`⚠️ Failed to generate invoice: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    return;
+  }
+
+  closeModal('modal-add-invoice');
+  showToast(`✓ Commercial Tax Invoice ${invNumber} generated! Total: PKR ${totalAmount.toLocaleString()}`, 'success');
+  await renderActiveView();
 }
 
 async function handleInvoiceStatusChange(id, newStatus) {
@@ -8778,14 +9750,6 @@ async function openNewCustomerModal() {
   const delBtn = document.getElementById('btn-delete-customer-modal');
   if (delBtn) delBtn.style.display = 'none';
 
-  // Reset workflow gate checkboxes to standard defaults
-  if (document.getElementById('cust-gate-bid-security')) document.getElementById('cust-gate-bid-security').checked = true;
-  if (document.getElementById('cust-gate-performance-guarantee')) document.getElementById('cust-gate-performance-guarantee').checked = true;
-  if (document.getElementById('cust-gate-stamp-duty')) document.getElementById('cust-gate-stamp-duty').checked = true;
-  if (document.getElementById('cust-gate-dtl-inspection')) document.getElementById('cust-gate-dtl-inspection').checked = false;
-  if (document.getElementById('cust-gate-fbr-e-invoice')) document.getElementById('cust-gate-fbr-e-invoice').checked = true;
-  if (document.getElementById('cust-gate-diary-tracking')) document.getElementById('cust-gate-diary-tracking').checked = true;
-
   const modal = document.getElementById('modal-add-customer');
   if (modal) {
     const title = modal.querySelector('h2');
@@ -8833,17 +9797,6 @@ async function openEditCustomerModal(id) {
   document.getElementById('cust-bank-name').value = c.bank_name || '';
   document.getElementById('cust-bank-iban').value = c.bank_iban || '';
   document.getElementById('cust-notes').value = c.notes || '';
-
-  // Populate workflow gate checkboxes if configured
-  if (c.workflow_gates) {
-    const g = typeof c.workflow_gates === 'string' ? JSON.parse(c.workflow_gates) : c.workflow_gates;
-    if (document.getElementById('cust-gate-bid-security')) document.getElementById('cust-gate-bid-security').checked = g.requires_bid_security !== false;
-    if (document.getElementById('cust-gate-performance-guarantee')) document.getElementById('cust-gate-performance-guarantee').checked = g.requires_performance_guarantee !== false;
-    if (document.getElementById('cust-gate-stamp-duty')) document.getElementById('cust-gate-stamp-duty').checked = g.requires_stamp_duty !== false;
-    if (document.getElementById('cust-gate-dtl-inspection')) document.getElementById('cust-gate-dtl-inspection').checked = g.requires_dtl_inspection === true;
-    if (document.getElementById('cust-gate-fbr-e-invoice')) document.getElementById('cust-gate-fbr-e-invoice').checked = g.requires_fbr_e_invoice !== false;
-    if (document.getElementById('cust-gate-diary-tracking')) document.getElementById('cust-gate-diary-tracking').checked = g.requires_diary_tracking !== false;
-  }
 
   const delBtn = document.getElementById('btn-delete-customer-modal');
   if (delBtn) delBtn.style.display = 'inline-block';
@@ -8926,15 +9879,6 @@ async function submitNewCustomerForm() {
       }
     }
 
-    const workflowGates = {
-      requires_bid_security: document.getElementById('cust-gate-bid-security')?.checked !== false,
-      requires_performance_guarantee: document.getElementById('cust-gate-performance-guarantee')?.checked !== false,
-      requires_stamp_duty: document.getElementById('cust-gate-stamp-duty')?.checked !== false,
-      requires_dtl_inspection: document.getElementById('cust-gate-dtl-inspection')?.checked === true,
-      requires_fbr_e_invoice: document.getElementById('cust-gate-fbr-e-invoice')?.checked !== false,
-      requires_diary_tracking: document.getElementById('cust-gate-diary-tracking')?.checked !== false
-    };
-
     const payload = {
       customer_code: code || 'CUST-' + Math.floor(1000 + Math.random() * 9000),
       business_name: name,
@@ -8956,8 +9900,7 @@ async function submitNewCustomerForm() {
       status: status,
       bank_name: bankName,
       bank_iban: bankIban,
-      notes: notes,
-      workflow_gates: workflowGates
+      notes: notes
     };
 
     if (chosenTenantId) {
@@ -9881,6 +10824,25 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
   // Open modal visual
   el.classList.add('open');
 
+  // Populate Company / Business Profile
+  try {
+    const profiles = (State.businessProfiles && State.businessProfiles.length > 0)
+      ? State.businessProfiles
+      : await API.getBusinessProfiles();
+    const bpSelect = document.getElementById('exp-business-profile');
+    if (bpSelect && profiles && profiles.length > 0) {
+      bpSelect.innerHTML = profiles.map(p => {
+        const isSelected = (State.currentBusinessProfileId && State.currentBusinessProfileId !== 'all')
+          ? p.id === State.currentBusinessProfileId
+          : false;
+        return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>${escapeHtml(p.business_name || p.legal_name || p.company_name || 'Business Profile')}</option>`;
+      }).join('');
+      if (!bpSelect.value && profiles[0]) {
+        bpSelect.value = profiles[0].id;
+      }
+    }
+  } catch (e) {}
+
   try {
     await loadExpenseCategories();
     _cachedExpenseOpportunities = await API.getOpportunities(State.currentBusinessProfileId);
@@ -9888,6 +10850,18 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
   } catch (e) {
     _cachedExpenseOpportunities = [];
     _cachedExpenseSuggestions = [];
+  }
+
+  // Populate Tender / Quotation dropdown
+  const oppSelect = document.getElementById('exp-opportunity-select');
+  if (oppSelect) {
+    oppSelect.innerHTML = `<option value="">-- Select Tender / Quotation (Optional) --</option>` +
+      (_cachedExpenseOpportunities || []).map(o => `
+        <option value="${o.id}" ${o.id === presetOppId ? 'selected' : ''}>
+          ${escapeHtml(o.opportunity_number || 'TND')} - ${escapeHtml(o.tender_name || o.title || 'Untitled Tender')}
+        </option>
+      `).join('');
+    if (presetOppId) oppSelect.value = presetOppId;
   }
 
   // Populate PO list for Tier 2
@@ -10119,6 +11093,12 @@ function selectLinkedOpportunity(id, displayText, oppNum) {
   }
 }
 
+function handleExpenseOpportunitySelected(val) {
+  const oppIdEl = document.getElementById('exp-opportunity-id');
+  if (oppIdEl) oppIdEl.value = val || '';
+}
+window.handleExpenseOpportunitySelected = handleExpenseOpportunitySelected;
+
 // Close searchable dropdown when clicking outside
 document.addEventListener('click', function(e) {
   const wrapper = document.getElementById('exp-searchable-wrapper');
@@ -10131,7 +11111,7 @@ document.addEventListener('click', function(e) {
 async function submitGeneralExpenseForm() {
   const tier = document.getElementById('exp-tier')?.value || 'Tier 3 - General Overheads';
   const name = document.getElementById('exp-name')?.value?.trim();
-  const oppId = document.getElementById('exp-opportunity-id')?.value;
+  const oppId = document.getElementById('exp-opportunity-select')?.value || document.getElementById('exp-opportunity-id')?.value;
   const poId = document.getElementById('exp-po-id')?.value || document.getElementById('exp-po-select')?.value;
   const cat = document.getElementById('exp-category')?.value;
   const amount = parseCurrency(document.getElementById('exp-amount')?.value);
@@ -10164,8 +11144,13 @@ async function submitGeneralExpenseForm() {
     } catch (e) {}
   }
 
+  const bpSelectVal = document.getElementById('exp-business-profile')?.value;
+  const bpId = (bpSelectVal && bpSelectVal !== 'all')
+    ? bpSelectVal
+    : (State.currentBusinessProfileId === 'all' ? null : State.currentBusinessProfileId);
+
   const payload = {
-    business_profile_id: State.currentBusinessProfileId === 'all' ? null : State.currentBusinessProfileId,
+    business_profile_id: bpId || null,
     expense_tier: tier,
     expense_type: tier === 'Tier 1 - Tender Direct' ? 'Tender Expense' : (tier === 'Tier 2 - PO Execution' ? 'PO Logistics' : 'General Expense'),
     expense_name: name || cat || 'General Business Expense',
@@ -10185,7 +11170,7 @@ async function submitGeneralExpenseForm() {
 
   const res = await API.createExpense(payload);
   if (!res || !res.success || !res.data?.id) {
-    alert(`⚠️ Failed to record expenditure: ${res?.message || 'Database error. Record was NOT saved.'}`);
+    alert(`⚠️ Failed to record expenditure: ${res?.message || res?.error || 'Database error. Record was NOT saved.'}`);
     return;
   }
 
@@ -10593,12 +11578,15 @@ const ENTITY_SCHEMAS = {
     title: 'Performance Guarantee (PBG)',
     fetchFn: () => API.getGuarantees(),
     fields: [
-      { name: 'guarantee_number', label: 'Guarantee / PBG Number *', type: 'text', required: true },
-      { name: 'bank_name', label: 'Issuing Bank *', type: 'text', required: true },
+      { name: 'account_title', label: 'Account Title *', type: 'text', required: true },
+      { name: 'beneficiary', label: 'Beneficiary *', type: 'text', required: true },
+      { name: 'instrument_type', label: 'Instrument Type *', type: 'select', options: ['BG', 'PO', 'CDR', 'Insurance Bond', 'Other'], required: true },
+      { name: 'instrument_number', label: 'Instrument Number *', type: 'text', required: true, fallbackField: 'guarantee_number' },
       { name: 'amount', label: 'Amount (PKR) *', type: 'number', required: true },
-      { name: 'expiry_date', label: 'Expiry Date *', type: 'date', required: true },
-      { name: 'status', label: 'Status', type: 'select', options: ['Active', 'Released', 'Invoked'] },
-      { name: 'remarks', label: 'Remarks', type: 'textarea', colSpan: 2 }
+      { name: 'bank_name', label: 'Issuing Bank & Branch', type: 'text', fallbackField: 'bank_branch' },
+      { name: 'expiry_date', label: 'Performance Guarantee Date *', type: 'date', required: true },
+      { name: 'status', label: 'Status', type: 'select', options: ['Active', 'Released', 'Encashment Claimed'] },
+      { name: 'comments', label: 'Comments / Remarks', type: 'textarea', colSpan: 2, fallbackField: 'remarks' }
     ]
   },
   'purchase-order': {
@@ -10635,11 +11623,18 @@ const ENTITY_SCHEMAS = {
     fields: [
       { name: 'invoice_number', label: 'Invoice Number *', type: 'text', required: true },
       { name: 'invoice_date', label: 'Invoice Date *', type: 'date', required: true },
-      { name: 'due_date', label: 'Due Date', type: 'date' },
-      { name: 'total_amount', label: 'Total Amount (PKR) *', type: 'number', required: true },
+      { name: 'due_date', label: 'Payment Due Date', type: 'date' },
       { name: 'status', label: 'Invoice Status', type: 'select', options: ['Submitted', 'Reinvoicing', 'Pending', 'Hold', 'Paid'] },
       { name: 'payment_terms', label: 'Payment Terms', type: 'text' },
-      { name: 'notes', label: 'Notes', type: 'textarea', colSpan: 2 }
+      { name: 'total_amount', label: 'Total Invoice Amount (PKR) *', type: 'number', required: true },
+      { name: 'tax_amount', label: 'GST / Sales Tax Amount (PKR)', type: 'number' },
+      { name: 'subtotal', label: 'Subtotal Excl. Tax (PKR)', type: 'number' },
+      { name: 'submission_diary_no', label: 'Submission Diary / Dispatch Ref #', type: 'text' },
+      { name: 'submission_diary_date', label: 'Submission Diary Date', type: 'date' },
+      { name: 'dealing_officer_name', label: 'Dealing Officer Name', type: 'text' },
+      { name: 'department_section', label: 'Department / Section', type: 'text' },
+      { name: 'dtl_clearance_ref', label: 'DTL Clearance Ref', type: 'text' },
+      { name: 'notes', label: 'Remarks / Notes', type: 'textarea', colSpan: 2 }
     ]
   },
   payment: {
@@ -10696,6 +11691,22 @@ const ENTITY_SCHEMAS = {
       { name: 'expense_date', label: 'Expense Date *', type: 'date', required: true },
       { name: 'paid_to', label: 'Paid To / Vendor', type: 'text' },
       { name: 'payment_mode', label: 'Payment Mode', type: 'select', options: ['Cash', 'Online', 'Cheque', 'Company Card'] },
+      { 
+        name: 'opportunity_id', 
+        label: 'Linked Tender / Quotation (Optional)', 
+        type: 'select', 
+        options: async () => {
+          const opps = await API.getOpportunities();
+          return [
+            { value: '', label: '-- None (General Overhead) --' },
+            ...(opps || []).map(o => ({
+              value: o.id,
+              label: `${o.opportunity_number || 'TND'} - ${o.tender_name || o.title || 'Tender'}`
+            }))
+          ];
+        },
+        colSpan: 2 
+      },
       { name: 'remarks', label: 'Remarks / Description', type: 'textarea', colSpan: 2 }
     ]
   },
@@ -10773,6 +11784,615 @@ const ENTITY_SCHEMAS = {
   }
 };
 
+// --------------------------------------------------------------------------
+// View Invoice Modal
+// --------------------------------------------------------------------------
+async function openViewInvoiceModal(invoiceId) {
+  let inv = null;
+  try {
+    const list = await API.getInvoices(State.currentBusinessProfileId);
+    if (Array.isArray(list)) {
+      inv = list.find(i => String(i.id) === String(invoiceId));
+    }
+  } catch (e) {
+    console.error('openViewInvoiceModal: fetch error', e);
+  }
+
+  if (!inv) {
+    showToast('Invoice record not found.', 'error');
+    return;
+  }
+
+  const fmt = (v) => formatCurrency(parseFloat(v || 0), 'PKR');
+  const fmtDate = (v) => {
+    if (!v) return '—';
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? v : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  // Header strip
+  const el = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val || '—'; };
+  el('view-inv-title', `Invoice — ${inv.invoice_number}`);
+  el('view-inv-number', inv.invoice_number);
+
+  const statusColors = { Paid: '#059669', Submitted: '#0284c7', Pending: '#d97706', Hold: '#dc2626', Reinvoicing: '#7c3aed' };
+  const statusEl = document.getElementById('view-inv-status-badge');
+  if (statusEl) statusEl.innerHTML = `<span style="background:${statusColors[inv.status] || '#64748b'}; color:white; padding:3px 10px; border-radius:20px; font-size:0.78rem; font-weight:700;">${inv.status || 'Submitted'}</span>`;
+
+  const fbrEl = document.getElementById('view-inv-fbr-badge');
+  if (fbrEl) fbrEl.innerHTML = inv.fbr_status === 'FBR Validated'
+    ? `<span style="background:#059669; color:white; padding:3px 10px; border-radius:20px; font-size:0.78rem; font-weight:700;">✓ Validated</span>`
+    : `<span style="background:#6b7280; color:white; padding:3px 10px; border-radius:20px; font-size:0.78rem; font-weight:700;">Unvalidated</span>`;
+
+  const totalEl = document.getElementById('view-inv-total');
+  if (totalEl) totalEl.textContent = fmt(inv.total_amount);
+
+  // Detail grid
+  el('view-inv-customer', inv.customer_name);
+  const podc = document.getElementById('view-inv-po-dc');
+  if (podc) podc.innerHTML = `<strong>${inv.po_number || 'PO Ref'}</strong>${inv.dc_number ? `<br><span style="font-size:0.8rem; color:#64748b;">${inv.dc_number}</span>` : ''}`;
+  el('view-inv-date', fmtDate(inv.invoice_date));
+  el('view-inv-due-date', fmtDate(inv.due_date));
+  el('view-inv-payment-terms', inv.payment_terms);
+  el('view-inv-delivery-site', inv.delivery_site || inv.client_site || '—');
+
+  // Financial breakdown
+  const totalAmt = parseFloat(inv.total_amount || 0);
+  const gstAmt = parseFloat(inv.tax_amount || inv.gst_amount || 0);
+  const subtotalAmt = parseFloat(inv.subtotal || inv.subtotal_amount || (totalAmt - gstAmt) || 0);
+  const paidAmt = parseFloat(inv.paid_amount || 0);
+  const outstanding = inv.outstanding_amount !== undefined ? parseFloat(inv.outstanding_amount) : (totalAmt - paidAmt);
+  el('view-inv-subtotal', fmt(subtotalAmt));
+  el('view-inv-gst', fmt(gstAmt));
+  el('view-inv-billed', fmt(totalAmt));
+  const outstandingEl = document.getElementById('view-inv-outstanding');
+  if (outstandingEl) outstandingEl.textContent = fmt(outstanding);
+
+  // Submission / Tracking
+  el('view-inv-diary-no', inv.submission_diary_no);
+  el('view-inv-diary-date', fmtDate(inv.submission_diary_date));
+  el('view-inv-dealing-officer', inv.dealing_officer_name);
+  el('view-inv-dept', inv.department_section);
+  el('view-inv-dtl', inv.dtl_clearance_ref);
+
+  // Remarks
+  const remarksSection = document.getElementById('view-inv-remarks-section');
+  const remarksEl = document.getElementById('view-inv-remarks');
+  const hasRemarks = !!(inv.notes || inv.remarks);
+  if (remarksSection) remarksSection.style.display = hasRemarks ? '' : 'none';
+  if (remarksEl) remarksEl.textContent = inv.notes || inv.remarks || '';
+
+  // Edit shortcut button
+  const editBtn = document.getElementById('view-inv-edit-btn');
+  if (editBtn) {
+    const canEdit = !State.isReadOnly() && State.hasPermission('invoices', 'edit');
+    editBtn.style.display = canEdit ? '' : 'none';
+    editBtn.onclick = () => { closeModal('modal-view-invoice'); openEditEntityModal('invoice', invoiceId); };
+  }
+
+  // Print button
+  const printBtn = document.getElementById('view-inv-print-btn');
+  if (printBtn) {
+    printBtn.onclick = () => printInvoice(inv);
+  }
+
+  openModal('modal-view-invoice');
+}
+
+// --------------------------------------------------------------------------
+// Print Invoice — Opens professional tax invoice in new window → Save as PDF
+// --------------------------------------------------------------------------
+function printInvoice(inv) {
+  const bp = State.getCurrentBusinessProfile() || {};
+  const fmt = (v) => `PKR ${parseFloat(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtDate = (v) => {
+    if (!v) return '—';
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? v : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  };
+
+  const totalAmt   = parseFloat(inv.total_amount || 0);
+  const taxAmt     = parseFloat(inv.tax_amount || inv.gst_amount || 0);
+  const subtotal   = parseFloat(inv.subtotal || inv.subtotal_amount || (totalAmt - taxAmt) || 0);
+  const paidAmt    = parseFloat(inv.paid_amount || 0);
+  const outstanding = inv.outstanding_amount !== undefined
+    ? parseFloat(inv.outstanding_amount)
+    : (totalAmt - paidAmt);
+  const gstRate    = subtotal > 0 ? ((taxAmt / subtotal) * 100).toFixed(0) : '18';
+
+  const statusBg = { Paid: '#059669', Submitted: '#0284c7', Pending: '#d97706', Hold: '#dc2626', Reinvoicing: '#7c3aed' };
+  const sColor = statusBg[inv.status] || '#64748b';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Invoice ${inv.invoice_number}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      font-size: 12px;
+      color: #1e293b;
+      background: #f1f5f9;
+    }
+    .page {
+      background: white;
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 14mm 16mm;
+      position: relative;
+    }
+    /* ── Header ── */
+    .inv-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 3px solid #0284c7;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .company-block h1 {
+      font-size: 18px;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1.2;
+    }
+    .company-block .tagline {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .company-block .tax-ids {
+      margin-top: 6px;
+      font-size: 10.5px;
+      color: #334155;
+      line-height: 1.6;
+    }
+    .inv-title-block {
+      text-align: right;
+    }
+    .inv-title-block h2 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #0284c7;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .inv-title-block .inv-num {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 4px;
+    }
+    .inv-title-block .status-pill {
+      display: inline-block;
+      background: ${sColor};
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 20px;
+      margin-top: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    /* ── FBR Banner ── */
+    .fbr-banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+      color: white;
+      padding: 7px 14px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 10px;
+    }
+    .fbr-banner strong { font-size: 11px; }
+    .fbr-validated { color: #34d399; font-weight: 700; }
+    /* ── Bill To / Invoice Meta ── */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .meta-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .meta-box h4 {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.8px;
+      margin-bottom: 5px;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 4px;
+    }
+    .meta-box p {
+      font-size: 11px;
+      line-height: 1.7;
+      color: #1e293b;
+    }
+    .meta-box p strong { font-weight: 700; font-size: 12px; color: #0f172a; }
+    /* ── Amount Summary Cards ── */
+    .amount-cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .amount-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .amount-card.highlight { background: #f0f9ff; border-color: #bae6fd; }
+    .amount-card.paid-card { background: #f0fdf4; border-color: #a7f3d0; }
+    .amount-card.due-card  { background: #fff1f2; border-color: #fecdd3; }
+    .amount-card .label { font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .amount-card .value { font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 3px; }
+    .amount-card.highlight .value { color: #0284c7; }
+    .amount-card.paid-card .value { color: #059669; }
+    .amount-card.due-card .value  { color: #dc2626; }
+    /* ── Charges Table ── */
+    .charges-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      font-size: 11px;
+    }
+    .charges-table thead tr {
+      background: #0284c7;
+      color: white;
+    }
+    .charges-table thead th {
+      padding: 8px 10px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .charges-table thead th:last-child { text-align: right; }
+    .charges-table tbody tr { border-bottom: 1px solid #f1f5f9; }
+    .charges-table tbody tr:nth-child(even) { background: #f8fafc; }
+    .charges-table tbody td { padding: 9px 10px; }
+    .charges-table tfoot tr { background: #f8fafc; font-weight: 700; }
+    .charges-table tfoot td { padding: 8px 10px; border-top: 2px solid #0284c7; }
+    .charges-table .gst-row { color: #d97706; }
+    .charges-table .total-row { font-size: 13px; color: #0284c7; }
+    .text-right { text-align: right; }
+    /* ── Submission Tracking ── */
+    .tracking-section {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .tracking-section h4 {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #475569;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 5px;
+    }
+    .tracking-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .tracking-item .t-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .tracking-item .t-value {
+      font-size: 11px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-top: 1px;
+    }
+    /* ── Remarks ── */
+    .remarks-box {
+      background: #fefce8;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      padding: 9px 12px;
+      margin-bottom: 14px;
+      font-size: 11px;
+      color: #78350f;
+    }
+    .remarks-box strong { font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 3px; color: #92400e; }
+    /* ── Footer ── */
+    .inv-footer {
+      position: absolute;
+      bottom: 10mm;
+      left: 16mm;
+      right: 16mm;
+      border-top: 2px solid #e2e8f0;
+      padding-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9px;
+      color: #94a3b8;
+    }
+    .signature-block {
+      display: flex;
+      gap: 60px;
+    }
+    .sig-item {
+      text-align: center;
+    }
+    .sig-line {
+      border-top: 1px solid #94a3b8;
+      width: 120px;
+      margin: 28px auto 4px;
+      font-size: 9px;
+      color: #64748b;
+    }
+    /* ── Print ── */
+    @media print {
+      body { background: white; }
+      .page { margin: 0; padding: 10mm 14mm; box-shadow: none; }
+      .no-print { display: none !important; }
+    }
+    /* ── Screen-only print button ── */
+    .print-bar {
+      background: #0f172a;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: 'Inter', Arial, sans-serif;
+      font-size: 13px;
+    }
+    .print-btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 8px 22px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: 'Inter', Arial, sans-serif;
+    }
+    .print-btn:hover { background: #0369a1; }
+    .pdf-btn {
+      background: #059669;
+      color: white;
+      border: none;
+      padding: 8px 22px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-left: 8px;
+      font-family: 'Inter', Arial, sans-serif;
+    }
+    .pdf-btn:hover { background: #047857; }
+  </style>
+</head>
+<body>
+
+  <!-- Screen-only toolbar (hidden during print) -->
+  <div class="print-bar no-print">
+    <span>🧾 ${inv.invoice_number} &nbsp;|&nbsp; ${inv.customer_name}</span>
+    <span>
+      <button class="print-btn" onclick="window.print()">🖨️ Print</button>
+      <button class="pdf-btn" onclick="window.print()">📄 Save as PDF</button>
+    </span>
+  </div>
+
+  <div class="page">
+
+    <!-- ── HEADER ── -->
+    <div class="inv-header">
+      <div class="company-block">
+        <h1>${bp.business_name || bp.legal_name || 'Business Entity'}</h1>
+        <div class="tagline">${bp.tagline || 'Commercial Tax Invoice — FBR PRAL Compliant'}</div>
+        <div class="tax-ids">
+          ${bp.ntn ? `<span><strong>NTN:</strong> ${bp.ntn}</span>&nbsp;&nbsp;` : ''}
+          ${bp.strn ? `<span><strong>STRN:</strong> ${bp.strn}</span><br>` : ''}
+          ${bp.address || bp.city ? `<span>${[bp.address, bp.city].filter(Boolean).join(', ')}</span>` : ''}
+        </div>
+      </div>
+      <div class="inv-title-block">
+        <h2>Tax Invoice</h2>
+        <div class="inv-num">${inv.invoice_number}</div>
+        <div><span class="status-pill">${inv.status || 'Submitted'}</span></div>
+      </div>
+    </div>
+
+    <!-- ── FBR BANNER ── -->
+    <div class="fbr-banner">
+      <span>🏛️ <strong>Federal Board of Revenue (FBR) — PRAL Digital Tax Invoice</strong> &nbsp;|&nbsp; Sales Tax Act 1990</span>
+      <span>${inv.fbr_status === 'FBR Validated'
+        ? '<span class="fbr-validated">✓ FBR Validated</span>'
+        : '<span style="color:#fca5a5;">⚠ Pending Validation</span>'
+      }</span>
+    </div>
+
+    <!-- ── BILL TO + INVOICE META ── -->
+    <div class="meta-grid">
+      <div class="meta-box">
+        <h4>Bill To</h4>
+        <p>
+          <strong>${inv.customer_name || '—'}</strong><br>
+          ${inv.customer_org_type ? `${inv.customer_org_type}<br>` : ''}
+          ${inv.delivery_site || inv.client_site || ''}
+        </p>
+      </div>
+      <div class="meta-box">
+        <h4>Invoice Details</h4>
+        <p>
+          <strong>Invoice Date:</strong> ${fmtDate(inv.invoice_date)}<br>
+          <strong>Due Date:</strong> ${fmtDate(inv.due_date)}<br>
+          ${inv.payment_terms ? `<strong>Payment Terms:</strong> ${inv.payment_terms}<br>` : ''}
+          <strong>PO Ref:</strong> ${inv.po_number || '—'}<br>
+          ${inv.dc_number ? `<strong>DC / Challan:</strong> ${inv.dc_number}` : ''}
+        </p>
+      </div>
+    </div>
+
+    <!-- ── AMOUNT SUMMARY CARDS ── -->
+    <div class="amount-cards">
+      <div class="amount-card">
+        <div class="label">Subtotal (Excl. Tax)</div>
+        <div class="value">${fmt(subtotal)}</div>
+      </div>
+      <div class="amount-card">
+        <div class="label">GST ${gstRate}%</div>
+        <div class="value" style="color:#d97706;">${fmt(taxAmt)}</div>
+      </div>
+      <div class="amount-card highlight">
+        <div class="label">Total Invoiced</div>
+        <div class="value">${fmt(totalAmt)}</div>
+      </div>
+      <div class="amount-card paid-card">
+        <div class="label">Amount Received</div>
+        <div class="value">${fmt(paidAmt)}</div>
+      </div>
+    </div>
+
+    <!-- ── CHARGES TABLE ── -->
+    <table class="charges-table">
+      <thead>
+        <tr>
+          <th style="width:5%">#</th>
+          <th style="width:45%">Description / Particulars</th>
+          <th style="width:20%" class="text-right">Rate (PKR)</th>
+          <th style="width:10%" class="text-right">GST %</th>
+          <th style="width:20%" class="text-right">Amount (PKR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>
+            <strong>Supply / Services</strong><br>
+            <span style="color:#64748b; font-size:10px;">As per PO: ${inv.po_number || 'N/A'} ${inv.dc_number ? `| DC: ${inv.dc_number}` : ''}</span>
+          </td>
+          <td class="text-right">${fmt(subtotal)}</td>
+          <td class="text-right">${gstRate}%</td>
+          <td class="text-right">${fmt(subtotal)}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr class="gst-row">
+          <td colspan="4" class="text-right">Sales Tax / GST @ ${gstRate}%</td>
+          <td class="text-right">${fmt(taxAmt)}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="4" class="text-right" style="font-size:13px;">TOTAL PAYABLE</td>
+          <td class="text-right" style="font-size:14px;">${fmt(totalAmt)}</td>
+        </tr>
+        ${outstanding > 0 ? `
+        <tr style="color:#dc2626;">
+          <td colspan="4" class="text-right">Outstanding Balance</td>
+          <td class="text-right"><strong>${fmt(outstanding)}</strong></td>
+        </tr>` : `
+        <tr style="color:#059669;">
+          <td colspan="4" class="text-right">✓ Fully Paid</td>
+          <td class="text-right"><strong>${fmt(paidAmt)}</strong></td>
+        </tr>`}
+      </tfoot>
+    </table>
+
+    <!-- ── SUBMISSION TRACKING ── -->
+    ${(inv.submission_diary_no || inv.dealing_officer_name || inv.department_section || inv.dtl_clearance_ref) ? `
+    <div class="tracking-section">
+      <h4>📋 Submission &amp; Dispatch Tracking</h4>
+      <div class="tracking-grid">
+        ${inv.submission_diary_no ? `
+        <div class="tracking-item">
+          <div class="t-label">Diary / Dispatch Ref</div>
+          <div class="t-value">${inv.submission_diary_no}</div>
+        </div>` : ''}
+        ${inv.submission_diary_date ? `
+        <div class="tracking-item">
+          <div class="t-label">Submission Date</div>
+          <div class="t-value">${fmtDate(inv.submission_diary_date)}</div>
+        </div>` : ''}
+        ${inv.dealing_officer_name ? `
+        <div class="tracking-item">
+          <div class="t-label">Dealing Officer</div>
+          <div class="t-value">${inv.dealing_officer_name}</div>
+        </div>` : ''}
+        ${inv.department_section ? `
+        <div class="tracking-item">
+          <div class="t-label">Department / Section</div>
+          <div class="t-value">${inv.department_section}</div>
+        </div>` : ''}
+        ${inv.dtl_clearance_ref ? `
+        <div class="tracking-item">
+          <div class="t-label">DTL Clearance Ref</div>
+          <div class="t-value">${inv.dtl_clearance_ref}</div>
+        </div>` : ''}
+      </div>
+    </div>` : ''}
+
+    <!-- ── REMARKS ── -->
+    ${inv.notes || inv.remarks ? `
+    <div class="remarks-box">
+      <strong>Remarks / Notes</strong>
+      ${inv.notes || inv.remarks}
+    </div>` : ''}
+
+    <!-- ── SIGNATURE FOOTER ── -->
+    <div class="inv-footer">
+      <div style="line-height:1.8;">
+        <div>Generated by: Mashrue Enterprise BMS</div>
+        <div>Printed: ${new Date().toLocaleString('en-PK')}</div>
+      </div>
+      <div class="signature-block">
+        <div class="sig-item">
+          <div class="sig-line">Prepared By</div>
+        </div>
+        <div class="sig-item">
+          <div class="sig-line">Authorized Signatory</div>
+        </div>
+        <div class="sig-item">
+          <div class="sig-line">Received By (Customer)</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.page -->
+
+  <script>
+    // Auto-trigger print after fonts load
+    window.addEventListener('load', () => {
+      setTimeout(() => window.print(), 600);
+    });
+  </script>
+</body>
+</html>`;
+
+  const printWin = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
+  if (!printWin) {
+    showToast('Popup blocked. Please allow popups for this site to print invoices.', 'warning');
+    return;
+  }
+  printWin.document.write(html);
+  printWin.document.close();
+}
+
 async function openEditEntityModal(entityType, id) {
   const schema = ENTITY_SCHEMAS[entityType];
   if (!schema) {
@@ -10834,7 +12454,7 @@ async function openEditEntityModal(entityType, id) {
   if (!container) return;
 
   // Render form fields
-  const fieldsHTML = schema.fields.map(f => {
+  const fieldsHTMLArr = await Promise.all(schema.fields.map(async f => {
     let rawVal = record[f.name];
     if (rawVal === undefined && f.fallbackField) {
       rawVal = record[f.fallbackField];
@@ -10854,7 +12474,8 @@ async function openEditEntityModal(entityType, id) {
     const colStyle = f.colSpan === 2 ? 'grid-column: span 2;' : '';
 
     if (f.type === 'select') {
-      const optionsHTML = f.options.map(opt => {
+      const rawOpts = typeof f.options === 'function' ? await f.options() : (f.options || []);
+      const optionsHTML = rawOpts.map(opt => {
         const optVal = typeof opt === 'object' ? opt.value : opt;
         const optLabel = typeof opt === 'object' ? opt.label : opt;
         const isSelected = String(val).toLowerCase() === String(optVal).toLowerCase();
@@ -10884,7 +12505,9 @@ async function openEditEntityModal(entityType, id) {
         </div>
       `;
     }
-  }).join('');
+  }));
+
+  const fieldsHTML = fieldsHTMLArr.join('');
 
   container.innerHTML = `
     <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 14px;">
@@ -13508,6 +15131,8 @@ window.openEditCompanyModal = openEditCompanyModal;
 window.openNewCompanyModal = openNewCompanyModal;
 window.openEditUserModal = openEditUserModal;
 window.openEditEntityModal = openEditEntityModal;
+window.openViewInvoiceModal = openViewInvoiceModal;
+window.printInvoice = printInvoice;
 window.submitUniversalEdit = submitUniversalEdit;
 window.submitNewCompanyForm = submitNewCompanyForm;
 window.submitNewCustomerForm = submitNewCustomerForm;

@@ -4,7 +4,7 @@ const db = require('../config/db');
 const { optionalAuth } = require('../middleware/auth.middleware');
 const logger = require('../services/logger.service');
 
-const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
 
 // ============================================================================
 // 1. AWARD LETTERS (LOA)
@@ -16,7 +16,10 @@ router.get('/awards', optionalAuth, async (req, res) => {
     let queryText = `
       SELECT al.*, 
              o.opportunity_number, o.tender_name, o.title as opportunity_title,
+             o.workflow_gates as opportunity_workflow_gates,
+             o.customer_id, o.business_profile_id,
              c.business_name as customer_name,
+             cnt.id as contract_id, cnt.contract_number,
              COALESCE(
                (
                  SELECT json_agg(ai.*)
@@ -28,6 +31,7 @@ router.get('/awards', optionalAuth, async (req, res) => {
       FROM award_letters al
       JOIN opportunities o ON al.opportunity_id = o.id
       LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN contracts cnt ON cnt.award_letter_id = al.id
       WHERE 1=1
     `;
     const params = [];
@@ -57,7 +61,21 @@ router.get('/awards', optionalAuth, async (req, res) => {
 });
 
 router.post('/awards', optionalAuth, async (req, res) => {
-  const { opportunity_id, bid_id, award_number, award_date, award_amount, acceptance_deadline, remarks, document_url, items } = req.body;
+  const { 
+    opportunity_id, 
+    bid_id, 
+    award_number, 
+    award_date, 
+    award_amount, 
+    acceptance_deadline, 
+    remarks, 
+    document_url, 
+    items,
+    stamp_duty_required,
+    stamp_duty_pct,
+    stamp_duty_amount,
+    stamp_duty_status
+  } = req.body;
 
   const sanitizedAwardNo = String(award_number || '').trim().slice(0, 100);
   if (!sanitizedAwardNo || !award_amount) {
@@ -96,6 +114,31 @@ router.post('/awards', optionalAuth, async (req, res) => {
       });
     }
 
+    // Check opportunity workflow gates for stamp duty requirement
+    const oppDetailsRes = await db.query(`SELECT workflow_gates FROM opportunities WHERE id = $1`, [targetOppId]);
+    let oppGates = oppDetailsRes.rows[0]?.workflow_gates;
+    if (typeof oppGates === 'string') {
+      try { oppGates = JSON.parse(oppGates); } catch (_) { oppGates = null; }
+    }
+
+    let isStampDutyRequired = true;
+    if (oppGates && oppGates.requires_stamp_duty === false) {
+      isStampDutyRequired = false;
+    } else if (stamp_duty_required === false) {
+      isStampDutyRequired = false;
+    }
+
+    let finalSdRequired = isStampDutyRequired;
+    let finalSdPct = 0;
+    let finalSdAmt = 0;
+    let finalSdStatus = 'Not Required';
+
+    if (isStampDutyRequired) {
+      finalSdPct = parseFloat(stamp_duty_pct !== undefined ? stamp_duty_pct : 0.25);
+      finalSdAmt = parseFloat(stamp_duty_amount !== undefined ? stamp_duty_amount : Math.round(((parseFloat(award_amount) || 0) * finalSdPct) / 100));
+      finalSdStatus = stamp_duty_status || 'Unpaid';
+    }
+
     // Determine Tenant ID (prefer oppTenantId, then req.user, then req.body, then system fallback)
     let tenantId = oppTenantId;
     if (!tenantId && req.user?.tenantId && isUuid(req.user.tenantId)) {
@@ -109,20 +152,28 @@ router.post('/awards', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
-    // 2. Sanitize Dates
-    let validAwardDate = new Date();
+    // 2. Sanitize Dates to pure YYYY-MM-DD
+    let validAwardDate = new Date().toISOString().split('T')[0];
     if (award_date && typeof award_date === 'string' && award_date.trim()) {
-      const parsedAwardDate = new Date(award_date);
-      if (!isNaN(parsedAwardDate.getTime())) {
-        validAwardDate = parsedAwardDate;
+      const str = award_date.trim();
+      if (str.includes('/')) {
+        const parts = str.split('/');
+        if (parts.length === 3) validAwardDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else {
+        const parsed = new Date(str);
+        if (!isNaN(parsed.getTime())) validAwardDate = parsed.toISOString().split('T')[0];
       }
     }
 
     let validDeadline = null;
     if (acceptance_deadline && typeof acceptance_deadline === 'string' && acceptance_deadline.trim()) {
-      const parsedDeadline = new Date(acceptance_deadline);
-      if (!isNaN(parsedDeadline.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(acceptance_deadline.trim())) {
-        validDeadline = acceptance_deadline.trim().slice(0, 10);
+      const str = acceptance_deadline.trim();
+      if (str.includes('/')) {
+        const parts = str.split('/');
+        if (parts.length === 3) validDeadline = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else {
+        const parsed = new Date(str);
+        if (!isNaN(parsed.getTime())) validDeadline = parsed.toISOString().split('T')[0];
       }
     }
 
@@ -134,13 +185,15 @@ router.post('/awards', optionalAuth, async (req, res) => {
       targetOppId,
       tenantId,
       award_amount,
+      isStampDutyRequired,
+      finalSdAmt,
       itemsCount: Array.isArray(items) ? items.length : 0
     });
 
     const result = await db.query(
       `INSERT INTO award_letters 
-       (tenant_id, opportunity_id, bid_id, award_number, award_date, award_amount, acceptance_deadline, status, document_url, remarks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (tenant_id, opportunity_id, bid_id, award_number, award_date, award_amount, acceptance_deadline, status, document_url, remarks, stamp_duty_required, stamp_duty_pct, stamp_duty_amount, stamp_duty_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         tenantId,
@@ -152,7 +205,11 @@ router.post('/awards', optionalAuth, async (req, res) => {
         validDeadline,
         'Issued',
         document_url || null,
-        remarks || null
+        remarks || null,
+        finalSdRequired,
+        finalSdPct,
+        finalSdAmt,
+        finalSdStatus
       ]
     );
 
@@ -253,10 +310,18 @@ router.post('/awards/:id/accept', optionalAuth, async (req, res) => {
     const sDate = start_date || new Date();
     const eDate = end_date || new Date(Date.now() + 365 * 86400000);
 
+    let oppGates = opp?.workflow_gates;
+    if (typeof oppGates === 'string') {
+      try { oppGates = JSON.parse(oppGates); } catch (_) { oppGates = null; }
+    }
+    const isSdReq = (oppGates && oppGates.requires_stamp_duty === false) || al.stamp_duty_required === false ? false : true;
+    const sdRate = isSdReq ? parseFloat(al.stamp_duty_pct || 0.25) : 0;
+    const sdAmt = isSdReq ? parseFloat(al.stamp_duty_amount || Math.round((parseFloat(al.award_amount || 0) * sdRate) / 100)) : 0;
+
     const cntRes = await db.query(
       `INSERT INTO contracts 
-       (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks, stamp_duty_required, stamp_duty_rate_pct, stamp_duty_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         al.tenant_id,
@@ -269,7 +334,10 @@ router.post('/awards/:id/accept', optionalAuth, async (req, res) => {
         sDate,
         eDate,
         'Active',
-        `Generated automatically on acceptance of LOA ${al.award_number}`
+        `Generated automatically on acceptance of LOA ${al.award_number}`,
+        isSdReq,
+        sdRate,
+        sdAmt
       ]
     );
 
@@ -285,6 +353,183 @@ router.post('/awards/:id/accept', optionalAuth, async (req, res) => {
   }
 });
 
+// POST /awards/:id/decision -> Updates LOA decision/status & stamp duty
+router.post('/awards/:id/decision', optionalAuth, async (req, res) => {
+  const { 
+    decision, 
+    status, 
+    stamp_duty_status, 
+    stamp_duty_challan_no, 
+    stamp_duty_paid_date, 
+    stamp_duty_amount, 
+    stamp_duty_bank, 
+    remarks 
+  } = req.body;
+
+  try {
+    const finalDecision = decision || status || null;
+    const finalSdStatus = stamp_duty_status || (stamp_duty_challan_no ? 'Paid' : null);
+    const finalPaidDate = stamp_duty_paid_date ? parseSafePBGDate(stamp_duty_paid_date) : null;
+    const finalAmount = stamp_duty_amount ? parseFloat(String(stamp_duty_amount).replace(/,/g, '')) : null;
+
+    const alRes = await db.query(`SELECT * FROM award_letters WHERE id = $1`, [req.params.id]);
+    if (alRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Award Letter not found' });
+    }
+
+    const result = await db.query(
+      `UPDATE award_letters 
+       SET status = COALESCE($1, status),
+           stamp_duty_status = COALESCE($2, stamp_duty_status),
+           stamp_duty_challan_no = COALESCE($3, stamp_duty_challan_no),
+           stamp_duty_paid_date = COALESCE($4, stamp_duty_paid_date),
+           stamp_duty_amount = COALESCE($5, stamp_duty_amount),
+           stamp_duty_bank = COALESCE($6, stamp_duty_bank),
+           remarks = COALESCE($7, remarks),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8
+       RETURNING *`,
+      [
+        finalDecision,
+        finalSdStatus,
+        stamp_duty_challan_no || null,
+        finalPaidDate,
+        finalAmount,
+        stamp_duty_bank || null,
+        remarks || null,
+        req.params.id
+      ]
+    );
+
+    const updatedAward = result.rows[0];
+
+    // Sync to linked contracts if exists
+    if (finalSdStatus) {
+      await db.query(
+        `UPDATE contracts 
+         SET stamp_duty_status = $1,
+             stamp_duty_challan_no = COALESCE($2, stamp_duty_challan_no),
+             stamp_duty_paid_date = COALESCE($3, stamp_duty_paid_date),
+             stamp_duty_amount = COALESCE($4, stamp_duty_amount),
+             stamp_duty_bank = COALESCE($5, stamp_duty_bank)
+         WHERE award_letter_id = $6`,
+        [
+          finalSdStatus,
+          stamp_duty_challan_no || null,
+          finalPaidDate,
+          finalAmount,
+          stamp_duty_bank || null,
+          req.params.id
+        ]
+      );
+    }
+
+    logger.info(`[POST /awards/:id/decision] Award ${req.params.id} updated:`, {
+      status: updatedAward.status,
+      stamp_duty_status: updatedAward.stamp_duty_status,
+      stamp_duty_challan_no: updatedAward.stamp_duty_challan_no
+    });
+
+    res.json({
+      success: true,
+      data: updatedAward,
+      message: `Award Letter updated successfully (Status: ${updatedAward.status}, Stamp Duty: ${updatedAward.stamp_duty_status}).`
+    });
+  } catch (err) {
+    logger.error('[POST /awards/:id/decision] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /awards/:id/stamp-duty -> Dedicated endpoint for recording stamp duty on LOA
+router.post('/awards/:id/stamp-duty', optionalAuth, async (req, res) => {
+  const { 
+    stamp_duty_challan_no, 
+    stamp_duty_amount, 
+    stamp_duty_paid_date, 
+    stamp_duty_bank, 
+    stamp_duty_rate_pct, 
+    stamp_duty_status 
+  } = req.body;
+
+  try {
+    const challanNo = (stamp_duty_challan_no || '').trim();
+    if (!challanNo) {
+      return res.status(400).json({ success: false, message: 'Challan number is required.' });
+    }
+
+    const safePaidDate = parseSafePBGDate(stamp_duty_paid_date) || new Date().toISOString().split('T')[0];
+    const finalAmount = stamp_duty_amount ? parseFloat(String(stamp_duty_amount).replace(/,/g, '')) : 0;
+    const finalStatus = stamp_duty_status || 'Paid';
+
+    const result = await db.query(
+      `UPDATE award_letters 
+       SET stamp_duty_status = $1,
+           stamp_duty_challan_no = $2,
+           stamp_duty_paid_date = $3,
+           stamp_duty_amount = $4,
+           stamp_duty_bank = COALESCE($5, stamp_duty_bank),
+           stamp_duty_pct = COALESCE($6, stamp_duty_pct),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7
+       RETURNING *`,
+      [
+        finalStatus,
+        challanNo,
+        safePaidDate,
+        finalAmount,
+        stamp_duty_bank || null,
+        stamp_duty_rate_pct ? parseFloat(stamp_duty_rate_pct) : null,
+        req.params.id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Award Letter not found' });
+    }
+
+    // Also sync to linked contract if exists
+    await db.query(
+      `UPDATE contracts 
+       SET stamp_duty_status = $1,
+           stamp_duty_challan_no = $2,
+           stamp_duty_paid_date = $3,
+           stamp_duty_amount = $4,
+           stamp_duty_bank = COALESCE($5, stamp_duty_bank)
+       WHERE award_letter_id = $6`,
+      [
+        finalStatus,
+        challanNo,
+        safePaidDate,
+        finalAmount,
+        stamp_duty_bank || null,
+        req.params.id
+      ]
+    );
+
+    logger.info(`[POST /awards/:id/stamp-duty] Recorded stamp duty for award ${req.params.id}:`, {
+      challan: challanNo,
+      amount: finalAmount,
+      status: finalStatus
+    });
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: `Stamp Duty Challan #${challanNo} recorded as Paid in database.`
+    });
+  } catch (err) {
+    logger.error('[POST /awards/:id/stamp-duty] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/awards/:id/stamp-duty', optionalAuth, async (req, res) => {
+  // Alias to POST handler
+  req.url = `/awards/${req.params.id}/stamp-duty`;
+  return router.handle(req, res);
+});
+
 // ============================================================================
 // 2. PERFORMANCE GUARANTEES
 // ============================================================================
@@ -293,13 +538,22 @@ router.get('/guarantees', optionalAuth, async (req, res) => {
   try {
     let queryText = `
       SELECT pg.*, 
+             COALESCE(pg.instrument_number, pg.guarantee_number) as instrument_number,
+             COALESCE(pg.guarantee_number, pg.instrument_number) as guarantee_number,
+             COALESCE(pg.comments, pg.remarks) as comments,
+             COALESCE(pg.remarks, pg.comments) as remarks,
+             COALESCE(pg.instrument_image_url, pg.document_url) as instrument_image_url,
              c.contract_number, c.contract_value,
              al.award_number,
-             cust.business_name as customer_name
+             o.opportunity_number, o.tender_name,
+             COALESCE(cust.business_name, cust2.business_name, cust3.business_name) as customer_name
       FROM performance_guarantees pg
-      JOIN contracts c ON pg.contract_id = c.id
+      LEFT JOIN contracts c ON pg.contract_id = c.id
       LEFT JOIN award_letters al ON pg.award_letter_id = al.id
+      LEFT JOIN opportunities o ON pg.opportunity_id = o.id OR al.opportunity_id = o.id OR c.opportunity_id = o.id
       LEFT JOIN customers cust ON c.customer_id = cust.id
+      LEFT JOIN customers cust2 ON o.customer_id = cust2.id
+      LEFT JOIN customers cust3 ON al.customer_id = cust3.id
       WHERE 1=1
     `;
     const params = [];
@@ -322,13 +576,67 @@ router.get('/guarantees', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/guarantees', optionalAuth, async (req, res) => {
-  const { contract_id, award_letter_id, guarantee_number, bank_name, amount, issue_date, expiry_date, remarks } = req.body;
+// Helper for safe pure YYYY-MM-DD date parsing
+function parseSafePBGDate(dStr) {
+  if (!dStr) return null;
+  if (dStr instanceof Date) {
+    if (isNaN(dStr.getTime())) return null;
+    return dStr.toISOString().split('T')[0];
+  }
+  const str = String(dStr).trim();
+  if (str.includes('/')) {
+    const parts = str.split(/[\s,]+/)[0].split('/');
+    if (parts.length === 3) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  if (str.includes('-')) {
+    const parts = str.split(/[\s,T]+/)[0].split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+  }
+  return str.split('T')[0].split(' ')[0];
+}
 
-  if (!guarantee_number || !bank_name || !amount || !expiry_date) {
+router.post('/guarantees', optionalAuth, async (req, res) => {
+  const { 
+    business_profile_id,
+    opportunity_id,
+    contract_id, 
+    award_letter_id, 
+    account_title,
+    beneficiary,
+    instrument_type,
+    instrument_number,
+    guarantee_number, 
+    amount, 
+    issue_date, 
+    expiry_date, 
+    bank_name, 
+    bank_branch,
+    comments,
+    remarks,
+    instrument_image_url,
+    document_url
+  } = req.body;
+
+  const finalInstNo = (instrument_number || guarantee_number || '').trim();
+  const finalInstType = (instrument_type || 'BG').trim();
+  const finalAccountTitle = (account_title || '').trim();
+  const finalBeneficiary = (beneficiary || '').trim();
+  const finalComments = comments || remarks || null;
+  const finalDocUrl = instrument_image_url || document_url || null;
+
+  // Validate the exact 6 mandatory fields identical to Bid Security
+  if (!finalAccountTitle || !finalBeneficiary || !finalInstType || !finalInstNo || !amount || !expiry_date) {
     return res.status(400).json({
       success: false,
-      message: 'Guarantee Number, Bank Name, Amount, and Expiry Date are mandatory.'
+      message: 'Validation Error: Account Title, Beneficiary, Instrument Type, Instrument Number, Amount, and Expiry Date are all mandatory.'
     });
   }
 
@@ -339,29 +647,181 @@ router.post('/guarantees', optionalAuth, async (req, res) => {
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    const finalBankName = (bank_name || bank_branch || 'Bank Guarantee').trim();
+    const finalBankBranch = (bank_branch || bank_name || null);
+    const safeExpiry = parseSafePBGDate(expiry_date);
+    const safeIssue = parseSafePBGDate(issue_date) || new Date().toISOString().split('T')[0];
+
+    let cleanContractId = (contract_id && isUuid(contract_id)) ? contract_id : null;
+    let cleanAwardId = (award_letter_id && isUuid(award_letter_id)) ? award_letter_id : null;
+    let cleanOppId = (opportunity_id && isUuid(opportunity_id)) ? opportunity_id : null;
+    let cleanBizId = (business_profile_id && isUuid(business_profile_id)) ? business_profile_id : null;
+
+    // 1. Verify and resolve cleanContractId against contracts table
+    if (cleanContractId) {
+      const cCheck = await db.query('SELECT id, award_letter_id, opportunity_id, business_profile_id FROM contracts WHERE id = $1', [cleanContractId]);
+      if (cCheck.rows.length === 0) {
+        if (!cleanAwardId) {
+          const aCheck = await db.query('SELECT id, opportunity_id FROM award_letters WHERE id = $1', [cleanContractId]);
+          if (aCheck.rows.length > 0) {
+            cleanAwardId = cleanContractId;
+            cleanOppId = cleanOppId || aCheck.rows[0].opportunity_id;
+          }
+        }
+        cleanContractId = null;
+      } else {
+        cleanAwardId = cleanAwardId || cCheck.rows[0].award_letter_id;
+        cleanOppId = cleanOppId || cCheck.rows[0].opportunity_id;
+        cleanBizId = cleanBizId || cCheck.rows[0].business_profile_id;
+      }
+    }
+
+    // 2. Verify and resolve cleanAwardId against award_letters table
+    if (cleanAwardId) {
+      const aCheck = await db.query('SELECT id, opportunity_id FROM award_letters WHERE id = $1', [cleanAwardId]);
+      if (aCheck.rows.length === 0) {
+        cleanAwardId = null;
+      } else {
+        cleanOppId = cleanOppId || aCheck.rows[0].opportunity_id;
+        if (!cleanContractId) {
+          const cCheck = await db.query('SELECT id, business_profile_id FROM contracts WHERE award_letter_id = $1 LIMIT 1', [cleanAwardId]);
+          if (cCheck.rows.length > 0) {
+            cleanContractId = cCheck.rows[0].id;
+            cleanBizId = cleanBizId || cCheck.rows[0].business_profile_id;
+          }
+        }
+      }
+    }
+
+    // 3. Verify and resolve cleanOppId against opportunities table
+    if (cleanOppId) {
+      const oCheck = await db.query('SELECT id, business_profile_id FROM opportunities WHERE id = $1', [cleanOppId]);
+      if (oCheck.rows.length === 0) {
+        cleanOppId = null;
+      } else {
+        cleanBizId = cleanBizId || oCheck.rows[0].business_profile_id;
+      }
+    }
+
+    // 4. Verify cleanBizId against business_profiles table
+    if (cleanBizId) {
+      const bCheck = await db.query('SELECT id FROM business_profiles WHERE id = $1', [cleanBizId]);
+      if (bCheck.rows.length === 0) {
+        cleanBizId = null;
+      }
+    }
+
     const result = await db.query(
       `INSERT INTO performance_guarantees 
-       (tenant_id, contract_id, award_letter_id, guarantee_number, bank_name, amount, issue_date, expiry_date, status, remarks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (tenant_id, business_profile_id, opportunity_id, contract_id, award_letter_id, account_title, beneficiary, instrument_type, instrument_number, guarantee_number, bank_name, bank_branch, amount, issue_date, expiry_date, status, comments, remarks, instrument_image_url, document_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
       [
         tenantId,
-        contract_id,
-        award_letter_id || null,
-        guarantee_number,
-        bank_name,
-        parseFloat(amount),
-        issue_date || new Date(),
-        expiry_date,
+        cleanBizId,
+        cleanOppId,
+        cleanContractId,
+        cleanAwardId,
+        finalAccountTitle,
+        finalBeneficiary,
+        finalInstType,
+        finalInstNo,
+        finalInstNo,
+        finalBankName,
+        finalBankBranch,
+        parseFloat(String(amount).replace(/,/g, '')) || 0,
+        safeIssue,
+        safeExpiry,
         'Active',
-        remarks || null
+        finalComments,
+        finalComments,
+        finalDocUrl,
+        finalDocUrl
       ]
     );
 
     res.status(201).json({
       success: true,
       data: result.rows[0],
-      message: 'Performance Guarantee registered successfully.'
+      message: 'Performance Guarantee registered successfully in database.'
+    });
+  } catch (err) {
+    console.error('[POST /api/guarantees Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/guarantees/:id', optionalAuth, async (req, res) => {
+  const {
+    account_title,
+    beneficiary,
+    instrument_type,
+    instrument_number,
+    guarantee_number,
+    amount,
+    issue_date,
+    expiry_date,
+    bank_name,
+    bank_branch,
+    comments,
+    remarks,
+    instrument_image_url,
+    document_url,
+    status
+  } = req.body;
+
+  try {
+    const finalInstNo = (instrument_number || guarantee_number || '').trim();
+    const finalComments = comments || remarks || null;
+    const finalDocUrl = instrument_image_url || document_url || null;
+    const safeExpiry = parseSafePBGDate(expiry_date);
+    const safeIssue = parseSafePBGDate(issue_date);
+
+    const result = await db.query(
+      `UPDATE performance_guarantees 
+       SET account_title = COALESCE($1, account_title),
+           beneficiary = COALESCE($2, beneficiary),
+           instrument_type = COALESCE($3, instrument_type),
+           instrument_number = COALESCE($4, instrument_number),
+           guarantee_number = COALESCE($4, guarantee_number),
+           amount = COALESCE($5, amount),
+           expiry_date = COALESCE($6, expiry_date),
+           issue_date = COALESCE($7, issue_date),
+           bank_name = COALESCE($8, bank_name),
+           bank_branch = COALESCE($9, bank_branch),
+           comments = COALESCE($10, comments),
+           remarks = COALESCE($10, remarks),
+           instrument_image_url = COALESCE($11, instrument_image_url),
+           document_url = COALESCE($11, document_url),
+           status = COALESCE($12, status),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $13
+       RETURNING *`,
+      [
+        account_title || null,
+        beneficiary || null,
+        instrument_type || null,
+        finalInstNo || null,
+        amount ? parseFloat(amount) : null,
+        safeExpiry,
+        safeIssue,
+        bank_name || null,
+        bank_branch || null,
+        finalComments,
+        finalDocUrl,
+        status || null,
+        req.params.id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Performance Guarantee not found' });
+    }
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: 'Performance Guarantee updated successfully.'
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -369,15 +829,24 @@ router.post('/guarantees', optionalAuth, async (req, res) => {
 });
 
 router.post('/guarantees/:id/release', optionalAuth, async (req, res) => {
-  const { release_date, remarks } = req.body;
+  const { release_date, release_reference, remarks, comments } = req.body;
 
   try {
+    const safeReleaseDate = parseSafePBGDate(release_date) || new Date().toISOString().split('T')[0];
+    const finalRemarks = remarks || comments || 'Released on Contract Completion';
+    const finalRef = release_reference || null;
+
     const result = await db.query(
       `UPDATE performance_guarantees 
-       SET status = 'Released', release_date = $1, remarks = COALESCE(remarks, '') || ' | ' || $2
-       WHERE id = $3
+       SET status = 'Released', 
+           release_date = $1, 
+           release_reference = $2,
+           remarks = COALESCE(remarks, '') || ' | ' || $3,
+           comments = COALESCE(comments, '') || ' | ' || $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
        RETURNING *`,
-      [release_date || new Date(), remarks || 'Released on Contract Completion', req.params.id]
+      [safeReleaseDate, finalRef, finalRemarks, req.params.id]
     );
 
     res.json({
@@ -437,7 +906,10 @@ router.post('/contracts', optionalAuth, async (req, res) => {
     start_date,
     end_date,
     status,
-    remarks
+    remarks,
+    stamp_duty_required,
+    stamp_duty_rate_pct,
+    stamp_duty_amount
   } = req.body;
 
   try {
@@ -479,18 +951,38 @@ router.post('/contracts', optionalAuth, async (req, res) => {
     const eDate = end_date && !isNaN(new Date(end_date).getTime()) ? new Date(end_date) : new Date(Date.now() + 365 * 86400000);
     const validAlId = (award_letter_id && isUuid(award_letter_id)) ? award_letter_id : null;
 
+    // Check stamp duty requirement from request, opportunity workflow gates, or award letter
+    let reqStampDuty = true;
+    if (stamp_duty_required === false) {
+      reqStampDuty = false;
+    } else if (targetOpp?.workflow_gates) {
+      let og = targetOpp.workflow_gates;
+      if (typeof og === 'string') {
+        try { og = JSON.parse(og); } catch (_) { og = null; }
+      }
+      if (og && og.requires_stamp_duty === false) reqStampDuty = false;
+    } else if (validAlId) {
+      const alRow = await db.query(`SELECT stamp_duty_required FROM award_letters WHERE id = $1`, [validAlId]);
+      if (alRow.rows[0]?.stamp_duty_required === false) reqStampDuty = false;
+    }
+
+    const cSdRate = reqStampDuty ? parseFloat(stamp_duty_rate_pct !== undefined ? stamp_duty_rate_pct : 0.25) : 0;
+    const cSdAmt = reqStampDuty ? parseFloat(stamp_duty_amount !== undefined ? stamp_duty_amount : Math.round(((parseFloat(contract_value) || 0) * cSdRate) / 100)) : 0;
+
     logger.info('[POST /contracts] Registering Contract:', {
       contract_number: cNumber,
       tenantId,
       businessProfileId,
       targetCustId,
-      validAlId
+      validAlId,
+      reqStampDuty,
+      cSdAmt
     });
 
     const result = await db.query(
       `INSERT INTO contracts 
-       (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks, stamp_duty_required, stamp_duty_rate_pct, stamp_duty_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         tenantId,
@@ -503,7 +995,10 @@ router.post('/contracts', optionalAuth, async (req, res) => {
         sDate,
         eDate,
         status || 'Active',
-        remarks || 'Initialized upon LOA recording'
+        remarks || 'Initialized upon LOA recording',
+        reqStampDuty,
+        cSdRate,
+        cSdAmt
       ]
     );
 
@@ -632,11 +1127,19 @@ router.post('/awards/:id/decision', optionalAuth, async (req, res) => {
         const oppRes = await db.query(`SELECT * FROM opportunities WHERE id = $1`, [updatedAward.opportunity_id]);
         const opp = oppRes.rows[0];
         if (opp) {
+          let oppGates = opp.workflow_gates;
+          if (typeof oppGates === 'string') {
+            try { oppGates = JSON.parse(oppGates); } catch (_) { oppGates = null; }
+          }
+          const isSdReq = (oppGates && oppGates.requires_stamp_duty === false) || updatedAward.stamp_duty_required === false ? false : true;
+          const sdRate = isSdReq ? parseFloat(updatedAward.stamp_duty_pct || 0.25) : 0;
+          const sdAmt = isSdReq ? parseFloat(updatedAward.stamp_duty_amount || Math.round((parseFloat(updatedAward.award_amount || 0) * sdRate) / 100)) : 0;
+
           const cNumber = `CNT-${updatedAward.award_number.replace(/^LOA-/, '')}`;
           await db.query(
             `INSERT INTO contracts 
-             (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, CURRENT_DATE + INTERVAL '1 year', 'Active', 'Auto-generated on LOA acceptance')`,
+             (tenant_id, business_profile_id, award_letter_id, opportunity_id, customer_id, contract_number, contract_value, start_date, end_date, status, remarks, stamp_duty_required, stamp_duty_rate_pct, stamp_duty_amount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, CURRENT_DATE + INTERVAL '1 year', 'Active', 'Auto-generated on LOA acceptance', $8, $9, $10)`,
             [
               updatedAward.tenant_id,
               opp.business_profile_id,
@@ -644,7 +1147,10 @@ router.post('/awards/:id/decision', optionalAuth, async (req, res) => {
               opp.id,
               opp.customer_id,
               cNumber,
-              updatedAward.award_amount
+              updatedAward.award_amount,
+              isSdReq,
+              sdRate,
+              sdAmt
             ]
           );
         }
@@ -655,57 +1161,6 @@ router.post('/awards/:id/decision', optionalAuth, async (req, res) => {
     res.json({ success: true, data: updatedAward, message: `Award Letter marked as ${decision}.` });
   } catch (err) {
     logger.error('[POST /awards/:id/decision] Error updating award decision:', err);
-    res.status(500).json({ success: false, message: `Database error: ${err.message}`, error: err.message });
-  }
-});
-
-// PUT update Performance Guarantee
-router.put('/guarantees/:id', optionalAuth, async (req, res) => {
-  const { id } = req.params;
-  const { guarantee_number, bank_name, amount, expiry_date, status, remarks } = req.body;
-
-  if (!isUuid(id)) {
-    return res.status(400).json({ success: false, message: 'Invalid Guarantee ID format.' });
-  }
-
-  try {
-    let validExpiry = null;
-    if (expiry_date && typeof expiry_date === 'string' && expiry_date.trim()) {
-      const p = new Date(expiry_date);
-      if (!isNaN(p.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(expiry_date.trim())) {
-        validExpiry = expiry_date.trim().slice(0, 10);
-      }
-    }
-
-    const result = await db.query(
-      `UPDATE performance_guarantees
-       SET guarantee_number = COALESCE($1, guarantee_number),
-           bank_name = COALESCE($2, bank_name),
-           amount = COALESCE($3, amount),
-           expiry_date = COALESCE($4, expiry_date),
-           status = COALESCE($5, status),
-           remarks = COALESCE($6, remarks),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
-       RETURNING *`,
-      [
-        guarantee_number || null,
-        bank_name || null,
-        amount !== undefined && amount !== '' ? parseFloat(amount) : null,
-        validExpiry,
-        status || null,
-        remarks || null,
-        id
-      ]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Performance Guarantee not found.' });
-    }
-
-    res.json({ success: true, data: result.rows[0], message: 'Performance Guarantee updated successfully.' });
-  } catch (err) {
-    logger.error('[PUT /guarantees/:id] Database error:', err);
     res.status(500).json({ success: false, message: `Database error: ${err.message}`, error: err.message });
   }
 });

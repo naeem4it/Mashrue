@@ -118,8 +118,28 @@ router.get('/:id', authenticate, requirePermission('invoices', 'view'), async (r
   }
 });
 
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
+
+function parseSafeDate(d) {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString().split('T')[0];
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    if (parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+  }
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? null : dt.toISOString().split('T')[0];
+}
+
 // POST create invoice
-// Workflow: Generated post Delivery Challan (DC)
+// Workflow: Generated post Delivery Challan (DC) or against Purchase Order (PO)
 // Statuses: submitted, reinvoicing, pending, hold, paid, Draft, Cancelled
 router.post('/', authenticate, requirePermission('invoices', 'add'), async (req, res) => {
   const {
@@ -143,10 +163,6 @@ router.post('/', authenticate, requirePermission('invoices', 'add'), async (req,
     dtl_clearance_ref
   } = req.body;
 
-  if (!customer_id) {
-    return res.status(400).json({ success: false, message: 'Customer is mandatory for invoicing' });
-  }
-
   try {
     let tenantId = req.user?.tenantId;
     if (!tenantId) {
@@ -154,14 +170,50 @@ router.post('/', authenticate, requirePermission('invoices', 'add'), async (req,
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    let cleanBizId = (business_profile_id && isUuid(business_profile_id)) ? business_profile_id : null;
+    let cleanCustId = (customer_id && isUuid(customer_id)) ? customer_id : null;
+    let cleanPoId = (purchase_order_id && isUuid(purchase_order_id)) ? purchase_order_id : null;
+    let cleanDcId = (delivery_challan_id && isUuid(delivery_challan_id)) ? delivery_challan_id : null;
+    let cleanContractId = (contract_id && isUuid(contract_id)) ? contract_id : null;
+    let cleanOppId = (opportunity_id && isUuid(opportunity_id)) ? opportunity_id : null;
+
+    if (purchase_order_id && (!cleanBizId || !cleanCustId || !cleanPoId)) {
+      const poRes = await db.query(`SELECT id, business_profile_id, customer_id, contract_id, opportunity_id, tenant_id FROM purchase_orders WHERE id = $1 OR po_number = $1`, [purchase_order_id]);
+      if (poRes.rows.length > 0) {
+        cleanPoId = poRes.rows[0].id;
+        if (!cleanBizId) cleanBizId = poRes.rows[0].business_profile_id;
+        if (!cleanCustId) cleanCustId = poRes.rows[0].customer_id;
+        if (!cleanContractId) cleanContractId = poRes.rows[0].contract_id;
+        if (!cleanOppId) cleanOppId = poRes.rows[0].opportunity_id;
+        if (!tenantId) tenantId = poRes.rows[0].tenant_id;
+      }
+    }
+
+    if (!cleanBizId) {
+      const bpRes = await db.query(`SELECT id FROM business_profiles WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+      if (bpRes.rows.length > 0) cleanBizId = bpRes.rows[0].id;
+      else {
+        const bpGlobal = await db.query(`SELECT id FROM business_profiles LIMIT 1`);
+        if (bpGlobal.rows.length > 0) cleanBizId = bpGlobal.rows[0].id;
+      }
+    }
+
+    if (!cleanCustId) {
+      return res.status(400).json({ success: false, message: 'Customer is mandatory for invoicing' });
+    }
+
     const invNum = invoice_number || `INV-${Date.now().toString().slice(-6)}`;
     const fbrRequired = Boolean(fbr_integration_required);
     const initialFbrStatus = fbrRequired ? 'Pending' : 'FBR Skipped';
-    const initialStatus = status || 'Submitted'; // Default submitted
+    const initialStatus = status || 'Submitted';
 
     const sub = parseFloat(subtotal || 0);
     const tax = parseFloat(tax_amount || 0);
     const total = sub + tax;
+
+    const safeInvDate = parseSafeDate(invoice_date) || new Date().toISOString().split('T')[0];
+    const safeDueDate = parseSafeDate(due_date) || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+    const safeDiaryDate = parseSafeDate(submission_diary_date);
 
     const insertRes = await db.query(
       `INSERT INTO invoices 
@@ -170,15 +222,15 @@ router.post('/', authenticate, requirePermission('invoices', 'add'), async (req,
        RETURNING *`,
       [
         tenantId,
-        business_profile_id,
-        delivery_challan_id || null,
-        purchase_order_id || null,
-        contract_id || null,
-        opportunity_id || null,
-        customer_id,
+        cleanBizId,
+        cleanDcId,
+        cleanPoId,
+        cleanContractId,
+        cleanOppId,
+        cleanCustId,
         invNum,
-        invoice_date || new Date(),
-        due_date || new Date(Date.now() + 30 * 86400000),
+        safeInvDate,
+        safeDueDate,
         sub,
         tax,
         total,
@@ -187,7 +239,7 @@ router.post('/', authenticate, requirePermission('invoices', 'add'), async (req,
         initialFbrStatus,
         initialStatus,
         submission_diary_no || null,
-        submission_diary_date || null,
+        safeDiaryDate,
         dealing_officer_name || null,
         department_section || null,
         dtl_clearance_ref || null
@@ -217,7 +269,8 @@ router.post('/', authenticate, requirePermission('invoices', 'add'), async (req,
 
     res.status(201).json({ success: true, data: createdInvoice, message: 'Invoice generated successfully.' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[POST /invoices Error]:', err);
+    res.status(500).json({ success: false, message: err.message, error: err.message });
   }
 });
 
@@ -247,6 +300,8 @@ router.put('/:id', authenticate, requirePermission('invoices', 'edit'), async (r
     tax_amount,
     total_amount,
     status,
+    payment_terms,
+    notes,
     submission_diary_no,
     submission_diary_date,
     dealing_officer_name,
@@ -255,6 +310,10 @@ router.put('/:id', authenticate, requirePermission('invoices', 'edit'), async (r
   } = req.body;
 
   try {
+    const safeInvoiceDate = parseSafeDate(invoice_date);
+    const safeDueDate = parseSafeDate(due_date);
+    const safeDiaryDate = parseSafeDate(submission_diary_date);
+
     const result = await db.query(
       `UPDATE invoices
        SET invoice_number = COALESCE($1, invoice_number),
@@ -264,24 +323,28 @@ router.put('/:id', authenticate, requirePermission('invoices', 'edit'), async (r
            tax_amount = COALESCE($5, tax_amount),
            total_amount = COALESCE($6, total_amount),
            status = COALESCE($7, status),
-           submission_diary_no = COALESCE($8, submission_diary_no),
-           submission_diary_date = COALESCE($9, submission_diary_date),
-           dealing_officer_name = COALESCE($10, dealing_officer_name),
-           department_section = COALESCE($11, department_section),
-           dtl_clearance_ref = COALESCE($12, dtl_clearance_ref),
+           payment_terms = COALESCE($8, payment_terms),
+           notes = COALESCE($9, notes),
+           submission_diary_no = COALESCE($10, submission_diary_no),
+           submission_diary_date = COALESCE($11, submission_diary_date),
+           dealing_officer_name = COALESCE($12, dealing_officer_name),
+           department_section = COALESCE($13, department_section),
+           dtl_clearance_ref = COALESCE($14, dtl_clearance_ref),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $13
+       WHERE id = $15
        RETURNING *`,
       [
         invoice_number || null,
-        invoice_date || null,
-        due_date || null,
+        safeInvoiceDate,
+        safeDueDate,
         subtotal !== undefined ? parseFloat(subtotal) : null,
         tax_amount !== undefined ? parseFloat(tax_amount) : null,
         total_amount !== undefined ? parseFloat(total_amount) : null,
         status || null,
+        payment_terms || null,
+        notes || null,
         submission_diary_no || null,
-        submission_diary_date || null,
+        safeDiaryDate,
         dealing_officer_name || null,
         department_section || null,
         dtl_clearance_ref || null,

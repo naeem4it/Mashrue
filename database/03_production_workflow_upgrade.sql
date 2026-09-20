@@ -213,4 +213,14 @@ JOIN business_profiles bp ON c.business_profile_id = bp.id
 JOIN customers cust ON c.customer_id = cust.id
 LEFT JOIN opportunities o ON c.opportunity_id = o.id;
 
+-- ----------------------------------------------------------------------------
+-- 6. COMMERCIAL INVOICES TRACKING COLUMNS
+-- ----------------------------------------------------------------------------
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS submission_diary_no VARCHAR(100);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS submission_diary_date DATE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS dealing_officer_name VARCHAR(255);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS department_section VARCHAR(255);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS dtl_clearance_ref VARCHAR(100);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS remarks TEXT;
+
 COMMIT;

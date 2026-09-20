@@ -9,7 +9,7 @@ const { requireRoles } = require('../middleware/rbac.middleware');
  * Strict Tenant Isolation: Only returns companies belonging to the user's tenant.
  * Dynamically resolves creator from created_by or tenant primary Client Admin
  */
-const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
 
 /**
  * GET all business profiles under active tenant

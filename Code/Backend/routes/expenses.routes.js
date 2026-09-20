@@ -4,6 +4,21 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
+function parseSafeDate(d) {
+  if (!d) return null;
+  const parsed = new Date(d);
+  if (isNaN(parsed.getTime())) return null;
+  const year = parsed.getFullYear();
+  if (year < 1900 || year > 2100) return null;
+  return parsed.toISOString().split('T')[0];
+}
+
+function cleanUUID(val) {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(trimmed) ? trimmed : null;
+}
+
 // Standard 30 Master Expense Categories across 3 Tiers
 const DEFAULT_EXPENSE_CATEGORIES = [
   // Tier 1: Tender & Quotation Pre-Bid Direct Expenses
@@ -50,6 +65,7 @@ const DEFAULT_EXPENSE_CATEGORIES = [
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_type VARCHAR(50) DEFAULT 'General Expense';
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_name VARCHAR(255);
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_tier VARCHAR(50) DEFAULT 'Tier 1 - Tender Direct';
+      ALTER TABLE general_expenses ALTER COLUMN business_profile_id DROP NOT NULL;
 
       CREATE TABLE IF NOT EXISTS expense_categories (
           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -203,11 +219,18 @@ router.get('/', authenticate, requirePermission('expenses', 'view'), async (req,
   try {
     let queryText = `
       SELECT ge.*, 
-             o.opportunity_number, o.tender_name, o.title as opportunity_title, o.tender_type, o.tender_source,
+             COALESCE(o.opportunity_number, po_opp.opportunity_number) as opportunity_number,
+             COALESCE(o.tender_name, po_opp.tender_name) as tender_name,
+             COALESCE(o.title, po_opp.title) as opportunity_title,
+             COALESCE(o.tender_type, po_opp.tender_type) as tender_type,
+             COALESCE(o.tender_source, po_opp.tender_source) as tender_source,
              cnt.contract_number,
+             po.po_number,
              bp.business_name
       FROM general_expenses ge
       LEFT JOIN opportunities o ON ge.opportunity_id = o.id
+      LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+      LEFT JOIN opportunities po_opp ON po.opportunity_id = po_opp.id
       LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
       LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
       WHERE 1=1
@@ -316,6 +339,36 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    const cleanOppId = cleanUUID(opportunity_id);
+    const cleanContractId = cleanUUID(contract_id);
+    const cleanPOId = cleanUUID(purchase_order_id);
+    let cleanBizId = cleanUUID(business_profile_id);
+
+    if (!cleanBizId) {
+      if (cleanOppId) {
+        const oppRes = await db.query(`SELECT business_profile_id FROM opportunities WHERE id = $1`, [cleanOppId]);
+        if (oppRes.rows[0]?.business_profile_id) cleanBizId = oppRes.rows[0].business_profile_id;
+      }
+      if (!cleanBizId && cleanPOId) {
+        const poRes = await db.query(`SELECT business_profile_id FROM purchase_orders WHERE id = $1`, [cleanPOId]);
+        if (poRes.rows[0]?.business_profile_id) cleanBizId = poRes.rows[0].business_profile_id;
+      }
+      if (!cleanBizId && cleanContractId) {
+        const cntRes = await db.query(`SELECT business_profile_id FROM contracts WHERE id = $1`, [cleanContractId]);
+        if (cntRes.rows[0]?.business_profile_id) cleanBizId = cntRes.rows[0].business_profile_id;
+      }
+      if (!cleanBizId) {
+        const bpRes = await db.query(`SELECT id FROM business_profiles WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+        if (bpRes.rows.length > 0) cleanBizId = bpRes.rows[0].id;
+        else {
+          const bpAny = await db.query(`SELECT id FROM business_profiles LIMIT 1`);
+          if (bpAny.rows.length > 0) cleanBizId = bpAny.rows[0].id;
+        }
+      }
+    }
+
+    const safeDate = parseSafeDate(expense_date) || new Date().toISOString().split('T')[0];
+
     const result = await db.query(
       `INSERT INTO general_expenses 
        (tenant_id, business_profile_id, expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, opportunity_id, contract_id, purchase_order_id, department, receipt_url, remarks)
@@ -323,48 +376,73 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
        RETURNING *`,
       [
         tenantId,
-        business_profile_id || null,
+        cleanBizId || null,
         expense_tier || 'Tier 3 - General Overheads',
         expense_type || 'General Expense',
         expense_name || null,
         category,
         parseFloat(amount),
-        expense_date || new Date(),
+        safeDate,
         paid_to || null,
         payment_mode || 'Cash',
-        opportunity_id || null,
-        contract_id || null,
-        purchase_order_id || null,
+        cleanOppId || null,
+        cleanContractId || null,
+        cleanPOId || null,
         department || null,
         receipt_url || null,
         remarks || null
       ]
     );
 
-    // If opportunity_id is present, also update tender_expenses total in bids
-    if (opportunity_id) {
+    // If cleanOppId is present, also update tender_expenses total in bids
+    if (cleanOppId) {
       await db.query(
         `UPDATE bids 
          SET tender_expense_total = (SELECT COALESCE(SUM(amount), 0) FROM general_expenses WHERE opportunity_id = $1)
          WHERE opportunity_id = $1`,
-        [opportunity_id]
+        [cleanOppId]
       );
     }
 
+    const fetchNew = await db.query(
+      `SELECT ge.*, 
+              COALESCE(o.opportunity_number, po_opp.opportunity_number) as opportunity_number,
+              COALESCE(o.tender_name, po_opp.tender_name) as tender_name,
+              COALESCE(o.title, po_opp.title) as opportunity_title,
+              COALESCE(o.tender_type, po_opp.tender_type) as tender_type,
+              COALESCE(o.tender_source, po_opp.tender_source) as tender_source,
+              cnt.contract_number,
+              po.po_number,
+              bp.business_name
+       FROM general_expenses ge
+       LEFT JOIN opportunities o ON ge.opportunity_id = o.id
+       LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+       LEFT JOIN opportunities po_opp ON po.opportunity_id = po_opp.id
+       LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
+       LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
+       WHERE ge.id = $1`,
+      [result.rows[0].id]
+    );
+
     res.status(201).json({
       success: true,
-      data: result.rows[0],
+      data: fetchNew.rows[0] || result.rows[0],
       message: `Expense of PKR ${parseFloat(amount).toLocaleString()} logged under ${category}.`
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[POST /api/expenses Error]:', err);
+    res.status(500).json({ success: false, message: err.message, error: err.message });
   }
 });
 
 // PUT update Expense details
 router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (req, res) => {
-  const { expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, remarks } = req.body;
+  const { expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, remarks, opportunity_id, purchase_order_id } = req.body;
   try {
+    const safeDate = parseSafeDate(expense_date);
+    const cleanOpp = opportunity_id !== undefined ? cleanUUID(opportunity_id) : undefined;
+    const cleanPO = purchase_order_id !== undefined ? cleanUUID(purchase_order_id) : undefined;
+
     const result = await db.query(
       `UPDATE general_expenses
        SET expense_tier = COALESCE($1, expense_tier),
@@ -375,26 +453,55 @@ router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (r
            expense_date = COALESCE($6, expense_date),
            paid_to = COALESCE($7, paid_to),
            payment_mode = COALESCE($8, payment_mode),
-           remarks = COALESCE($9, remarks)
-       WHERE id = $10
+           remarks = COALESCE($9, remarks),
+           opportunity_id = CASE WHEN $10::boolean THEN $11::uuid ELSE opportunity_id END,
+           purchase_order_id = CASE WHEN $12::boolean THEN $13::uuid ELSE purchase_order_id END
+       WHERE id = $14
        RETURNING *`,
       [
         expense_tier || null,
         expense_type || null,
         expense_name || null,
         category || null,
-        amount !== undefined ? parseFloat(amount) : null,
-        expense_date || null,
+        amount !== undefined && amount !== null && amount !== '' ? parseFloat(amount) : null,
+        safeDate || null,
         paid_to || null,
         payment_mode || null,
         remarks || null,
+        opportunity_id !== undefined,
+        cleanOpp || null,
+        purchase_order_id !== undefined,
+        cleanPO || null,
         req.params.id
       ]
     );
-    res.json({ success: true, data: result.rows[0], message: 'Expense record updated successfully' });
+
+    const fetchUpdated = await db.query(
+      `SELECT ge.*, 
+              COALESCE(o.opportunity_number, po_opp.opportunity_number) as opportunity_number,
+              COALESCE(o.tender_name, po_opp.tender_name) as tender_name,
+              COALESCE(o.title, po_opp.title) as opportunity_title,
+              COALESCE(o.tender_type, po_opp.tender_type) as tender_type,
+              COALESCE(o.tender_source, po_opp.tender_source) as tender_source,
+              cnt.contract_number,
+              po.po_number,
+              bp.business_name
+       FROM general_expenses ge
+       LEFT JOIN opportunities o ON ge.opportunity_id = o.id
+       LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+       LEFT JOIN opportunities po_opp ON po.opportunity_id = po_opp.id
+       LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
+       LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
+       WHERE ge.id = $1`,
+      [req.params.id]
+    );
+
+    res.json({ success: true, data: fetchUpdated.rows[0] || result.rows[0], message: 'Expense record updated successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[PUT /api/expenses Error]:', err);
+    res.status(500).json({ success: false, message: err.message, error: err.message });
   }
 });
+
 
 module.exports = router;

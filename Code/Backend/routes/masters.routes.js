@@ -8,7 +8,7 @@ const { requirePermission, resolveTenantId } = require('../middleware/rbac.middl
 // CUSTOMERS (Mandatory: Customer Name and Organization Type)
 // ============================================================================
 
-const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
 
 router.get('/customers', authenticate, requirePermission('customers', 'view'), async (req, res) => {
   try {

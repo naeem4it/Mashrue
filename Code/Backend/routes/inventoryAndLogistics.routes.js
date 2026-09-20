@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
+const logger = require('../services/logger.service');
 
 // ============================================================================
 // 1. WAREHOUSES & CURRENT STOCK
@@ -321,6 +322,26 @@ router.get('/delivery-challans', authenticate, requirePermission('delivery_chall
 
 // POST create Delivery Challan
 // Enforce Rule: PO required for DC!
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
+
+function parseSafeDate(d) {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString().split('T')[0];
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    if (parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+  }
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? null : dt.toISOString().split('T')[0];
+}
+
 router.post('/delivery-challans', authenticate, requirePermission('delivery_challans', 'add'), async (req, res) => {
   const {
     business_profile_id,
@@ -328,11 +349,20 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
     warehouse_id,
     dc_number,
     delivery_date,
-    delivery_method, // 'Hired Delivery' or '3PL'
+    delivery_mode, // 'Own Warehouse' or 'Direct Drop-Shipment'
+    delivery_method, // 'Hired Delivery' or '3PL' or '3PL Heavy Logistics'
     logistics_provider,
     tracking_number,
+    bilty_number,
+    vehicle_number,
+    driver_name,
     driver_contact,
+    freight_cost_contractor,
+    customs_handling_cost,
     delivery_cost,
+    origin_location,
+    destination_site,
+    supplier_id,
     remarks,
     items
   } = req.body;
@@ -345,83 +375,155 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
     });
   }
 
-  if (!warehouse_id) {
-    return res.status(400).json({ success: false, message: 'Warehouse selection is mandatory' });
-  }
-
   try {
-    const poRes = await db.query(`SELECT * FROM purchase_orders WHERE id = $1`, [purchase_order_id]);
-    if (poRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Purchase Order not found' });
+    let poRes;
+    if (isUuid(purchase_order_id)) {
+      poRes = await db.query(`SELECT * FROM purchase_orders WHERE id = $1`, [purchase_order_id]);
+    }
+    if (!poRes || poRes.rows.length === 0) {
+      poRes = await db.query(`SELECT * FROM purchase_orders WHERE po_number = $1`, [purchase_order_id]);
+    }
+
+    if (!poRes || poRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Purchase Order not found in database.' });
     }
     const po = poRes.rows[0];
 
-    let tenantId = req.user?.tenantId;
-    if (!tenantId) {
-      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
-      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    const tenantId = po.tenant_id || req.user?.tenantId || '87ed30e8-80df-46fb-b99f-ecf73fe13d04';
+    const cleanBizId = (business_profile_id && isUuid(business_profile_id)) ? business_profile_id : (po.business_profile_id || null);
+    const cleanCustId = po.customer_id;
+    const finalDeliveryMode = delivery_mode || (warehouse_id ? 'Own Warehouse' : 'Direct Drop-Shipment');
+
+    // Safe Warehouse ID resolution
+    let cleanWarehouseId = (warehouse_id && isUuid(warehouse_id)) ? warehouse_id : null;
+    if (cleanWarehouseId) {
+      const wCheck = await db.query(`SELECT id FROM warehouses WHERE id = $1`, [cleanWarehouseId]);
+      if (wCheck.rows.length === 0) cleanWarehouseId = null;
     }
 
-    const dcNum = dc_number || `DC-${Date.now().toString().slice(-6)}`;
+    // If fulfillment is from Own Warehouse and warehouse was not provided or invalid, resolve fallback warehouse
+    if (finalDeliveryMode === 'Own Warehouse' && !cleanWarehouseId) {
+      const wRes = await db.query(`SELECT id FROM warehouses WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`, [tenantId]);
+      if (wRes.rows.length > 0) {
+        cleanWarehouseId = wRes.rows[0].id;
+      } else {
+        const wGlobal = await db.query(`SELECT id FROM warehouses ORDER BY created_at ASC LIMIT 1`);
+        if (wGlobal.rows.length > 0) {
+          cleanWarehouseId = wGlobal.rows[0].id;
+        } else {
+          const wNew = await db.query(
+            `INSERT INTO warehouses (tenant_id, warehouse_name, location, city)
+             VALUES ($1, 'Main Warehouse', 'Central Facility', 'Lahore') RETURNING id`,
+            [tenantId]
+          );
+          cleanWarehouseId = wNew.rows[0].id;
+        }
+      }
+    }
+
+    const cleanSupplierId = (supplier_id && isUuid(supplier_id)) ? supplier_id : null;
+    const dcNum = (dc_number || '').trim() || `DC-${Date.now().toString().slice(-6)}`;
+    const safeDeliveryDate = parseSafeDate(delivery_date) || new Date().toISOString().split('T')[0];
+    const finalFreight = parseFloat(freight_cost_contractor || 0);
+    const finalCustoms = parseFloat(customs_handling_cost || 0);
+    const finalTotalCost = delivery_cost ? parseFloat(delivery_cost) : (finalFreight + finalCustoms);
 
     const result = await db.query(
       `INSERT INTO delivery_challans 
-       (tenant_id, business_profile_id, purchase_order_id, customer_id, warehouse_id, dc_number, delivery_date, delivery_method, logistics_provider, tracking_number, driver_contact, delivery_cost, status, remarks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       (tenant_id, business_profile_id, purchase_order_id, customer_id, warehouse_id, dc_number, delivery_date, delivery_method, logistics_provider, tracking_number, driver_contact, delivery_cost, status, remarks, delivery_mode, supplier_id, origin_location, destination_site, bilty_number, vehicle_number, driver_name, freight_cost_contractor, customs_handling_cost)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING *`,
       [
         tenantId,
-        business_profile_id || po.business_profile_id,
-        purchase_order_id,
-        po.customer_id,
-        warehouse_id,
+        cleanBizId,
+        po.id,
+        cleanCustId,
+        cleanWarehouseId,
         dcNum,
-        delivery_date || new Date(),
+        safeDeliveryDate,
         delivery_method || 'Hired Delivery',
         logistics_provider || null,
-        tracking_number || null,
+        tracking_number || bilty_number || null,
         driver_contact || null,
-        parseFloat(delivery_cost || 0),
+        finalTotalCost,
         'Dispatched',
-        remarks || null
+        remarks || null,
+        finalDeliveryMode,
+        cleanSupplierId,
+        origin_location || null,
+        destination_site || po.delivery_location || null,
+        bilty_number || tracking_number || null,
+        vehicle_number || null,
+        driver_name || null,
+        finalFreight,
+        finalCustoms
       ]
     );
 
     const createdDC = result.rows[0];
 
-    // Insert DC items & automatically deduct stock via inventory transaction
+    // Insert DC items & deduct stock via inventory transaction
     if (items && Array.isArray(items)) {
       for (const itm of items) {
+        const cleanProdId = (itm.product_service_id && isUuid(itm.product_service_id)) ? itm.product_service_id : null;
+        const cleanPoiId = (itm.purchase_order_item_id && isUuid(itm.purchase_order_item_id)) ? itm.purchase_order_item_id : null;
+        const finalQty = parseFloat(itm.quantity || 1);
+        const finalOrderedQty = parseFloat(itm.ordered_quantity || finalQty);
+
         await db.query(
-          `INSERT INTO delivery_challan_items (delivery_challan_id, product_service_id, quantity, batch_number, serial_number)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [createdDC.id, itm.product_service_id || null, parseFloat(itm.quantity || 1), itm.batch_number || null, itm.serial_number || null]
+          `INSERT INTO delivery_challan_items 
+           (delivery_challan_id, product_service_id, purchase_order_item_id, item_name, quantity, unit, ordered_quantity, batch_number, serial_number)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            createdDC.id,
+            cleanProdId,
+            cleanPoiId,
+            itm.item_name || 'Item Specification',
+            finalQty,
+            itm.unit || 'PCS',
+            finalOrderedQty,
+            itm.batch_number || null,
+            itm.serial_number || null
+          ]
         );
 
-        if (itm.product_service_id) {
-          // Log STOCK_OUT
-          await db.query(
-            `INSERT INTO inventory_transactions 
-             (tenant_id, product_id, warehouse_id, transaction_type, quantity, batch_number, serial_number, reference_type, reference_id, remarks)
-             VALUES ($1, $2, $3, 'DELIVERY', $4, $5, $6, 'DC', $7, 'Dispatched against Delivery Challan')`,
-            [tenantId, itm.product_service_id, warehouse_id, parseFloat(itm.quantity || 1), itm.batch_number || null, itm.serial_number || null, createdDC.id]
-          );
+        if (cleanProdId && cleanWarehouseId) {
+          const prodCheck = await db.query(`SELECT id FROM products_services WHERE id = $1`, [cleanProdId]);
+          if (prodCheck.rows.length > 0) {
+            await db.query(
+              `INSERT INTO inventory_transactions 
+               (tenant_id, product_id, warehouse_id, transaction_type, quantity, batch_number, serial_number, reference_type, reference_id, remarks)
+               VALUES ($1, $2, $3, 'DELIVERY', $4, $5, $6, 'DC', $7, 'Dispatched against Delivery Challan')`,
+              [tenantId, cleanProdId, cleanWarehouseId, finalQty, itm.batch_number || null, itm.serial_number || null, createdDC.id]
+            );
 
-          await db.query(
-            `UPDATE products_services SET current_stock = GREATEST(0, current_stock - $1) WHERE id = $2`,
-            [parseFloat(itm.quantity || 1), itm.product_service_id]
-          );
+            await db.query(
+              `UPDATE products_services SET current_stock = GREATEST(0, current_stock - $1) WHERE id = $2`,
+              [finalQty, cleanProdId]
+            );
+          }
         }
       }
     }
 
-    res.status(201).json({
-      success: true,
-      data: createdDC,
-      message: 'Delivery Challan created and stock deducted. Proceed to Invoicing & Billing.'
-    });
+    if (logger && logger.info) {
+      logger.info(`[POST /delivery-challans] DC ${dcNum} created successfully (ID: ${createdDC.id})`);
+    }
+    if (!res.headersSent) {
+      res.status(201).json({
+        success: true,
+        data: createdDC,
+        message: 'Delivery Challan created and stock deducted. Proceed to Invoicing & Billing.'
+      });
+    }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    if (logger && logger.error) {
+      try { logger.error('[POST /delivery-challans Error]:', err); } catch (_) {}
+    }
+    console.error('[POST /delivery-challans Error]:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: err.message, error: err.message });
+    }
   }
 });
 

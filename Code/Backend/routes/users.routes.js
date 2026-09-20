@@ -1127,7 +1127,7 @@ router.put('/tenants/:id/subscription', authenticate, requireRoles('SuperAdmin')
  */
 router.post('/tenant/pay-addon', authenticate, async (req, res) => {
   const { reference_number, payment_method, remarks } = req.body;
-  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
   const tenantId = req.user.tenantId;
 
   if (!isUuid(tenantId)) {
@@ -1176,7 +1176,7 @@ router.post('/tenant/pay-addon', authenticate, async (req, res) => {
  */
 router.post('/tenant/verify-addon-payment', authenticate, requireRoles('SuperAdmin'), async (req, res) => {
   const { tenant_id } = req.body;
-  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+  const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
 
   if (!isUuid(tenant_id)) {
     return res.status(400).json({ success: false, message: 'Valid tenant ID required.' });

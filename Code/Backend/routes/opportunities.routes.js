@@ -70,7 +70,7 @@ router.get('/', authenticate, requirePermission('opportunities', 'view'), async 
       queryText += ` AND o.tender_type = $${params.length}`;
     }
 
-    queryText += ` ORDER BY o.closing_date ASC, o.created_at DESC`;
+    queryText += ` ORDER BY COALESCE(o.opening_date, o.closing_date, o.created_at::date) DESC, o.created_at DESC`;
 
     const result = await db.query(queryText, params);
     const canSeePrices = req.user ? req.user.canSeeBiddingPrices : true;
@@ -250,14 +250,8 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
       });
     }
 
-    // Resolve workflow gates from body or customer default or standard default
+    // Resolve workflow gates from tender payload or standard default
     let gates = workflow_gates;
-    if (!gates && customer_id) {
-      const custRes = await db.query(`SELECT workflow_gates FROM customers WHERE id = $1`, [customer_id]);
-      if (custRes.rows.length > 0 && custRes.rows[0].workflow_gates) {
-        gates = custRes.rows[0].workflow_gates;
-      }
-    }
     if (!gates) {
       gates = {
         requires_bid_security: tender_source !== 'DIRECT SALES',
@@ -431,28 +425,30 @@ router.post('/:id/items', authenticate, requirePermission('opportunities', 'edit
 
 function parseSafeDate(dStr) {
   if (!dStr || dStr === 'N/A' || dStr === 'null' || dStr === 'undefined') return null;
-  if (dStr instanceof Date) return isNaN(dStr.getTime()) ? null : dStr;
-  if (typeof dStr === 'string' && dStr.includes('/')) {
-    const parts = dStr.trim().split(/[\s,]+/);
-    const dateParts = parts[0].split('/');
-    if (dateParts.length === 3) {
-      const day = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const year = parseInt(dateParts[2], 10);
-      let d = new Date(year, month, day);
-      if (parts[1]) {
-        const timeParts = parts[1].split(':');
-        let hours = parseInt(timeParts[0], 10);
-        const mins = parseInt(timeParts[1] || 0, 10);
-        if (parts[2] && parts[2].toUpperCase() === 'PM' && hours < 12) hours += 12;
-        if (parts[2] && parts[2].toUpperCase() === 'AM' && hours === 12) hours = 0;
-        d.setHours(hours, mins);
+  if (dStr instanceof Date) {
+    if (isNaN(dStr.getTime())) return null;
+    return dStr.toISOString().split('T')[0];
+  }
+  const str = String(dStr).trim();
+  if (str.includes('/')) {
+    const parts = str.split(/[\s,]+/)[0].split('/');
+    if (parts.length === 3) {
+      // DD/MM/YYYY -> YYYY-MM-DD
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  if (str.includes('-')) {
+    const parts = str.split(/[\s,T]+/)[0].split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
       }
-      if (!isNaN(d.getTime())) return d;
     }
   }
   const parsed = new Date(dStr);
-  return isNaN(parsed.getTime()) ? null : parsed;
+  return isNaN(parsed.getTime()) ? null : parsed.toISOString().split('T')[0];
 }
 
 // PUT update opportunity / tender / quotation details

@@ -65,16 +65,29 @@ router.get('/', authenticate, requirePermission('bid_securities', 'view'), async
 // Helper for safe date parsing
 function parseSafeDateInput(dStr) {
   if (!dStr) return null;
-  if (dStr instanceof Date) return dStr;
+  if (dStr instanceof Date) {
+    if (isNaN(dStr.getTime())) return null;
+    return dStr.toISOString().split('T')[0];
+  }
   const str = String(dStr).trim();
   if (str.includes('/')) {
-    const parts = str.split('/');
+    const parts = str.split(/[\s,]+/)[0].split('/');
     if (parts.length === 3) {
-      // DD/MM/YYYY
+      // DD/MM/YYYY -> YYYY-MM-DD
       return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
     }
   }
-  return str;
+  if (str.includes('-')) {
+    const parts = str.split(/[\s,T]+/)[0].split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+  }
+  return str.split('T')[0].split(' ')[0];
 }
 
 // POST create new Bid Security

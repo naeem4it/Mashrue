@@ -205,6 +205,65 @@ app.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS workflow_gates JSONB DEFAULT '{"requires_bid_security":true,"requires_performance_guarantee":true,"requires_stamp_duty":true,"requires_dtl_inspection":false,"requires_fbr_e_invoice":true,"requires_diary_tracking":true}'::jsonb;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
 
+      -- Enforce pure DATE column types across all business entities
+      ALTER TABLE opportunities ALTER COLUMN closing_date TYPE DATE USING closing_date::date;
+      ALTER TABLE opportunities ALTER COLUMN opening_date TYPE DATE USING opening_date::date;
+      ALTER TABLE opportunities ALTER COLUMN submission_deadline TYPE DATE USING submission_deadline::date;
+      ALTER TABLE opportunities ALTER COLUMN publication_date TYPE DATE USING publication_date::date;
+      ALTER TABLE award_letters ALTER COLUMN award_date TYPE DATE USING award_date::date;
+      ALTER TABLE award_letters ALTER COLUMN acceptance_deadline TYPE DATE USING acceptance_deadline::date;
+      ALTER TABLE bid_securities ALTER COLUMN issue_date TYPE DATE USING issue_date::date;
+      ALTER TABLE bid_securities ALTER COLUMN expiry_date TYPE DATE USING expiry_date::date;
+      ALTER TABLE performance_guarantees ALTER COLUMN issue_date TYPE DATE USING issue_date::date;
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS business_profile_id UUID;
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS opportunity_id UUID REFERENCES opportunities(id) ON DELETE SET NULL;
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS account_title VARCHAR(255) DEFAULT '';
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS beneficiary VARCHAR(255) DEFAULT '';
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS instrument_type VARCHAR(100) DEFAULT 'BG';
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS instrument_number VARCHAR(100);
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS bank_branch VARCHAR(255);
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS release_reference VARCHAR(100);
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS comments TEXT;
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS instrument_image_url TEXT;
+      ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_required BOOLEAN DEFAULT TRUE;
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_pct NUMERIC(5, 4) DEFAULT 0.2500;
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_amount NUMERIC(18, 4) DEFAULT 0.0000;
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_status VARCHAR(50) DEFAULT 'Unpaid';
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_challan_no VARCHAR(100);
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_paid_date DATE;
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS stamp_duty_bank VARCHAR(150);
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS acceptance_date DATE;
+      ALTER TABLE award_letters ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS remarks TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_required BOOLEAN DEFAULT TRUE;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_rate_pct NUMERIC(5, 4) DEFAULT 0.2500;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_amount NUMERIC(18, 4) DEFAULT 0.0000;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_status VARCHAR(50) DEFAULT 'Unpaid';
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_challan_no VARCHAR(100);
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_paid_date DATE;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_bank VARCHAR(150);
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS stamp_duty_doc_url TEXT;
+
+      ALTER TABLE delivery_challans ALTER COLUMN warehouse_id DROP NOT NULL;
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(100) DEFAULT 'Own Warehouse';
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL;
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS origin_location TEXT;
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS destination_site TEXT;
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS bilty_number VARCHAR(100);
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS vehicle_number VARCHAR(100);
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS driver_name VARCHAR(150);
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS freight_cost_contractor NUMERIC(18, 4) DEFAULT 0.0000;
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS customs_handling_cost NUMERIC(18, 4) DEFAULT 0.0000;
+
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS purchase_order_item_id UUID;
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS item_name VARCHAR(255);
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS unit VARCHAR(50);
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS ordered_quantity NUMERIC(18, 4);
+
       ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS abbreviation VARCHAR(50);
       ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
 

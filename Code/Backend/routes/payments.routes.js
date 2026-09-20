@@ -4,6 +4,19 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
+// Safe date parser — handles ISO (YYYY-MM-DD), DD/MM/YYYY, and Date objects
+function parseSafeDate(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
+  const s = String(val).trim();
+  // DD/MM/YYYY
+  const dmyMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2].padStart(2,'0')}-${dmyMatch[1].padStart(2,'0')}`;
+  // Already YYYY-MM-DD or ISO string
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+}
+
 // GET all payments
 router.get('/', authenticate, requirePermission('payments', 'view'), async (req, res) => {
   const { invoice_id, business_profile_id } = req.query;
@@ -132,7 +145,7 @@ router.post('/', authenticate, requirePermission('payments', 'add'), async (req,
         business_profile_id || inv.business_profile_id,
         targetInvoiceId,
         payNum,
-        payment_date || new Date(),
+        parseSafeDate(payment_date) || new Date().toISOString().split('T')[0],
         payment_method || 'Cheque',
         payAmount,
         check_no || null,

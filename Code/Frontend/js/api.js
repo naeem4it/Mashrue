@@ -1500,6 +1500,7 @@ const API = {
         const a = awards.find(item => item.id === id);
         if (a) {
           a.status = decision;
+          if (json.data) Object.assign(a, json.data);
           State.saveTenantEntity('awards', a);
         }
         return json;
@@ -1507,6 +1508,37 @@ const API = {
       return { success: false, status: res.status, message: json?.message || `Failed to mark award as ${decision}.` };
     } catch (e) {
       return { success: false, message: e.message || 'Network error updating award decision.' };
+    }
+  },
+
+  async recordAwardStampDuty(id, payload = {}) {
+    try {
+      const res = await fetch(`${API_BASE}/awards/${id}/stamp-duty`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (res.ok && json && json.success) {
+        const awards = State.getTenantEntityList('awards');
+        const a = awards.find(item => item.id === id);
+        if (a) {
+          if (json.data) {
+            Object.assign(a, json.data);
+          } else {
+            a.stamp_duty_status = payload.stamp_duty_status || 'Paid';
+            a.stamp_duty_challan_no = payload.stamp_duty_challan_no;
+            a.stamp_duty_paid_date = payload.stamp_duty_paid_date;
+            a.stamp_duty_amount = payload.stamp_duty_amount;
+            a.stamp_duty_bank = payload.stamp_duty_bank;
+          }
+          State.saveTenantEntity('awards', a);
+        }
+        return json;
+      }
+      return { success: false, status: res.status, message: json?.message || 'Failed to record stamp duty.' };
+    } catch (e) {
+      return { success: false, message: e.message || 'Network error recording stamp duty.' };
     }
   },
 
@@ -1544,12 +1576,12 @@ const API = {
     }
   },
 
-  async releaseGuarantee(id) {
+  async releaseGuarantee(id, releaseData = {}) {
     try {
       const res = await fetch(`${API_BASE}/guarantees/${id}/release`, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({})
+        body: JSON.stringify(releaseData)
       });
       const json = await res.json();
       if (res.ok && json && json.success) {
@@ -1564,6 +1596,24 @@ const API = {
       return { success: false, status: res.status, message: json?.message || 'Failed to release guarantee in database.' };
     } catch (e) {
       return { success: false, message: e.message || 'Network error releasing guarantee.' };
+    }
+  },
+
+  async updateGuarantee(id, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/guarantees/${id}`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (res.ok && json && json.success && json.data) {
+        State.saveTenantEntity('guarantees', json.data);
+        return json;
+      }
+      return { success: false, status: res.status, message: json?.message || 'Failed to update guarantee.' };
+    } catch (e) {
+      return { success: false, message: e.message || 'Network error updating guarantee.' };
     }
   },
 
@@ -1803,7 +1853,7 @@ const API = {
         State.saveTenantEntity('deliveryChallans', json.data);
         return json;
       }
-      return { success: false, status: res.status, message: json?.message || 'Failed to create delivery challan in database.' };
+      return { success: false, status: res.status, message: json?.message || json?.error || 'Failed to create delivery challan in database.' };
     } catch (e) {
       return { success: false, message: e.message || 'Network error creating delivery challan.' };
     }
@@ -1976,7 +2026,7 @@ const API = {
         State.saveTenantEntity('expenses', json.data);
         return json;
       }
-      return { success: false, status: res.status, message: json?.message || 'Failed to record expense in database.' };
+      return { success: false, status: res.status, message: json?.message || json?.error || 'Failed to record expense in database.' };
     } catch (e) {
       return { success: false, message: e.message || 'Network error recording expense.' };
     }

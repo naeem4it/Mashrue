@@ -78,7 +78,7 @@ async function authenticate(req, res, next) {
       console.warn('User auth DB query fallback:', dbErr.message);
     }
 
-    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(val || ''));
+    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
 
     if (userRes.rows.length === 0) {
       if (decoded.role === 'SuperAdmin') {
