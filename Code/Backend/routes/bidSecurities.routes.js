@@ -255,31 +255,72 @@ router.post('/:id/release', authenticate, requirePermission('bid_securities', 'e
   const { release_date, release_reference, comments } = req.body;
 
   try {
-    const result = await db.query(
-      `UPDATE bid_securities 
-       SET status = 'Released', 
-           release_date = $1, 
-           release_reference = $2, 
-           comments = COALESCE(comments, '') || ' | ' || $3,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $4
-       RETURNING *`,
-      [release_date || new Date(), release_reference || 'Handover Letter', comments || 'Released to client file', req.params.id]
+    // ── Business Rule: If an active Performance Guarantee exists for this
+    //    tender/opportunity, releasing the bid security marks it as "PG Submitted"
+    //    (not "Released"), because the PG has replaced / covered the bid security.
+    const bsRow = await db.query(
+      `SELECT opportunity_id, tenant_id FROM bid_securities WHERE id = $1`,
+      [req.params.id]
     );
-
-    if (result.rows.length === 0) {
+    if (bsRow.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Bid Security record not found' });
     }
+    const { opportunity_id, tenant_id } = bsRow.rows[0];
+
+    let newStatus = 'Released';
+    if (opportunity_id) {
+      const pgCheck = await db.query(
+        `SELECT pg.id FROM performance_guarantees pg
+         WHERE pg.status = 'Active'
+           AND pg.tenant_id = $2
+           AND (
+             pg.opportunity_id::text = $1
+             OR pg.award_letter_id IN (
+               SELECT id FROM award_letters WHERE opportunity_id::text = $1
+             )
+             OR pg.contract_id IN (
+               SELECT id FROM contracts WHERE opportunity_id::text = $1
+             )
+           )
+         LIMIT 1`,
+        [String(opportunity_id), tenant_id]
+      );
+      if (pgCheck.rows.length > 0) {
+        newStatus = 'PG Submitted';
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
+    const result = await db.query(
+      `UPDATE bid_securities 
+       SET status = $1, 
+           release_date = $2, 
+           release_reference = $3, 
+           comments = COALESCE(comments, '') || ' | ' || $4,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5
+       RETURNING *`,
+      [
+        newStatus,
+        release_date || new Date(),
+        release_reference || 'Handover Letter',
+        comments || 'Released to client file',
+        req.params.id
+      ]
+    );
 
     res.json({
       success: true,
       data: result.rows[0],
-      message: 'Bid Security has been successfully marked as RELEASED.'
+      message: newStatus === 'PG Submitted'
+        ? 'Bid Security marked as PG Submitted — an active Performance Guarantee exists for this tender.'
+        : 'Bid Security has been successfully marked as RELEASED.'
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // PUT update Bid Security details
 router.put('/:id', authenticate, requirePermission('bid_securities', 'edit'), async (req, res) => {

@@ -1794,8 +1794,15 @@ async function renderDashboardHTML() {
                 </td>
               </tr>
             ` : opps.slice(0, 5).map(o => {
+              // ── 3-state Bid Security badge: PG Submitted / Attached / Missing ──
+              const linkedSec = Array.isArray(securities) && securities.find(
+                s => s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)
+              );
+              const secStatus = linkedSec?.status || null;
+              const isPGSubmitted = secStatus === 'PG Submitted';
               const hasAttachedSecurity = (parseInt(o.active_bid_securities_count, 10) > 0) ||
-                (Array.isArray(securities) && securities.some(s => (s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)) && (s.status === 'Active' || s.status === 'Submitted' || !s.status)));
+                (linkedSec && (secStatus === 'Active' || secStatus === 'Submitted' || secStatus === 'PG Submitted' || !secStatus));
+              // ─────────────────────────────────────────────────────────────────
               return `
               <tr>
                 <td>
@@ -1810,9 +1817,12 @@ async function renderDashboardHTML() {
                     : `<span class="badge badge-hold">🔒 Masked</span>`}
                 </td>
                 <td>
-                  ${hasAttachedSecurity 
-                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
-                    : `<button type="button" class="danger-btn" style="padding:3px 8px; font-size:0.75rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
+                  ${isPGSubmitted
+                    ? `<button type="button" class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; cursor:pointer; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:4px;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Bid Security absorbed in Performance Guarantee">🏦 PG Submitted</button>`
+                    : hasAttachedSecurity
+                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>`
+                    : `<button type="button" class="danger-btn" style="padding:3px 8px; font-size:0.75rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`
+                  }
                 </td>
                 <td><span class="badge badge-${(o.status || 'new').toLowerCase().replace(/\s+/g, '')}">${o.status}</span></td>
                 <td>
@@ -1898,8 +1908,15 @@ async function renderOpportunitiesHTML() {
                 </td>
               </tr>
             ` : opps.map(o => {
+              // ── 3-state Bid Security badge: PG Submitted / Attached / Missing ──
+              const linkedSec = Array.isArray(securities) && securities.find(
+                s => s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)
+              );
+              const secStatus = linkedSec?.status || null;
+              const isPGSubmitted = secStatus === 'PG Submitted';
               const hasAttachedSecurity = (parseInt(o.active_bid_securities_count, 10) > 0) || 
-                (Array.isArray(securities) && securities.some(s => (s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)) && (s.status === 'Active' || s.status === 'Submitted' || !s.status)));
+                (linkedSec && (secStatus === 'Active' || secStatus === 'Submitted' || secStatus === 'PG Submitted' || !secStatus));
+              // ─────────────────────────────────────────────────────────────────
               return `
               <tr data-source="${o.tender_source || 'PPRA (Federal)'}">
                 <td>
@@ -1922,9 +1939,12 @@ async function renderOpportunitiesHTML() {
                     : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
                 </td>
                 <td>
-                  ${hasAttachedSecurity 
-                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>` 
-                    : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`}
+                  ${isPGSubmitted
+                    ? `<button type="button" class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; cursor:pointer; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:4px;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Bid Security absorbed in Performance Guarantee">🏦 PG Submitted</button>`
+                    : hasAttachedSecurity
+                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>`
+                    : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`
+                  }
                 </td>
                 <td>
                   <div style="display:flex; flex-direction:column; gap:4px;">
@@ -2058,7 +2078,7 @@ async function renderBidSecuritiesHTML() {
       <p style="color:var(--text-muted); font-size:0.9rem;">
         Without a valid instrument (PO / CDR / Bank Guarantee), tenders cannot be completed or submitted.
       </p>
-      <button class="primary-btn" onclick="openModal('modal-add-bid-security')">+ Add Bid Security</button>
+      <button class="primary-btn" onclick="openNewBidSecurityModal()">+ Add Bid Security</button>
     </div>
 
     <div class="card">
@@ -2727,7 +2747,7 @@ async function renderInvoicesHTML() {
         <div class="card-title">🧾 Commercial Invoices & FBR Tax Registry</div>
         <div style="display:flex; gap:8px;">
           ${!State.isReadOnly() && State.hasPermission('invoices', 'add') ? `<button class="primary-btn" style="background:#0284c7;" onclick="openNewInvoiceModal()">🧾 Generate Invoice</button>` : ''}
-          ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="secondary-btn" onclick="openModal('modal-add-payment')">💵 Record Cheque Payment</button>` : ''}
+          ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="secondary-btn" onclick="openNewPaymentModal()">💵 Record Cheque Payment</button>` : ''}
         </div>
       </div>
       <div class="table-responsive">
@@ -2811,7 +2831,7 @@ async function renderPaymentsHTML() {
       <p style="color:var(--text-muted); font-size:0.9rem;">
         Cheque details (Check No, Check From, Invoice Number) are tracked and automatically deducted from customer balance.
       </p>
-      ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="primary-btn" onclick="openModal('modal-add-payment')">+ Record Cheque Receipt</button>` : ''}
+      ${!State.isReadOnly() && State.hasPermission('payments', 'add') ? `<button class="primary-btn" onclick="openNewPaymentModal()">+ Record Cheque Receipt</button>` : ''}
     </div>
 
     <div class="card">
@@ -4523,7 +4543,7 @@ async function renderUsersHTML() {
           </span>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button class="primary-btn" onclick="openModal('modal-create-tenant')">
+          <button class="primary-btn" onclick="openNewTenantModal()">
             🏢 + Provision New Client Admin &amp; Tenant
           </button>
           <button class="secondary-btn" onclick="openCreateUserModal('SuperAdmin')">
@@ -6275,6 +6295,24 @@ function openModal(id) {
     openExpenseModal();
     return;
   }
+  if (id === 'modal-add-bid-security' && !window._isOpeningBidSecurityWithContext) {
+    if (typeof openNewBidSecurityModal === 'function') {
+      openNewBidSecurityModal();
+      return;
+    }
+  }
+  if (id === 'modal-add-payment' && !window._isOpeningPaymentWithContext) {
+    if (typeof openNewPaymentModal === 'function') {
+      openNewPaymentModal();
+      return;
+    }
+  }
+  if (id === 'modal-create-tenant') {
+    if (typeof openNewTenantModal === 'function') {
+      openNewTenantModal();
+      return;
+    }
+  }
   const el = document.getElementById(id);
   if (el) {
     // Keep stack order: remove if already present, then push to top
@@ -6350,6 +6388,34 @@ function closeModal(id) {
       el.style.zIndex = baseZ;
     } else {
       el.style.zIndex = '';
+    }
+
+    // Automatically clean & reset forms in this modal so lingering data never persists
+    try {
+      const forms = el.querySelectorAll('form');
+      forms.forEach(f => {
+        try { f.reset(); } catch (_) {}
+      });
+
+      // Clear hidden edit-id inputs
+      const editInputs = el.querySelectorAll('input[type="hidden"]');
+      editInputs.forEach(inp => {
+        if (inp.id && (inp.id.endsWith('-edit-id') || inp.id === 'newuser-id' || inp.id === 'exp-cat-id' || inp.id === 'sec-id')) {
+          inp.value = '';
+        }
+      });
+
+      // Clear file inputs and file name displays
+      const fileInputs = el.querySelectorAll('input[type="file"]');
+      fileInputs.forEach(fi => { fi.value = ''; });
+      const fileDisplays = el.querySelectorAll('.file-name-display, [id$="-file-display"], [id$="-file-name"], [id$="-file-badge"]');
+      fileDisplays.forEach(fd => { fd.innerText = ''; fd.innerHTML = ''; });
+
+      // Hide autocomplete suggestion dropdowns
+      const suggestions = el.querySelectorAll('[id$="-suggestions"], .autocomplete-dropdown');
+      suggestions.forEach(s => { s.style.display = 'none'; });
+    } catch (resetErr) {
+      console.warn('Form reset on closeModal:', resetErr);
     }
   }
 
@@ -7288,12 +7354,96 @@ function selectTenderForSecurity(oppId, tenderNameEnc, oppNo, estVal, customerNa
   if (suggestionsBox) suggestionsBox.style.display = 'none';
 }
 
-function promptAttachBidSecurity(oppId, tenderNameDecoded, oppNo = '', estVal = 0, custNameDecoded = '') {
-  if (typeof clearInstrumentFile === 'function') clearInstrumentFile();
-  selectTenderForSecurity(oppId, tenderNameDecoded, oppNo, estVal, custNameDecoded);
-  try { initCustomDateTimePickers(); } catch (e) {}
-  openModal('modal-add-bid-security');
+function openNewBidSecurityModal(oppId = null, tenderNameDecoded = '', oppNo = '', estVal = 0, custNameDecoded = '') {
+  window._isOpeningBidSecurityWithContext = true;
+  try {
+    const form = document.getElementById('form-add-bid-security');
+    if (form) form.reset();
+
+    if (typeof clearInstrumentFile === 'function') clearInstrumentFile();
+
+    const secIdEl = document.getElementById('sec-id');
+    if (secIdEl) secIdEl.value = '';
+
+    const oppIdEl = document.getElementById('sec-opportunity-id');
+    const titleEl = document.getElementById('sec-opp-title');
+    const amtEl = document.getElementById('sec-amount');
+    const benEl = document.getElementById('sec-beneficiary');
+    const accEl = document.getElementById('sec-account-title');
+    const noEl = document.getElementById('sec-instrument-no');
+    const bankEl = document.getElementById('sec-bank');
+    const branchEl = document.getElementById('sec-branch');
+    const valDaysEl = document.getElementById('sec-validity-days');
+    const marginEl = document.getElementById('sec-margin-pct');
+    const chargesEl = document.getElementById('sec-charges');
+    const remarksEl = document.getElementById('sec-remarks');
+
+    if (noEl) noEl.value = '';
+    if (bankEl) bankEl.value = '';
+    if (branchEl) branchEl.value = '';
+    if (valDaysEl) valDaysEl.value = '120';
+    if (marginEl) marginEl.value = '100';
+    if (chargesEl) chargesEl.value = '';
+    if (remarksEl) remarksEl.value = '';
+
+    const issueDateEl = document.getElementById('sec-issue-date');
+    if (issueDateEl) issueDateEl.value = new Date().toISOString().slice(0, 10);
+    const expiryDateEl = document.getElementById('sec-expiry-date');
+    if (expiryDateEl) {
+      const expD = new Date();
+      expD.setDate(expD.getDate() + 120);
+      expiryDateEl.value = expD.toISOString().slice(0, 10);
+    }
+
+    if (oppId) {
+      // FIX: tenderNameDecoded / custNameDecoded arrive already URI-encoded from the
+      // caller (onclick passes encodeURIComponent values). Pass them directly to
+      // selectTenderForSecurity which will call decodeURIComponent internally.
+      // Do NOT re-encode here — that causes double-encoding (e.g. Mayo%2520Hospital).
+      selectTenderForSecurity(oppId, tenderNameDecoded || '', oppNo, estVal, custNameDecoded || '');
+      if (titleEl) {
+        titleEl.readOnly = true;
+        titleEl.style.backgroundColor = '#f8fafc';
+      }
+      // Beneficiary must always remain editable so the user can correct auto-filled values
+      if (benEl) {
+        benEl.readOnly = false;
+        benEl.style.backgroundColor = '';
+      }
+    } else {
+      if (oppIdEl) oppIdEl.value = '';
+      if (titleEl) {
+        titleEl.value = '';
+        titleEl.readOnly = false;
+        titleEl.style.backgroundColor = '';
+      }
+      if (amtEl) amtEl.value = '';
+      if (benEl) {
+        benEl.value = '';
+        benEl.readOnly = false;
+        benEl.style.backgroundColor = '';
+      }
+      const currentProfile = State.getCurrentBusinessProfile();
+      if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
+        if (accEl) accEl.value = currentProfile.business_name;
+      }
+    }
+
+    const suggestionsBox = document.getElementById('sec-opp-suggestions');
+    if (suggestionsBox) suggestionsBox.style.display = 'none';
+
+    try { initCustomDateTimePickers(); } catch (e) {}
+    openModal('modal-add-bid-security');
+  } finally {
+    window._isOpeningBidSecurityWithContext = false;
+  }
 }
+window.openNewBidSecurityModal = openNewBidSecurityModal;
+
+function promptAttachBidSecurity(oppId, tenderNameDecoded, oppNo = '', estVal = 0, custNameDecoded = '') {
+  openNewBidSecurityModal(oppId, tenderNameDecoded, oppNo, estVal, custNameDecoded);
+}
+window.promptAttachBidSecurity = promptAttachBidSecurity;
 
 async function openAttachedBidSecurityModal(oppId) {
   let matched = [];
@@ -7606,7 +7756,14 @@ async function handleReleaseBidSecurity(id) {
       alert(`⚠️ Failed to release Bid Security: ${res?.message || 'Database error'}`);
       return;
     }
-    alert('✓ Bid Security has been marked as Released in database.');
+    // ── Business Rule: backend auto-detects PG and sets status accordingly ──
+    const finalStatus = res?.data?.status || 'Released';
+    if (finalStatus === 'PG Submitted') {
+      alert('🏦 Bid Security marked as PG Submitted — an active Performance Guarantee exists for this tender. The bid security is now covered by the PG.');
+    } else {
+      alert('✓ Bid Security has been marked as Released in database.');
+    }
+    // ────────────────────────────────────────────────────────────────────────
     await renderActiveView();
   }
 }
@@ -7648,6 +7805,11 @@ let _cachedAwardTenderItems = [];
 let _currentAwardRequiresStampDuty = true;
 
 async function promptAwardLetterModal(oppId, tenderNameDecoded) {
+  const form = document.getElementById('form-add-award');
+  if (form) form.reset();
+  const remEl = document.getElementById('award-remarks');
+  if (remEl) remEl.value = '';
+
   let name = tenderNameDecoded || '';
   try {
     name = decodeURIComponent(tenderNameDecoded);
@@ -7992,17 +8154,22 @@ async function submitAwardLetterForm() {
 }
 
 function openStampDutyModal(awardId, awardNo, amount) {
+  const form = document.getElementById('form-record-stamp-duty');
+  if (form) form.reset();
+
   const awardEl = document.getElementById('sd-award-id');
   const awardNoEl = document.getElementById('sd-award-no');
   const amtEl = document.getElementById('sd-amount');
   const dateEl = document.getElementById('sd-paid-date');
   const chnEl = document.getElementById('sd-challan-no');
+  const bankEl = document.getElementById('sd-bank');
 
   if (awardEl) awardEl.value = awardId;
   if (awardNoEl) awardNoEl.value = awardNo;
   if (amtEl) amtEl.value = (parseFloat(amount) || 0).toLocaleString();
   if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
   if (chnEl) chnEl.value = 'CHN-32A-' + Math.floor(100000 + Math.random() * 900000);
+  if (bankEl) bankEl.value = 'National Bank of Pakistan (NBP) Main Branch';
 
   openModal('modal-record-stamp-duty');
 }
@@ -8347,35 +8514,13 @@ function selectTargetForPBG(targetType, id, titleEnc, refNoEnc, totalVal, custom
   _currentPBGBasisValue = totalVal || 0;
   const basisHint = document.getElementById('pg-calc-basis-hint');
   if (basisHint) {
-    basisHint.innerText = `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')}`;
+    basisHint.innerText = _currentPBGBasisValue > 0
+      ? `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')} — use % buttons above to calculate`
+      : 'Based on award / contract value';
   }
 
-  // Pre-fill 10% standard PBG amount
-  if (totalVal > 0) {
-    const suggestedAmt = Math.round(totalVal * 0.10);
-    const amtEl = document.getElementById('pg-amount');
-    if (amtEl) amtEl.value = suggestedAmt.toLocaleString();
-  }
-
-  // Pre-fill Beneficiary with Customer
-  if (customerName) {
-    const benEl = document.getElementById('pg-beneficiary');
-    if (benEl && !benEl.value) benEl.value = customerName;
-  }
-
-  // Pre-fill default Account Title with active company
-  const currentProfile = State.getCurrentBusinessProfile();
-  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
-    const accEl = document.getElementById('pg-account-title');
-    if (accEl && !accEl.value) accEl.value = currentProfile.business_name;
-  }
-
-  // Suggested PBG instrument number if blank
-  const noEl = document.getElementById('pg-number');
-  if (noEl && (!noEl.value || noEl.value.trim() === '')) {
-    const cleanRef = (refNo || '2026').replace(/[^0-9A-Za-z]/g, '');
-    noEl.value = `PBG-${cleanRef}-${Math.floor(100 + Math.random() * 900)}`;
-  }
+  // Only the title and IDs are pre-filled. All instrument fields (Beneficiary,
+  // Account Title, Instrument No, Amount, Bank, Date) must be entered by the user.
 
   const suggestionsBox = document.getElementById('pg-target-suggestions');
   if (suggestionsBox) suggestionsBox.style.display = 'none';
@@ -8396,163 +8541,29 @@ function applyPBGModalPct(pct) {
 }
 window.applyPBGModalPct = applyPBGModalPct;
 
-async function handlePBGTargetSearch(query) {
-  const suggestionsBox = document.getElementById('pg-target-suggestions');
-  if (!suggestionsBox) return;
-
-  let awards = [];
-  let contracts = [];
-  try {
-    awards = await API.getAwards();
-  } catch (e) {
-    awards = State.getTenantEntityList('awards') || [];
-  }
-  try {
-    contracts = await API.getContracts();
-  } catch (e) {
-    contracts = State.getTenantEntityList('contracts') || [];
-  }
-
-  const cleanQuery = (query || '').toLowerCase().trim();
-
-  const items = [];
-  for (const a of (awards || [])) {
-    items.push({
-      type: 'Award Letter',
-      id: a.id,
-      award_id: a.id,
-      contract_id: a.contract_id || '',
-      opportunity_id: a.opportunity_id || '',
-      business_profile_id: a.business_profile_id || '',
-      number: a.award_number || 'LOA',
-      title: a.tender_name || a.title || 'Won Tender Award',
-      customer_name: a.customer_name || '',
-      amount: parseFloat(a.award_amount || 0)
-    });
-  }
-  for (const c of (contracts || [])) {
-    items.push({
-      type: 'Contract',
-      id: c.id,
-      award_id: c.award_letter_id || '',
-      contract_id: c.id,
-      opportunity_id: c.opportunity_id || '',
-      business_profile_id: c.business_profile_id || '',
-      number: c.contract_number || 'CNT',
-      title: c.title || 'Contract Agreement',
-      customer_name: c.customer_name || '',
-      amount: parseFloat(c.contract_value || 0)
-    });
-  }
-
-  const matched = cleanQuery
-    ? items.filter(item => 
-        (item.number && item.number.toLowerCase().includes(cleanQuery)) ||
-        (item.title && item.title.toLowerCase().includes(cleanQuery)) ||
-        (item.customer_name && item.customer_name.toLowerCase().includes(cleanQuery))
-      )
-    : items;
-
-  if (matched.length === 0) {
-    suggestionsBox.innerHTML = `
-      <div style="padding:10px; color:#64748b; font-size:0.8rem; text-align:center;">
-        No awards or contracts found matching "${query || ''}"
-      </div>
-    `;
-    suggestionsBox.style.display = 'block';
-    return;
-  }
-
-  suggestionsBox.innerHTML = matched.slice(0, 8).map(item => `
-    <div class="autocomplete-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; transition:background 0.2s;" 
-         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"
-         onclick="selectTargetForPBG('${item.award_id}', '${item.contract_id}', '${encodeURIComponent(item.number)}', '${encodeURIComponent(item.title)}', ${item.amount}, '${encodeURIComponent(item.customer_name)}', '${item.opportunity_id}', '${item.business_profile_id}')">
-      <div style="font-weight:700; font-size:0.85rem; color:#0f172a;">
-        <span style="display:inline-block; padding:1px 6px; font-size:0.72rem; border-radius:3px; background:#eff6ff; color:#1d4ed8; margin-right:4px;">${item.type}</span>
-        [${item.number}] ${item.title}
-      </div>
-      <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between; margin-top:2px;">
-        <span>Beneficiary: <strong>${item.customer_name || 'Organization'}</strong></span>
-        <span style="color:#2563eb; font-weight:600;">Val: ${formatCurrency(item.amount, 'PKR')}</span>
-      </div>
-    </div>
-  `).join('');
-  suggestionsBox.style.display = 'block';
-}
-window.handlePBGTargetSearch = handlePBGTargetSearch;
-
-function selectTargetForPBG(awardId, contractId, numberEnc, titleEnc, amountVal, custNameEnc, oppId, bizProfileId) {
-  const number = decodeURIComponent(numberEnc || '');
-  const title = decodeURIComponent(titleEnc || '');
-  const custName = decodeURIComponent(custNameEnc || '');
-
-  const awardIdEl = document.getElementById('pg-award-id');
-  const contractIdEl = document.getElementById('pg-contract-id');
-  const oppIdEl = document.getElementById('pg-opportunity-id');
-  const bizProfileIdEl = document.getElementById('pg-business-profile-id');
-  const titleEl = document.getElementById('pg-target-title');
-  const noEl = document.getElementById('pg-number');
-  const benEl = document.getElementById('pg-beneficiary');
-  const accEl = document.getElementById('pg-account-title');
-  const amtEl = document.getElementById('pg-amount');
-  const bankEl = document.getElementById('pg-bank');
-
-  if (awardIdEl) awardIdEl.value = awardId || '';
-  if (contractIdEl) contractIdEl.value = contractId || '';
-  if (oppIdEl) oppIdEl.value = oppId || '';
-  if (bizProfileIdEl) bizProfileIdEl.value = bizProfileId || '';
-
-  if (titleEl) titleEl.value = number ? `[${number}] ${title}` : title;
-  if (noEl && !noEl.value) {
-    noEl.value = `PBG-${(number || '2026').replace(/[^0-9A-Za-z]/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
-  }
-  if (custName && benEl) benEl.value = custName;
-
-  const currentProfile = State.getCurrentBusinessProfile();
-  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
-    if (accEl && !accEl.value) accEl.value = currentProfile.business_name;
-  }
-  if (bankEl && !bankEl.value) bankEl.value = 'Meezan Bank Ltd Corporate Branch';
-
-  _currentPBGBasisValue = amountVal || 0;
-  if (_currentPBGBasisValue > 0 && amtEl) {
-    amtEl.value = Math.round(_currentPBGBasisValue * 0.10).toLocaleString();
-    formatCurrencyInput(amtEl);
-  }
-  const basisHint = document.getElementById('pg-calc-basis-hint');
-  if (basisHint) {
-    basisHint.innerText = _currentPBGBasisValue > 0 ? `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')}` : 'Based on award / contract value';
-  }
-
-  const suggestionsBox = document.getElementById('pg-target-suggestions');
-  if (suggestionsBox) suggestionsBox.style.display = 'none';
-}
-window.selectTargetForPBG = selectTargetForPBG;
-
 function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '', custName = '', totalVal = 0) {
   clearPBGInstrumentFile();
 
+  // Reset the full form first so no stale values remain
+  const form = document.getElementById('form-add-guarantee');
+  if (form) form.reset();
+  const bsChk = document.getElementById('pg-bid-security-included');
+  if (bsChk) bsChk.checked = false;
+  clearPBGInstrumentFile();
+
   const contractIdEl = document.getElementById('pg-contract-id');
-  const awardIdEl = document.getElementById('pg-award-id');
-  const oppIdEl = document.getElementById('pg-opportunity-id');
+  const awardIdEl    = document.getElementById('pg-award-id');
+  const oppIdEl      = document.getElementById('pg-opportunity-id');
   const bizProfileIdEl = document.getElementById('pg-business-profile-id');
-  const titleEl = document.getElementById('pg-target-title');
-  const noEl = document.getElementById('pg-number');
-  const bankEl = document.getElementById('pg-bank');
-  const amtEl = document.getElementById('pg-amount');
-  const expiryEl = document.getElementById('pg-expiry');
-  const accEl = document.getElementById('pg-account-title');
-  const benEl = document.getElementById('pg-beneficiary');
-  const remarksEl = document.getElementById('pg-remarks');
+  const titleEl      = document.getElementById('pg-target-title');
 
-  // CRITICAL: Clear contractIdEl first - awardId is NOT a contract_id!
+  // CRITICAL: Clear contractIdEl first — awardId is NOT a contract_id!
   if (contractIdEl) contractIdEl.value = '';
-  if (awardIdEl) awardIdEl.value = awardId || '';
-  if (oppIdEl) oppIdEl.value = oppId || '';
+  if (awardIdEl)    awardIdEl.value    = awardId || '';
+  if (oppIdEl)      oppIdEl.value      = oppId   || '';
   if (bizProfileIdEl) bizProfileIdEl.value = '';
-  if (remarksEl) remarksEl.value = '';
 
-  // Look up matching award in state/cache to resolve contract, opp, and customer if missing
+  // Look up matching award in state/cache to resolve contract, opp, and bizProfile IDs
   if (awardId) {
     try {
       const awards = State.getTenantEntityList('awards') || [];
@@ -8566,7 +8577,6 @@ function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '
         if (matchedAward.business_profile_id && bizProfileIdEl) {
           bizProfileIdEl.value = matchedAward.business_profile_id;
         }
-        if (!custName && matchedAward.customer_name) custName = matchedAward.customer_name;
         if (!totalVal && matchedAward.award_amount) totalVal = parseFloat(matchedAward.award_amount);
         if (matchedAward.contract_id && contractIdEl) {
           contractIdEl.value = matchedAward.contract_id;
@@ -8575,50 +8585,26 @@ function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '
       if (contractIdEl && !contractIdEl.value) {
         const contracts = State.getTenantEntityList('contracts') || [];
         const matchedContract = contracts.find(c => String(c.award_letter_id) === String(awardId));
-        if (matchedContract) {
-          contractIdEl.value = matchedContract.id;
-        }
+        if (matchedContract) contractIdEl.value = matchedContract.id;
       }
     } catch (e) {}
   }
 
+  // Only pre-fill the Award / Tender title field — everything else is left blank
+  // for the user to enter from the actual physical instrument.
   if (awardNo) {
     if (titleEl) titleEl.value = `[${awardNo}] Award Letter`;
-    if (noEl) noEl.value = `PBG-${awardNo.replace(/[^0-9A-Za-z]/g, '') || '2026'}-${Math.floor(100 + Math.random() * 900)}`;
   } else {
     if (titleEl) titleEl.value = '';
-    if (noEl) noEl.value = '';
   }
 
-  if (custName && benEl) benEl.value = custName;
-
-  const currentProfile = State.getCurrentBusinessProfile();
-  if (currentProfile && currentProfile.business_name && currentProfile.business_name !== 'All Business Entities') {
-    if (accEl) accEl.value = currentProfile.business_name;
-  }
-
-  if (bankEl && !bankEl.value) bankEl.value = 'Meezan Bank Ltd Corporate Branch';
-  
+  // Store the basis value so the % auto-calculate buttons work when clicked
   _currentPBGBasisValue = totalVal || (pbgAmount ? pbgAmount * 10 : 0);
-  if (pbgAmount && amtEl) {
-    amtEl.value = Number(pbgAmount).toLocaleString();
-    formatCurrencyInput(amtEl);
-  } else if (_currentPBGBasisValue > 0 && amtEl) {
-    amtEl.value = Math.round(_currentPBGBasisValue * 0.10).toLocaleString();
-    formatCurrencyInput(amtEl);
-  }
-
   const basisHint = document.getElementById('pg-calc-basis-hint');
   if (basisHint) {
-    basisHint.innerText = _currentPBGBasisValue > 0 ? `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')}` : 'Based on award / contract value';
-  }
-
-  if (expiryEl) {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() + 1);
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    expiryEl.value = `${day}/${month}/${d.getFullYear()}`;
+    basisHint.innerText = _currentPBGBasisValue > 0
+      ? `Based on value: ${formatCurrency(_currentPBGBasisValue, 'PKR')} — use % buttons above to calculate`
+      : 'Based on award / contract value';
   }
 
   try { initCustomDateTimePickers(); } catch (e) {}
@@ -8676,6 +8662,10 @@ async function submitPerformanceGuaranteeForm() {
     bizProfileId = State.currentBusinessProfileId;
   }
 
+  // ── Read the "Bid Security Included in PG" checkbox ─────────────────────
+  const bidSecurityIncluded = document.getElementById('pg-bid-security-included')?.checked || false;
+  // ─────────────────────────────────────────────────────────────────────────
+
   const res = await API.createGuarantee({
     contract_id: contractId || null,
     award_letter_id: awardId || null,
@@ -8693,7 +8683,8 @@ async function submitPerformanceGuaranteeForm() {
     comments: remarks,
     remarks: remarks,
     instrument_image_url: _currentPBGInstrumentDataUrl || null,
-    status: 'Active'
+    status: 'Active',
+    bid_security_included: bidSecurityIncluded  // ← business rule flag
   });
 
   if (!res || !res.success || !res.data?.id) {
@@ -8703,8 +8694,14 @@ async function submitPerformanceGuaranteeForm() {
   }
 
   clearPBGInstrumentFile();
+  // Reset the bid security included checkbox for next use
+  const bsChk = document.getElementById('pg-bid-security-included');
+  if (bsChk) bsChk.checked = false;
   closeModal('modal-add-guarantee');
-  showToast(`✓ Performance Guarantee ${instrumentNo} issued successfully in database!`, 'success');
+  const pgToastMsg = bidSecurityIncluded
+    ? `✓ Performance Guarantee ${instrumentNo} issued! Bid Security marked as 🏦 PG Submitted.`
+    : `✓ Performance Guarantee ${instrumentNo} issued successfully in database!`;
+  showToast(pgToastMsg, 'success');
   await renderActiveView();
 }
 window.submitPerformanceGuaranteeForm = submitPerformanceGuaranteeForm;
@@ -8742,75 +8739,169 @@ let _cachedPOAward = null;
 let _cachedPOAwardItems = [];
 
 async function openNewPOModal(preselectedAwardId) {
-  const awards = await API.getAwards();
-  const acceptedAwards = awards.filter(a => a.status === 'Accepted' || !a.status || a.status === 'Pending');
+  // Fully reset the form so no stale data from a previous session shows
+  const form = document.getElementById('form-add-po');
+  if (form) form.reset();
 
-  if (acceptedAwards.length === 0) {
-    alert('No Accepted Award Letters available. Please record an Award Letter first.');
-    navigateToView('awards');
+  // Clear all IDs and display elements
+  ['po-award-id','po-opp-id','po-cust-id','po-number','po-date',
+   'po-deadline','po-delivery-location','po-department','po-remarks',
+   'po-subtotal-amount','po-gst-amount','po-total-amount'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+
+  const refEl  = document.getElementById('po-award-ref-display');
+  const custEl = document.getElementById('po-cust-name-display');
+  if (refEl)  refEl.innerText = '';
+  if (custEl) custEl.innerText = '';
+
+  const infoPanel = document.getElementById('po-award-info-panel');
+  if (infoPanel) infoPanel.style.display = 'none';
+
+  const searchEl = document.getElementById('po-award-search');
+  if (searchEl) { searchEl.value = ''; searchEl.readOnly = false; }
+
+  const suggestionsEl = document.getElementById('po-award-suggestions');
+  if (suggestionsEl) suggestionsEl.style.display = 'none';
+
+  const tbody = document.getElementById('po-allocation-tbody');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:20px; font-size:0.85rem;">\u2190 Select an Award above to load item quantities</td></tr>`;
+
+  _cachedPOAward = null;
+  _cachedPOAwardItems = [];
+
+  // If opened from Awards screen with a specific award pre-selected, load it immediately
+  if (preselectedAwardId) {
+    const awards = await API.getAwards();
+    const selectedAward = awards.find(a => String(a.id) === String(preselectedAwardId));
+    if (selectedAward) {
+      if (searchEl) {
+        searchEl.value = `[${selectedAward.award_number}] ${selectedAward.tender_name || 'Award Letter'}`;
+        searchEl.readOnly = true;
+      }
+      await selectAwardForPO(selectedAward);
+    }
+  }
+
+  openModal('modal-add-po');
+}
+
+// ── Award search autocomplete for PO modal ───────────────────────────────────
+async function handlePOAwardSearch(query) {
+  const suggestionsBox = document.getElementById('po-award-suggestions');
+  if (!suggestionsBox) return;
+
+  let awards = [];
+  try { awards = await API.getAwards(); } catch (e) { awards = State.getTenantEntityList('awards') || []; }
+
+  const eligible = awards.filter(a => a.status === 'Accepted' || a.status === 'Pending' || !a.status);
+  const cleanQuery = (query || '').toLowerCase().trim();
+  const matched = cleanQuery
+    ? eligible.filter(a =>
+        (a.award_number  && a.award_number.toLowerCase().includes(cleanQuery)) ||
+        (a.tender_name   && a.tender_name.toLowerCase().includes(cleanQuery))  ||
+        (a.customer_name && a.customer_name.toLowerCase().includes(cleanQuery))
+      )
+    : eligible;
+
+  if (matched.length === 0) {
+    suggestionsBox.innerHTML = `<div style="padding:10px; color:#64748b; font-size:0.8rem; text-align:center;">No accepted awards found${cleanQuery ? ` for "${query}"` : ''}.</div>`;
+    suggestionsBox.style.display = 'block';
     return;
   }
 
-  const selectedAward = preselectedAwardId ? awards.find(a => a.id === preselectedAwardId) : acceptedAwards[0];
+  suggestionsBox.innerHTML = matched.slice(0, 10).map(a => `
+    <div class="autocomplete-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; transition:background 0.2s;"
+         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"
+         onclick="selectAwardForPOById('${a.id}')">
+      <div style="font-weight:700; font-size:0.85rem; color:#0f172a;">
+        [${a.award_number || 'LOA'}] ${a.tender_name || 'Award Letter'}
+      </div>
+      <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between; margin-top:2px;">
+        <span>Customer: <strong>${a.customer_name || 'Government Client'}</strong></span>
+        <span style="color:#059669; font-weight:600;">${formatCurrency(a.award_amount || a.contract_value || 0, 'PKR')}</span>
+      </div>
+    </div>
+  `).join('');
+  suggestionsBox.style.display = 'block';
+}
+window.handlePOAwardSearch = handlePOAwardSearch;
+
+async function selectAwardForPOById(awardId) {
+  const suggestionsBox = document.getElementById('po-award-suggestions');
+  if (suggestionsBox) suggestionsBox.style.display = 'none';
+
+  let awards = [];
+  try { awards = await API.getAwards(); } catch (e) { awards = State.getTenantEntityList('awards') || []; }
+  const award = awards.find(a => String(a.id) === String(awardId));
+  if (!award) return;
+
+  const searchEl = document.getElementById('po-award-search');
+  if (searchEl) searchEl.value = `[${award.award_number}] ${award.tender_name || 'Award Letter'}`;
+
+  await selectAwardForPO(award);
+}
+window.selectAwardForPOById = selectAwardForPOById;
+
+// ── Populate all PO fields after an award is chosen ─────────────────────────
+async function selectAwardForPO(selectedAward) {
   _cachedPOAward = selectedAward;
 
   let targetCustId = selectedAward.customer_id || '';
-  let targetBizId = selectedAward.business_profile_id || '';
+  let targetBizId  = selectedAward.business_profile_id || '';
   if (!targetCustId && selectedAward.opportunity_id) {
-    const allOpps = State.getTenantEntityList('opportunities');
+    const allOpps    = State.getTenantEntityList('opportunities');
     const matchedOpp = allOpps.find(o => String(o.id) === String(selectedAward.opportunity_id));
     if (matchedOpp) {
-      if (matchedOpp.customer_id) targetCustId = matchedOpp.customer_id;
-      if (matchedOpp.business_profile_id) targetBizId = matchedOpp.business_profile_id;
+      if (matchedOpp.customer_id)         targetCustId = matchedOpp.customer_id;
+      if (matchedOpp.business_profile_id) targetBizId  = matchedOpp.business_profile_id;
     }
   }
 
   document.getElementById('po-award-id').value = selectedAward.id;
-  document.getElementById('po-opp-id').value = selectedAward.opportunity_id || '';
-  document.getElementById('po-cust-id').value = targetCustId;
+  document.getElementById('po-opp-id').value   = selectedAward.opportunity_id || '';
+  document.getElementById('po-cust-id').value  = targetCustId;
 
-  const refEl = document.getElementById('po-award-ref-display');
+  const refEl  = document.getElementById('po-award-ref-display');
   const custEl = document.getElementById('po-cust-name-display');
-  if (refEl) refEl.innerText = `${selectedAward.award_number} (${selectedAward.tender_name || 'Project'})`;
+  if (refEl)  refEl.innerText  = `${selectedAward.award_number} (${selectedAward.tender_name || 'Project'})`;
   if (custEl) custEl.innerText = `Customer: ${selectedAward.customer_name || 'Government Client'}`;
 
-  // Query existing POs for this award to compute allocated quantities
-  const existingPOs = State.getTenantEntityList('purchaseOrders');
-  const childPOs = existingPOs.filter(p => p.award_letter_id === selectedAward.id || p.opportunity_id === selectedAward.opportunity_id);
+  const infoPanel = document.getElementById('po-award-info-panel');
+  if (infoPanel) infoPanel.style.display = 'block';
 
-  // Set default PO # (e.g. PO-001, PO-002)
+  // Compute PO sequence from existing POs for this award
+  const existingPOs = State.getTenantEntityList('purchaseOrders');
+  const childPOs    = existingPOs.filter(p =>
+    p.award_letter_id === selectedAward.id ||
+    p.opportunity_id  === selectedAward.opportunity_id
+  );
   const nextPoSeq = childPOs.length + 1;
-  document.getElementById('po-number').value = `PO-${String(nextPoSeq).padStart(3, '0')}`;
-  document.getElementById('po-date').value = new Date().toISOString().slice(0, 10);
-  
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  document.getElementById('po-deadline').value = d.toISOString().slice(0, 10);
-  document.getElementById('po-delivery-location').value = '';
-  document.getElementById('po-department').value = '';
+
+  // Only pre-fill PO number (auto-sequence) — all other fields left blank for manual entry
+  document.getElementById('po-number').value   = `PO-${String(nextPoSeq).padStart(3, '0')}`;
+  document.getElementById('po-date').value     = '';
+  document.getElementById('po-deadline').value = '';
 
   const gstRateInput = document.getElementById('po-gst-rate');
   if (gstRateInput) gstRateInput.value = '18';
 
-  // Build items list with prior allocation tracking
+  // Build items allocation table
   let awardItems = selectedAward.items || [];
   if (awardItems.length === 0) {
-    awardItems = [
-      {
-        id: 'ai-default-1',
-        item_name: selectedAward.tender_name || 'Electrical & Hardware Supply',
-        awarded_quantity: 1,
-        unit: 'LOT',
-        awarded_unit_price: parseFloat(selectedAward.awarded_value || selectedAward.contract_value || 0)
-      }
-    ];
+    awardItems = [{
+      id: 'ai-default-1',
+      item_name: selectedAward.tender_name || 'Supply',
+      awarded_quantity: 1,
+      unit: 'LOT',
+      awarded_unit_price: parseFloat(selectedAward.awarded_value || selectedAward.contract_value || 0)
+    }];
   }
   _cachedPOAwardItems = awardItems.filter(i => i.is_awarded !== false);
 
   const tbody = document.getElementById('po-allocation-tbody');
   if (tbody) {
     tbody.innerHTML = _cachedPOAwardItems.map((it, idx) => {
-      // Calculate how much was already allocated in prior POs
       let priorAllocated = 0;
       childPOs.forEach(p => {
         if (p.items && Array.isArray(p.items)) {
@@ -8819,30 +8910,30 @@ async function openNewPOModal(preselectedAwardId) {
         }
       });
 
-      const maxRemaining = Math.max(0, (parseFloat(it.awarded_quantity || it.quantity || 1) - priorAllocated));
+      const maxRemaining    = Math.max(0, (parseFloat(it.awarded_quantity || it.quantity || 1) - priorAllocated));
       const defaultAllocate = maxRemaining > 0 ? maxRemaining : 0;
-      const rate = parseFloat(it.awarded_unit_price || it.unit_price || 0);
+      const rate            = parseFloat(it.awarded_unit_price || it.unit_price || 0);
 
       return `
         <tr>
           <td>
             <strong>${it.item_name || it.item_description}</strong><br>
             <span style="font-size:0.75rem; color:#64748b;">Awarded Spec Item</span>
-            <input type="hidden" id="po-item-name-${idx}" value="${escapeHtml(it.item_name || it.item_description || '')}">
+            <input type="hidden" id="po-item-name-${idx}"     value="${escapeHtml(it.item_name || it.item_description || '')}">
             <input type="hidden" id="po-item-award-id-${idx}" value="${it.id || ''}">
-            <input type="hidden" id="po-item-prod-id-${idx}" value="${it.product_service_id || ''}">
-            <input type="hidden" id="po-item-unit-${idx}" value="${it.unit || 'PCS'}">
+            <input type="hidden" id="po-item-prod-id-${idx}"  value="${it.product_service_id || ''}">
+            <input type="hidden" id="po-item-unit-${idx}"     value="${it.unit || 'PCS'}">
           </td>
           <td>${parseFloat(it.awarded_quantity || it.quantity || 1).toLocaleString()} ${it.unit || 'PCS'}</td>
           <td style="color:#2563eb; font-weight:600;">${priorAllocated.toLocaleString()}</td>
           <td>
-            <input type="number" class="form-input" id="po-item-qty-${idx}" 
+            <input type="number" class="form-input" id="po-item-qty-${idx}"
                    value="${defaultAllocate}" min="0" max="${maxRemaining + priorAllocated}" step="any"
                    style="width:90px; padding:4px 6px; font-weight:700;"
                    oninput="recalculatePOMarginsAndTotals()">
           </td>
           <td>
-            <input type="number" class="form-input" id="po-item-rate-${idx}" 
+            <input type="number" class="form-input" id="po-item-rate-${idx}"
                    value="${rate}" step="any" readonly
                    style="width:110px; padding:4px 6px; background:#f8fafc; font-size:0.8rem;">
           </td>
@@ -8855,8 +8946,9 @@ async function openNewPOModal(preselectedAwardId) {
   }
 
   recalculatePOMarginsAndTotals();
-  openModal('modal-add-po');
 }
+window.selectAwardForPO = selectAwardForPO;
+
 
 function recalculatePOMarginsAndTotals() {
   let subtotalSum = 0;
@@ -9133,6 +9225,9 @@ let _cachedDCPO = null;
 let _cachedDCPOItems = [];
 
 async function openNewDCModal(preselectedPoId) {
+  const form = document.getElementById('form-add-dc');
+  if (form) form.reset();
+
   const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
   const warehouses = await API.getWarehouses();
   const suppliers = await API.getSuppliers();
@@ -9496,25 +9591,30 @@ let _cachedInvoicePO = null;
 let _cachedInvoicePOs = [];
 
 async function openNewInvoiceModal(preselectedPoId) {
-  const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
-  _cachedInvoicePOs = pos;
+  const form = document.getElementById('form-add-invoice');
+  if (form) form.reset();
 
-  if (pos.length === 0) {
+  const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
+  _cachedInvoicePOs = pos || [];
+
+  if (_cachedInvoicePOs.length === 0) {
     alert('No approved Purchase Orders available to invoice. Please issue a Purchase Order first.');
     navigateToView('purchase-orders');
     return;
   }
 
+  const initialPoId = preselectedPoId || _cachedInvoicePOs[0]?.id;
+
   const poSelect = document.getElementById('inv-po-select');
   if (poSelect) {
-    poSelect.innerHTML = pos.map(p => `
-      <option value="${p.id}" ${p.id === preselectedPoId ? 'selected' : ''}>
+    poSelect.innerHTML = _cachedInvoicePOs.map(p => `
+      <option value="${p.id}" ${p.id === initialPoId ? 'selected' : ''}>
         ${p.po_number} - ${p.customer_name || 'Customer'} (PKR ${parseFloat(p.net_amount || p.total_amount || 0).toLocaleString()})
       </option>
     `).join('');
+    poSelect.value = initialPoId;
   }
 
-  const initialPoId = preselectedPoId || pos[0]?.id;
   await handleInvoicePOChanged(initialPoId);
 
   document.getElementById('inv-number').value = 'INV-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000);
@@ -9531,7 +9631,7 @@ async function openNewInvoiceModal(preselectedPoId) {
 }
 
 async function handleInvoicePOChanged(poId) {
-  const selectedPO = _cachedInvoicePOs.find(p => p.id === poId) || _cachedInvoicePOs[0];
+  const selectedPO = _cachedInvoicePOs.find(p => String(p.id) === String(poId)) || _cachedInvoicePOs[0];
   _cachedInvoicePO = selectedPO;
   if (!selectedPO) return;
 
@@ -9540,26 +9640,69 @@ async function handleInvoicePOChanged(poId) {
   const oppIdEl = document.getElementById('inv-opp-id');
   const contractIdEl = document.getElementById('inv-contract-id');
   const custNameEl = document.getElementById('inv-customer-name');
+  const tenderNameEl = document.getElementById('inv-tender-name');
   const siteEl = document.getElementById('inv-delivery-site');
 
   if (custIdEl) custIdEl.value = selectedPO.customer_id || '';
   if (oppIdEl) oppIdEl.value = selectedPO.opportunity_id || '';
   if (contractIdEl) contractIdEl.value = selectedPO.contract_id || '';
-  if (custNameEl) custNameEl.value = selectedPO.customer_name || 'Customer Account';
-  if (siteEl) siteEl.value = selectedPO.delivery_location || 'Designated Customer Site';
+
+  // Customer Name in readonly mode
+  if (custNameEl) {
+    custNameEl.value = selectedPO.customer_name || 'Customer Account';
+    custNameEl.readOnly = true;
+    custNameEl.style.backgroundColor = '#f8fafc';
+    custNameEl.style.fontWeight = '600';
+  }
+
+  // Resolve Linked Tender / Opportunity in readonly mode
+  let tenderName = selectedPO.tender_name || selectedPO.opportunity_title || '';
+  if (!tenderName && selectedPO.opportunity_id) {
+    const allOpps = State.getTenantEntityList('opportunities') || [];
+    const matchedOpp = allOpps.find(o => String(o.id) === String(selectedPO.opportunity_id));
+    if (matchedOpp) {
+      tenderName = matchedOpp.tender_name || matchedOpp.title || '';
+    }
+  }
+  if (!tenderName && selectedPO.award_letter_id) {
+    const allAwards = State.getTenantEntityList('awards') || [];
+    const matchedAward = allAwards.find(a => String(a.id) === String(selectedPO.award_letter_id));
+    if (matchedAward) {
+      tenderName = matchedAward.tender_name || '';
+    }
+  }
+  if (!tenderName) {
+    tenderName = selectedPO.po_number ? `Project PO: ${selectedPO.po_number}` : 'Direct Commercial Project';
+  }
+
+  if (tenderNameEl) {
+    tenderNameEl.value = tenderName;
+    tenderNameEl.readOnly = true;
+    tenderNameEl.style.backgroundColor = '#f8fafc';
+    tenderNameEl.style.fontWeight = '600';
+    tenderNameEl.style.color = '#0369a1';
+  }
+
+  // Delivery Site in readonly mode
+  if (siteEl) {
+    siteEl.value = selectedPO.delivery_location || 'Designated Customer Site';
+    siteEl.readOnly = true;
+    siteEl.style.backgroundColor = '#f8fafc';
+  }
 
   // Find linked Delivery Challans
   const dcs = State.getTenantEntityList('deliveryChallans') || [];
-  const linkedDCs = dcs.filter(d => d.purchase_order_id === selectedPO.id || d.po_number === selectedPO.po_number);
+  const linkedDCs = dcs.filter(d => String(d.purchase_order_id) === String(selectedPO.id) || d.po_number === selectedPO.po_number);
   const dcSelect = document.getElementById('inv-dc-select');
   if (dcSelect) {
     dcSelect.innerHTML = `<option value="">-- Direct PO Invoicing (No DC Attached) --</option>` +
       linkedDCs.map(d => `<option value="${d.id}">${d.dc_number} (${d.status || 'Dispatched'} - ${d.delivery_date ? d.delivery_date.slice(0,10) : 'Date'})</option>`).join('');
+    dcSelect.value = '';
   }
 
   // Calculate remaining unbilled balance for this PO
   const invoices = State.getTenantEntityList('invoices') || [];
-  const poInvoices = invoices.filter(inv => inv.purchase_order_id === selectedPO.id || inv.po_number === selectedPO.po_number);
+  const poInvoices = invoices.filter(inv => String(inv.purchase_order_id) === String(selectedPO.id) || inv.po_number === selectedPO.po_number);
   const totalBilled = poInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total_amount) || 0), 0);
   const poNetValue = parseFloat(selectedPO.net_amount || selectedPO.total_amount || 0);
   const remainingUnbilled = Math.max(0, poNetValue - totalBilled);
@@ -9575,6 +9718,14 @@ async function handleInvoicePOChanged(poId) {
   if (unbilledBadge) {
     unbilledBadge.innerText = `Unbilled Remaining PO: PKR ${remainingUnbilled.toLocaleString()}`;
   }
+
+  // Clear discretionary fields
+  const diaryEl = document.getElementById('inv-diary-no');
+  if (diaryEl) diaryEl.value = '';
+  const officerEl = document.getElementById('inv-dealing-officer');
+  if (officerEl) officerEl.value = '';
+  const remarksEl = document.getElementById('inv-remarks');
+  if (remarksEl) remarksEl.value = '';
 
   calculateInvoiceNetTotals();
 }
@@ -9690,14 +9841,84 @@ async function handleFBRSubmit(invoiceId) {
   await renderActiveView();
 }
 
-async function promptRecordPaymentForInvoice(invoiceId, invoiceNumber, outstanding) {
-  const invSelect = document.getElementById('pay-invoice-select');
-  if (invSelect) {
-    invSelect.innerHTML = `<option value="${invoiceId}" data-out="${outstanding}" selected>${invoiceNumber} (Outstanding: PKR ${parseFloat(outstanding).toLocaleString()})</option>`;
+async function openNewPaymentModal(preselectedInvoiceId = null, invoiceNumber = '', outstanding = 0) {
+  window._isOpeningPaymentWithContext = true;
+  try {
+    const form = document.getElementById('form-add-payment');
+    if (form) form.reset();
+
+    const invSelect = document.getElementById('pay-invoice-select');
+    const invoices = State.getTenantEntityList('invoices') || (await API.getInvoices(State.currentBusinessProfileId)) || [];
+    
+    // Unpaid invoices
+    const unpaidInvoices = (invoices || []).filter(inv => {
+      const out = parseFloat(inv.outstanding_amount ?? inv.total_amount ?? 0);
+      return out > 0 || String(inv.id) === String(preselectedInvoiceId);
+    });
+
+    if (unpaidInvoices.length === 0 && !preselectedInvoiceId) {
+      alert('No invoices with an outstanding balance available to record payment.');
+      return;
+    }
+
+    if (invSelect) {
+      if (preselectedInvoiceId) {
+        invSelect.innerHTML = `<option value="${preselectedInvoiceId}" data-out="${outstanding}" selected>${invoiceNumber || 'Selected Invoice'} (Outstanding: PKR ${parseFloat(outstanding).toLocaleString()})</option>`;
+      } else {
+        invSelect.innerHTML = `<option value="">-- Select Invoice with Outstanding Balance --</option>` +
+          unpaidInvoices.map(inv => {
+            const out = parseFloat(inv.outstanding_amount ?? inv.total_amount ?? 0);
+            return `<option value="${inv.id}" data-out="${out}">${inv.invoice_number} - ${inv.customer_name || 'Customer'} (Outstanding: PKR ${out.toLocaleString()})</option>`;
+          }).join('');
+      }
+    }
+
+    const grossEl = document.getElementById('pay-gross-amount');
+    const amtEl = document.getElementById('pay-amount');
+    const dateEl = document.getElementById('pay-date');
+    const methodEl = document.getElementById('pay-method');
+    const checkNoEl = document.getElementById('pay-check-no');
+    const checkFromEl = document.getElementById('pay-check-from');
+    const bankAccEl = document.getElementById('pay-bank-acc');
+    const certNoEl = document.getElementById('pay-cert-no');
+    const whtPctEl = document.getElementById('pay-wht-pct');
+    const whtAmtEl = document.getElementById('pay-wht-amount');
+    const stWhtEl = document.getElementById('pay-st-wht');
+    const ldEl = document.getElementById('pay-ld-penalties');
+
+    if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
+    if (methodEl) methodEl.value = 'Cheque';
+    if (checkNoEl) checkNoEl.value = '';
+    if (checkFromEl) checkFromEl.value = '';
+    if (bankAccEl) bankAccEl.value = '';
+    if (certNoEl) certNoEl.value = '';
+    if (whtPctEl) whtPctEl.value = '4.5';
+    if (whtAmtEl) whtAmtEl.value = '';
+    if (stWhtEl) stWhtEl.value = '0';
+    if (ldEl) ldEl.value = '0';
+
+    if (preselectedInvoiceId && outstanding > 0) {
+      if (grossEl) grossEl.value = outstanding;
+      if (amtEl) amtEl.value = outstanding;
+      if (typeof calculatePaymentNetBreakdown === 'function') {
+        calculatePaymentNetBreakdown();
+      }
+    } else {
+      if (grossEl) grossEl.value = '';
+      if (amtEl) amtEl.value = '';
+    }
+
+    openModal('modal-add-payment');
+  } finally {
+    window._isOpeningPaymentWithContext = false;
   }
-  document.getElementById('pay-amount').value = outstanding;
-  openModal('modal-add-payment');
 }
+window.openNewPaymentModal = openNewPaymentModal;
+
+function promptRecordPaymentForInvoice(invoiceId, invoiceNumber, outstanding) {
+  openNewPaymentModal(invoiceId, invoiceNumber, outstanding);
+}
+window.promptRecordPaymentForInvoice = promptRecordPaymentForInvoice;
 
 async function submitPaymentForm() {
   const invoiceId = document.getElementById('pay-invoice-select')?.value;
@@ -10668,6 +10889,8 @@ async function handleDeleteOpportunity(id, encodedName) {
 
 // 3B. WAREHOUSE MASTER CONTROLLERS
 function openNewWarehouseModal() {
+  const form = document.getElementById('form-add-warehouse');
+  if (form) form.reset();
   const editEl = document.getElementById('wh-edit-id');
   if (editEl) editEl.value = '';
   const nameEl = document.getElementById('wh-name');
@@ -10942,6 +11165,8 @@ function handleExpenseCategorySelected(cat) {
 }
 
 function openAddExpenseCategoryModal(presetTier = 'Tier 3 - General Overheads') {
+  const form = document.getElementById('form-add-expense-category');
+  if (form) form.reset();
   const tierSelect = document.getElementById('exp-cat-tier');
   const nameInput = document.getElementById('exp-cat-name');
   const descInput = document.getElementById('exp-cat-desc');
@@ -12587,6 +12812,9 @@ function handleEqualRightsToggle(checked) {
 window.handleEqualRightsToggle = handleEqualRightsToggle;
 
 function openCreateUserModal(defaultRole = 'ClientEmployee') {
+  const form = document.getElementById('form-create-user');
+  if (form) form.reset();
+
   const titleEl = document.getElementById('modal-create-user-title');
   const roleSelect = document.getElementById('newuser-role');
   const passInput = document.getElementById('newuser-password');
@@ -13104,6 +13332,25 @@ async function handleResendInviteEmail(userId, userName, userEmail) {
 }
 window.handleResendInviteEmail = handleResendInviteEmail;
 
+function openNewTenantModal() {
+  const el = document.getElementById('modal-create-tenant');
+  if (el) {
+    const form = el.querySelector('form');
+    if (form) form.reset();
+    const inputs = el.querySelectorAll('input, select, textarea');
+    inputs.forEach(i => {
+      if (i.id === 'tenant-plan') i.value = 'Advance';
+      else if (i.id === 'tenant-trial-period') i.value = '15 Days';
+      else if (i.id === 'tenant-free-companies') i.value = '2';
+      else if (i.id === 'tenant-free-users') i.value = '2';
+      else if (i.tagName === 'SELECT') i.selectedIndex = 0;
+      else i.value = '';
+    });
+  }
+  openModal('modal-create-tenant');
+}
+window.openNewTenantModal = openNewTenantModal;
+
 async function submitCreateTenantForm() {
   const nameInput = document.getElementById('tenant-company-name');
   const slugInput = document.getElementById('tenant-subdomain');
@@ -13211,7 +13458,7 @@ async function renderSuperAdminSubscriptionsHTML() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🏢 Tenant Subscriptions, Custom Pricing & Payment Statuses</div>
-        <button class="primary-btn" onclick="openModal('modal-create-tenant')">🏢 + Provision New Tenant</button>
+        <button class="primary-btn" onclick="openNewTenantModal()">🏢 + Provision New Tenant</button>
       </div>
       <div class="table-responsive">
         <table class="data-table">

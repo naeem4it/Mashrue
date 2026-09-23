@@ -317,7 +317,7 @@
   <!-- 1. Add New Tender / Opportunity Modal (with item auto-population & quick add customer) -->
   <!-- 1. Add New Tender / Opportunity Modal (with dynamic multi-item builder, currency & PPRA updates) -->
   <div class="modal-backdrop" id="modal-add-tender">
-    <div class="modal-card modal-lg" style="max-width: 920px;">
+    <div class="modal-card modal-lg" style="max-width: 1120px; width: 96vw;">
       <div class="modal-header">
         <h2 style="font-size: 1.15rem; font-weight: 700;">📑 Register New Tender / Opportunity</h2>
         <button class="modal-close-btn" onclick="closeModal('modal-add-tender')">&times;</button>
@@ -413,18 +413,18 @@
             </div>
 
             <div class="table-responsive" style="max-height: 240px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: white;">
-              <table class="data-table" style="font-size:0.82rem; margin:0;" id="tender-items-table">
+              <table class="data-table" style="font-size:0.82rem; margin:0; width:100%; table-layout:fixed;" id="tender-items-table">
                 <thead>
                   <tr style="background:#f1f5f9;">
-                    <th style="min-width: 135px;">Item / Catalog SKU</th>
-                    <th style="min-width: 140px;">Description *</th>
-                    <th style="width: 95px;">Size</th>
-                    <th style="width: 105px;">Variant</th>
-                    <th style="min-width: 100px; width: 110px;">Qty *</th>
-                    <th style="width: 80px;">Unit</th>
-                    <th style="width: 105px;">Unit Price (<span class="currency-label">PKR</span>)</th>
-                    <th style="width: 105px;">Total (<span class="currency-label">PKR</span>)</th>
-                    <th style="width: 36px; text-align:center;">Action</th>
+                    <th style="width: 25%; min-width: 190px; padding: 8px 4px;">Item / Catalog SKU</th>
+                    <th style="width: 28%; min-width: 210px; padding: 8px 4px;">Description *</th>
+                    <th style="width: 80px; padding: 8px 3px;">Size</th>
+                    <th style="width: 85px; padding: 8px 3px;">Variant</th>
+                    <th style="width: 68px; padding: 8px 3px; text-align:center;">Qty *</th>
+                    <th style="width: 58px; padding: 8px 3px; text-align:center;">Unit</th>
+                    <th style="width: 95px; padding: 8px 3px; text-align:right;">Unit Price (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 90px; padding: 8px 3px; text-align:right;">Total (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 32px; padding: 8px 2px; text-align:center;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="tender-items-tbody">
@@ -1285,7 +1285,7 @@
               <span style="font-size: 0.78rem; color: #64748b;">Toggle checkboxes to mark Won/Lost items or edit awarded quantities</span>
             </div>
             <div class="table-responsive">
-              <table class="data-table" style="font-size: 0.84rem;">
+              <table class="data-table" id="award-items-table" style="font-size: 0.84rem;">
                 <thead>
                   <tr>
                     <th style="width: 40px; text-align: center;">Won?</th>
@@ -1356,12 +1356,24 @@
           <input type="hidden" id="po-opp-id">
           <input type="hidden" id="po-cust-id">
 
-          <div style="background: #f8fafc; border: 1px solid var(--border); padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 14px;">
+          <!-- Award / Contract Search (required before filling any other field) -->
+          <div class="form-group" style="position:relative; margin-bottom:14px;">
+            <label class="form-label" style="font-weight:700;">Select Award Letter / Won Tender * <span style="font-size:0.75rem; color:#64748b; font-weight:400;">(Required — type to search)</span></label>
+            <input type="text" class="form-input" id="po-award-search" required
+                   placeholder="Type award number, tender name, or customer…"
+                   autocomplete="off"
+                   oninput="handlePOAwardSearch(this.value)"
+                   onfocus="handlePOAwardSearch(this.value)">
+            <div id="po-award-suggestions" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:white; border:1px solid var(--border); border-radius:var(--radius-sm); z-index:200; box-shadow:0 4px 16px rgba(0,0,0,0.12);"></div>
+          </div>
+
+          <!-- Award info display (hidden until an award is selected) -->
+          <div id="po-award-info-panel" style="display:none; background:#f0f9ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); padding:10px 16px; margin-bottom:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
-                <span style="font-size:0.8rem; color:#64748b; text-transform:uppercase;">Award Reference:</span>
-                <div style="font-size:1rem; font-weight:700; color:#0f172a;" id="po-award-ref-display">LOA-WAPDA-2026-781</div>
-                <div style="font-size:0.82rem; color:#475569;" id="po-cust-name-display">Customer: WAPDA Hydro Wing</div>
+                <span style="font-size:0.78rem; color:#64748b; text-transform:uppercase;">Award Reference:</span>
+                <div style="font-size:1rem; font-weight:700; color:#0f172a;" id="po-award-ref-display"></div>
+                <div style="font-size:0.82rem; color:#475569;" id="po-cust-name-display"></div>
               </div>
               <span class="badge badge-sec-attached">Multi-PO Phased Supply</span>
             </div>
@@ -1402,7 +1414,7 @@
               <span style="font-size: 0.78rem; color: #0284c7; font-weight: 600;">Validation: PO Qty ≤ Unallocated Awarded Qty</span>
             </div>
             <div class="table-responsive">
-              <table class="data-table" style="font-size: 0.84rem;">
+              <table class="data-table" id="po-allocation-table" style="font-size: 0.84rem;">
                 <thead>
                   <tr>
                     <th>Item Description</th>
@@ -1646,6 +1658,18 @@
             <textarea class="form-textarea" id="pg-remarks" rows="2" placeholder="e.g. 10% Performance Security submitted against LOA Clause 5"></textarea>
           </div>
 
+          <!-- ── Business Rule: Bid Security Included in PG ────────────────── -->
+          <div class="form-group" style="background:#fef9c3; border:1px solid #fde68a; border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:4px;">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.88rem; font-weight:600; color:#92400e;">
+              <input type="checkbox" id="pg-bid-security-included" style="width:16px; height:16px; cursor:pointer; accent-color:#d97706; flex-shrink:0;">
+              <span>🔒 Bid Security (CDR/PO) is included / absorbed in this Performance Guarantee — Mark as <strong>"PG Submitted"</strong></span>
+            </label>
+            <div style="font-size:0.76rem; color:#78350f; margin-top:5px; margin-left:26px; line-height:1.5;">
+              ℹ️ Check this if the procuring agency accepted the PG in lieu of releasing the bid security instrument. The bid security status on the tender screen will update to <strong>🏦 PG Submitted</strong>.
+            </div>
+          </div>
+          <!-- ───────────────────────────────────────────────────────────────── -->
+
           <div class="modal-footer" style="padding: 10px 0 0; margin-top: 10px;">
             <button type="button" class="secondary-btn" onclick="closeModal('modal-add-guarantee')">Cancel</button>
             <button type="submit" class="primary-btn">💾 Issue Performance Guarantee</button>
@@ -1654,6 +1678,7 @@
       </div>
     </div>
   </div>
+
 
   <!-- 7. Delivery Challan Modal (Dual-Mode: Own Warehouse vs Direct Drop-Shipment + Phased DC Engine) -->
   <div class="modal-backdrop" id="modal-add-dc">
@@ -1732,7 +1757,7 @@
               <span style="font-size: 0.78rem; color: #166534; font-weight: 600;">Rule: Dispatched Qty ≤ Remaining Undelivered Qty</span>
             </div>
             <div class="table-responsive">
-              <table class="data-table" style="font-size: 0.84rem;">
+              <table class="data-table" id="dc-dispatch-items-table" style="font-size: 0.84rem;">
                 <thead>
                   <tr>
                     <th>Item Description</th>
@@ -1852,10 +1877,14 @@
             </div>
           </div>
 
-          <div class="form-row">
+          <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Customer / Client</label>
               <input type="text" class="form-input" id="inv-customer-name" readonly style="background:#f8fafc; font-weight:600;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Linked Tender / Project</label>
+              <input type="text" class="form-input" id="inv-tender-name" readonly style="background:#f8fafc; font-weight:600; color:#0369a1;" placeholder="Linked Tender / Opportunity">
             </div>
             <div class="form-group">
               <label class="form-label">Project / Delivery Site</label>

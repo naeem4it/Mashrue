@@ -626,6 +626,126 @@ body {
   text-align: center;
 }
 
+/* Compact High-Readability Line Items Table - Removed column gaps to maximize input & dropdown area */
+#tender-items-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+#tender-items-table th {
+  padding: 8px 4px !important;
+  font-size: 0.67rem !important;
+  letter-spacing: 0.02em !important;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tender-items-table td {
+  padding: 4px 3px !important;
+  vertical-align: middle !important;
+}
+
+#tender-items-table .form-select,
+#tender-items-table .form-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 4px 5px !important;
+  font-size: 0.8rem !important;
+}
+
+/* Compact Award Items Table - Zero column gaps for maximum readability */
+#award-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+#award-items-table th {
+  padding: 7px 5px !important;
+  font-size: 0.67rem !important;
+  letter-spacing: 0.02em !important;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#award-items-table td {
+  padding: 5px 4px !important;
+  vertical-align: middle !important;
+}
+
+#award-items-table .form-select,
+#award-items-table .form-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 4px 5px !important;
+  font-size: 0.8rem !important;
+}
+
+/* Compact PO Allocation Items Table - Zero column gaps */
+#po-allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+#po-allocation-table th {
+  padding: 7px 5px !important;
+  font-size: 0.67rem !important;
+  letter-spacing: 0.02em !important;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#po-allocation-table td {
+  padding: 5px 4px !important;
+  vertical-align: middle !important;
+}
+
+#po-allocation-table .form-select,
+#po-allocation-table .form-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 4px 5px !important;
+  font-size: 0.8rem !important;
+}
+
+/* Compact DC Dispatch Items Table - Zero column gaps */
+#dc-dispatch-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+#dc-dispatch-items-table th {
+  padding: 7px 5px !important;
+  font-size: 0.67rem !important;
+  letter-spacing: 0.02em !important;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#dc-dispatch-items-table td {
+  padding: 5px 4px !important;
+  vertical-align: middle !important;
+}
+
+#dc-dispatch-items-table .form-select,
+#dc-dispatch-items-table .form-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 4px 5px !important;
+  font-size: 0.8rem !important;
+}
+
 /* Modern Status Pills - Soft Pastel & High Legibility */
 .badge {
   display: inline-flex;

@@ -740,6 +740,24 @@ router.post('/guarantees', optionalAuth, async (req, res) => {
       ]
     );
 
+    // ── Business Rule: If bid security is included/absorbed in this PG,
+    //    mark the linked active bid security as "PG Submitted" ─────────
+    if (req.body.bid_security_included && cleanOppId) {
+      try {
+        await db.query(
+          `UPDATE bid_securities 
+           SET status = 'PG Submitted', updated_at = CURRENT_TIMESTAMP
+           WHERE opportunity_id::text = $1 
+             AND tenant_id = $2
+             AND status NOT IN ('Released', 'PG Submitted')`,
+          [String(cleanOppId), tenantId]
+        );
+      } catch (bsErr) {
+        console.warn('[PG Submit - Bid Security Status Update Warning]:', bsErr.message);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     res.status(201).json({
       success: true,
       data: result.rows[0],
