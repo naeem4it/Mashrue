@@ -295,8 +295,24 @@ router.post('/suppliers', authenticate, requirePermission('suppliers', 'add'), a
 });
 
 // ============================================================================
-// PRODUCTS & SKU CATALOG (Item auto-population source)
-// ============================================================================
+function parseSafeDate(d) {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString().split('T')[0];
+  const s = String(d).trim();
+  if (!s || s === 'N/A' || s === 'DD/MM/YYYY' || s === 'undefined' || s === 'null') return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    if (parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+  }
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? null : dt.toISOString().split('T')[0];
+}
 
 router.get('/products', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   try {
@@ -415,6 +431,10 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       item_type: item_type || 'Product',
       sku: effectiveSku,
       name: name.trim(),
+      brand_name: req.body.brand_name ? req.body.brand_name.trim() : null,
+      batch_number: req.body.batch_number ? req.body.batch_number.trim() : null,
+      manufacturing_date: parseSafeDate(req.body.manufacturing_date),
+      expiry_date: parseSafeDate(req.body.expiry_date),
       specifications: specifications ? specifications.trim() : null,
       description: description ? description.trim() : (specifications ? specifications.trim() : ''),
       unit: unit || 'PCS',
@@ -485,6 +505,10 @@ router.put('/products/:id', authenticate, requirePermission('inventory', 'edit')
     const candidateUpdates = {
       sku: sku ? sku.trim() : null,
       name: name ? name.trim() : null,
+      brand_name: req.body.brand_name !== undefined ? (req.body.brand_name ? req.body.brand_name.trim() : null) : null,
+      batch_number: req.body.batch_number !== undefined ? (req.body.batch_number ? req.body.batch_number.trim() : null) : null,
+      manufacturing_date: req.body.manufacturing_date !== undefined ? parseSafeDate(req.body.manufacturing_date) : null,
+      expiry_date: req.body.expiry_date !== undefined ? parseSafeDate(req.body.expiry_date) : null,
       specifications: specifications !== undefined ? specifications : null,
       description: description !== undefined ? description : null,
       item_type: item_type || null,

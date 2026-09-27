@@ -19,27 +19,64 @@ let pendingPaidEmployeePayload = null;
 
 function initCustomDateTimePickers() {
   try {
-    // Standardize any native date inputs to text so DD/MM/YYYY works cleanly
+    // Standardize any native date inputs to text so DD/MM/YYYY works cleanly without browser wipe-out
     document.querySelectorAll('input[type="date"]').forEach(el => {
       try {
+        const origVal = el.value;
         el.type = 'text';
         el.classList.add('date-picker');
         if (!el.placeholder) el.placeholder = 'DD/MM/YYYY';
+        if (origVal) {
+          el.value = formatDateInput(origVal);
+        }
       } catch (e) {}
     });
 
     if (typeof flatpickr !== 'undefined') {
-      flatpickr('.date-picker', {
-        dateFormat: 'd/m/Y',
-        allowInput: true,
-        monthSelectorType: 'dropdown',
-        prevArrow: '<span style="font-weight:700;">&larr;</span>',
-        nextArrow: '<span style="font-weight:700;">&rarr;</span>'
+      document.querySelectorAll('.date-picker').forEach(el => {
+        const currentVal = el.value || el.getAttribute('value') || '';
+        if (el._flatpickr) {
+          try { el._flatpickr.destroy(); } catch (e) {}
+        }
+        const fp = flatpickr(el, {
+          dateFormat: 'd/m/Y',
+          defaultDate: currentVal ? currentVal : undefined,
+          allowInput: true,
+          monthSelectorType: 'dropdown',
+          prevArrow: '<span style="font-weight:700;">&larr;</span>',
+          nextArrow: '<span style="font-weight:700;">&rarr;</span>',
+          onChange: function(selectedDates, dateStr, instance) {
+            instance.element.value = dateStr;
+            instance.element.dispatchEvent(new Event('input', { bubbles: true }));
+            instance.element.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+        if (currentVal) {
+          el.value = currentVal;
+          try { fp.setDate(currentVal, false); } catch (e) {}
+        }
       });
-      flatpickr('.datetime-picker', {
-        enableTime: false,
-        dateFormat: 'd/m/Y',
-        allowInput: true
+
+      document.querySelectorAll('.datetime-picker').forEach(el => {
+        const currentVal = el.value || el.getAttribute('value') || '';
+        if (el._flatpickr) {
+          try { el._flatpickr.destroy(); } catch (e) {}
+        }
+        const fp = flatpickr(el, {
+          enableTime: false,
+          dateFormat: 'd/m/Y',
+          defaultDate: currentVal ? currentVal : undefined,
+          allowInput: true,
+          onChange: function(selectedDates, dateStr, instance) {
+            instance.element.value = dateStr;
+            instance.element.dispatchEvent(new Event('input', { bubbles: true }));
+            instance.element.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+        if (currentVal) {
+          el.value = currentVal;
+          try { fp.setDate(currentVal, false); } catch (e) {}
+        }
       });
     }
   } catch (e) {
@@ -283,6 +320,52 @@ function formatDateDDMMYYYY(dateStr) {
 function formatDateTimeDDMMYYYY(dateStr) {
   return formatDateDDMMYYYY(dateStr);
 }
+
+function formatDateInput(dateStr) {
+  if (!dateStr || dateStr === 'N/A' || dateStr === 'null' || dateStr === 'undefined') return '';
+  return formatDateDDMMYYYY(dateStr);
+}
+window.formatDateInput = formatDateInput;
+
+function normalizeDateToISO(dateStr) {
+  if (!dateStr || dateStr === 'N/A' || dateStr === 'null' || dateStr === 'undefined') return '';
+  if (typeof dateStr !== 'string') {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      return d.toISOString().split('T')[0];
+    } catch (e) { return ''; }
+  }
+  const trimmed = dateStr.trim();
+  if (!trimmed) return '';
+
+  // Match DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (dmyMatch) {
+    const day = String(dmyMatch[1]).padStart(2, '0');
+    const month = String(dmyMatch[2]).padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // Match YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+  const ymdMatch = trimmed.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = String(ymdMatch[2]).padStart(2, '0');
+    const day = String(ymdMatch[3]).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  try {
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().split('T')[0];
+  } catch (e) {
+    return '';
+  }
+}
+window.normalizeDateToISO = normalizeDateToISO;
 
 function sendEmailVerificationLink(inputId) {
   const emailInput = document.getElementById(inputId);
@@ -2877,107 +2960,707 @@ async function renderPaymentsHTML() {
 }
 
 // --------------------------------------------------------------------------
-// 9. WAREHOUSE & STOCK MANAGEMENT VIEW
+// 9. WAREHOUSE & STOCK MANAGEMENT VIEW (REAL DATABASE INTERACTION)
 // --------------------------------------------------------------------------
+let _activeInventoryTab = 'stock';
+let _activeInventoryWarehouseFilter = 'all';
+let _receiveStockLineItems = [];
+
+function switchInventoryTab(tab) {
+  _activeInventoryTab = tab;
+  renderActiveView();
+}
+window.switchInventoryTab = switchInventoryTab;
+
+function filterWarehouseStockByLocation(whId) {
+  _activeInventoryWarehouseFilter = whId;
+  renderActiveView();
+}
+window.filterWarehouseStockByLocation = filterWarehouseStockByLocation;
+
 async function renderInventoryHTML() {
-  const warehouses = await API.getWarehouses();
-  const transactions = await API.getInventoryTransactions();
-  const procurements = await API.getProcurements();
+  const [warehouses, stockItems, transactions, procurements, products] = await Promise.all([
+    API.getWarehouses(),
+    API.getWarehouseStock(),
+    API.getInventoryTransactions(),
+    API.getProcurements(),
+    API.getProducts()
+  ]);
+
+  window._cachedWarehouses = warehouses || [];
+  window._cachedWarehouseStock = stockItems || [];
+  window._cachedProducts = products || [];
+
+  const totalWarehouses = warehouses.length;
+  const totalStockUnits = stockItems.reduce((sum, s) => sum + (parseFloat(s.quantity_on_hand) || 0), 0);
+  const totalReservedUnits = stockItems.reduce((sum, s) => sum + (parseFloat(s.quantity_reserved) || 0), 0);
+  const totalAvailableUnits = Math.max(0, totalStockUnits - totalReservedUnits);
+  const totalValuation = stockItems.reduce((sum, s) => sum + ((parseFloat(s.quantity_on_hand) || 0) * (parseFloat(s.cost_price) || 0)), 0);
+
+  // Filter stock rows by selected warehouse
+  const filteredStock = _activeInventoryWarehouseFilter === 'all'
+    ? stockItems
+    : stockItems.filter(s => String(s.warehouse_id) === String(_activeInventoryWarehouseFilter));
 
   return `
-    <div class="kpi-grid">
+    <!-- Top KPI Grid: Direct from Live PostgreSQL Database -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
       <div class="kpi-card blue">
         <div class="kpi-card-header">
-          <span class="kpi-card-title">Active Warehouses</span>
+          <span class="kpi-card-title">Active Facilities</span>
           <div class="kpi-card-icon">🏬</div>
         </div>
-        <div class="kpi-card-value">${warehouses.length}</div>
-        <div class="kpi-card-sub">Central & Regional Facilities</div>
+        <div class="kpi-card-value">${totalWarehouses}</div>
+        <div class="kpi-card-sub">Central & Regional Warehouses</div>
       </div>
       <div class="kpi-card green">
         <div class="kpi-card-header">
-          <span class="kpi-card-title">Stock Movements</span>
+          <span class="kpi-card-title">Total Units On-Hand</span>
           <div class="kpi-card-icon">📦</div>
         </div>
-        <div class="kpi-card-value">${transactions.length}</div>
-        <div class="kpi-card-sub">Audited Transactions</div>
+        <div class="kpi-card-value">${totalStockUnits.toLocaleString()}</div>
+        <div class="kpi-card-sub">${filteredStock.length} Product Lots Tracked</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
+        <div class="kpi-card-header">
+          <span class="kpi-card-title">Reserved for Tenders</span>
+          <div class="kpi-card-icon">🛡️</div>
+        </div>
+        <div class="kpi-card-value">${totalReservedUnits.toLocaleString()}</div>
+        <div class="kpi-card-sub">${totalAvailableUnits.toLocaleString()} Available for Bidding</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #0284c7;">
+        <div class="kpi-card-header">
+          <span class="kpi-card-title">Inventory Asset Valuation</span>
+          <div class="kpi-card-icon">💰</div>
+        </div>
+        <div class="kpi-card-value">${formatCurrency(totalValuation, 'PKR')}</div>
+        <div class="kpi-card-sub">Landed Warehouse Asset Value</div>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:24px;">
-      <div class="card-header">
-        <div class="card-title">🏬 Warehouse Locations</div>
-        ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `<button class="secondary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openNewWarehouseModal()">+ Add Warehouse</button>` : ''}
+    <!-- Navigation Sub-Tabs & Action Bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+      <div style="display:inline-flex; background:#e2e8f0; padding:4px; border-radius:8px; gap:4px; flex-wrap:wrap;">
+        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'stock' ? 'active' : ''}" onclick="switchInventoryTab('stock')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'stock' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
+          📦 Warehouse Stock Balances (${stockItems.length})
+        </button>
+        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'transactions' ? 'active' : ''}" onclick="switchInventoryTab('transactions')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'transactions' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
+          📜 Stock Movements & Audit (${transactions.length})
+        </button>
+        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'warehouses' ? 'active' : ''}" onclick="switchInventoryTab('warehouses')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'warehouses' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
+          🏬 Facilities & Warehouses (${warehouses.length})
+        </button>
+        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'procurements' ? 'active' : ''}" onclick="switchInventoryTab('procurements')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'procurements' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
+          🚢 Procurements & Landed Costs (${procurements.length})
+        </button>
       </div>
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Warehouse Name</th>
-              <th>Location & City</th>
-              <th>Manager</th>
-              <th>Contact</th>
-              <th>Activity Count</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${warehouses.map(w => `
-              <tr>
-                <td><strong>${w.warehouse_name}</strong></td>
-                <td>${w.location || ''}, ${w.city}</td>
-                <td>${w.manager_name || 'Warehouse Staff'}</td>
-                <td>${w.contact_phone || '042-3581920'}</td>
-                <td><span class="badge badge-ready">${w.total_tx_count || 0} Movements</span></td>
-                <td>
-                  ${!State.isReadOnly() && State.hasPermission('inventory', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('warehouse', '${w.id}')">✏️ Edit</button>` : ''}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
+          <button class="primary-btn" onclick="openReceiveStockModal()" style="font-size:0.85rem; font-weight:700; background:#059669; display:flex; align-items:center; gap:6px;">
+            <span>📥</span> + Inward Stock Receipt (GRN)
+          </button>
+          <button class="secondary-btn" onclick="openNewWarehouseModal()" style="font-size:0.85rem; font-weight:600;">
+            🏬 + Add Warehouse
+          </button>
+        ` : ''}
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">🚢 Local Procurement & Import Landed Cost Tracker</div>
-      </div>
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Procurement #</th>
-              <th>Type</th>
-              <th>Supplier</th>
-              <th>Origin Country</th>
-              <th>Currency</th>
-              <th>Total Landed Cost</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${procurements.map(pr => `
+    ${_activeInventoryTab === 'stock' ? `
+      <!-- TAB 1: WAREHOUSE STOCK BALANCES -->
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div class="card-title">📦 Real-time Warehouse Stock Balances</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:700; color:#475569; margin:0;">Filter by Warehouse:</label>
+            <select class="form-select" style="font-size:0.82rem; padding:4px 8px; width:auto; min-width:200px;" onchange="filterWarehouseStockByLocation(this.value)">
+              <option value="all" ${_activeInventoryWarehouseFilter === 'all' ? 'selected' : ''}>🏢 All Warehouses (Consolidated)</option>
+              ${warehouses.map(w => `
+                <option value="${w.id}" ${_activeInventoryWarehouseFilter === w.id ? 'selected' : ''}>${w.warehouse_name} (${w.city})</option>
+              `).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
               <tr>
-                <td><strong>${pr.procurement_number}</strong></td>
-                <td><span class="pill-source">${pr.procurement_type}</span></td>
-                <td>${pr.supplier_name}</td>
-                <td>${pr.origin_country || 'Pakistan'}</td>
-                <td>${pr.currency || 'PKR'}</td>
-                <td><strong>${formatCurrency(pr.total_landed_cost, 'PKR')}</strong></td>
-                <td><span class="badge badge-won">${pr.status}</span></td>
-                <td>
-                  ${!State.isReadOnly() && State.hasPermission('inventory', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('procurement', '${pr.id}')">✏️ Edit</button>` : ''}
-                </td>
+                <th>Item & SKU</th>
+                <th>Warehouse Facility</th>
+                <th>Batch / Lot</th>
+                <th style="text-align:center;">On-Hand</th>
+                <th style="text-align:center;">Reserved</th>
+                <th style="text-align:center;">Available</th>
+                <th style="text-align:right;">Landed Cost</th>
+                <th style="text-align:right;">Valuation</th>
+                <th style="text-align:center;">Stock Status</th>
+                <th style="text-align:center;">Action</th>
               </tr>
-            `).join('')}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${filteredStock.length === 0 ? `
+                <tr>
+                  <td colspan="10" style="text-align:center; padding:36px; color:#64748b;">
+                    📦 <strong>No warehouse stock records found.</strong><br>
+                    <span style="font-size:0.84rem;">Click the <strong>+ Inward Stock Receipt (GRN)</strong> button above to receive inventory into this warehouse.</span>
+                  </td>
+                </tr>
+              ` : filteredStock.map(s => {
+                const onHand = parseFloat(s.quantity_on_hand || 0);
+                const reserved = parseFloat(s.quantity_reserved || 0);
+                const avail = Math.max(0, onHand - reserved);
+                const cost = parseFloat(s.cost_price || 0);
+                const val = onHand * cost;
+                const reorder = parseFloat(s.reorder_level || 10);
+                const isLow = avail <= reorder;
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${s.product_name}</strong><br>
+                      <code style="font-size:0.75rem; color:#475569;">${s.sku || 'SKU'}</code>
+                      ${s.brand_name ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-size:0.7rem; margin-left:4px;">🏷️ ${s.brand_name}</span>` : ''}
+                      ${s.item_type === 'Medicine' ? `<span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700; font-size:0.7rem; margin-left:4px;">💊 Medicine</span>` : ''}
+                      ${s.specifications ? `<span style="font-size:0.72rem; color:#0369a1; display:block;">${s.specifications}</span>` : ''}
+                    </td>
+                    <td>
+                      <strong>${s.warehouse_name}</strong><br>
+                      <span style="font-size:0.75rem; color:var(--text-muted);">${s.warehouse_city}</span>
+                      ${s.storage_location ? `<span class="badge" style="font-size:0.7rem; background:#f1f5f9; color:#475569;">📍 ${s.storage_location}</span>` : ''}
+                    </td>
+                    <td>
+                      <span style="font-size:0.8rem; font-weight:600; color:#334155;">${s.batch_number || 'LOT-PRIMARY'}</span>
+                      ${s.manufacturing_date ? `<br><span style="font-size:0.72rem; color:#475569;">DOM: ${formatDateDDMMYYYY(s.manufacturing_date)}</span>` : ''}
+                      ${s.expiry_date ? `<br><span style="font-size:0.72rem; color:#dc2626;">DOE: ${formatDateDDMMYYYY(s.expiry_date)}</span>` : ''}
+                    </td>
+                    <td style="text-align:center;">
+                      <strong style="font-size:0.92rem; color:#0f172a;">${onHand % 1 === 0 ? onHand : onHand.toFixed(2)}</strong>
+                      <span style="font-size:0.75rem; color:#64748b; display:block;">${s.unit || 'PCS'}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      ${reserved > 0 
+                        ? `<span class="badge badge-hold" style="font-weight:700;">🛡️ ${reserved % 1 === 0 ? reserved : reserved.toFixed(2)}</span>`
+                        : `<span style="color:#94a3b8; font-size:0.8rem;">0</span>`
+                      }
+                    </td>
+                    <td style="text-align:center;">
+                      <span class="badge ${avail > 0 ? 'badge-won' : 'badge-withdraw'}" style="font-weight:700; font-size:0.85rem;">
+                        ${avail % 1 === 0 ? avail : avail.toFixed(2)} ${s.unit || 'PCS'}
+                      </span>
+                    </td>
+                    <td style="text-align:right;">
+                      <strong>${formatCurrency(cost, 'PKR')}</strong>
+                    </td>
+                    <td style="text-align:right;">
+                      <strong style="color:#0f172a;">${formatCurrency(val, 'PKR')}</strong>
+                    </td>
+                    <td style="text-align:center;">
+                      ${isLow 
+                        ? `<span class="badge badge-withdraw" title="Stock is at or below reorder threshold (${reorder})">⚠️ Low Stock</span>`
+                        : `<span class="badge badge-ready">🟢 Adequate</span>`
+                      }
+                    </td>
+                    <td style="text-align:center;">
+                      ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
+                        <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669;" onclick="openReceiveStockModal('${s.product_id}', '${s.warehouse_id}')" title="Receive more stock of this item into warehouse">
+                          📥 + Inward
+                        </button>
+                      ` : ''}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'transactions' ? `
+      <!-- TAB 2: AUDITED STOCK MOVEMENTS LEDGER -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📜 Audited Inventory Transactions & Movement Ledger</div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Movement Type</th>
+                <th>Item & SKU</th>
+                <th>Warehouse</th>
+                <th>Supplier / Source</th>
+                <th>Reference #</th>
+                <th style="text-align:center;">Quantity</th>
+                <th style="text-align:right;">Unit Cost</th>
+                <th style="text-align:right;">Total Cost</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${transactions.length === 0 ? `
+                <tr>
+                  <td colspan="10" style="text-align:center; padding:36px; color:#64748b;">
+                    📜 <strong>No audited inventory movements logged yet.</strong><br>
+                    <span>Stock In, Delivery Challan dispatches, and manual adjustments will appear here.</span>
+                  </td>
+                </tr>
+              ` : transactions.map(t => {
+                const qty = parseFloat(t.quantity || 0);
+                const cost = parseFloat(t.unit_cost || 0);
+                const isPositive = ['STOCK_IN', 'PURCHASE_RECEIPT', 'RETURN'].includes(t.transaction_type);
+
+                return `
+                  <tr>
+                    <td>
+                      <span style="font-size:0.82rem; font-weight:600;">${formatDateDDMMYYYY(t.created_at)}</span><br>
+                      <span style="font-size:0.72rem; color:var(--text-muted);">${new Date(t.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                    </td>
+                    <td>
+                      <span class="badge ${isPositive ? 'badge-won' : 'badge-withdraw'}" style="font-weight:700;">
+                        ${isPositive ? '📥 ' : '🚚 '} ${t.transaction_type}
+                      </span>
+                    </td>
+                    <td>
+                      <strong>${t.product_name}</strong><br>
+                      <code style="font-size:0.72rem; color:#64748b;">${t.sku || ''}</code>
+                    </td>
+                    <td>${t.warehouse_name}</td>
+                    <td>${t.supplier_name || '—'}</td>
+                    <td><strong><code>${t.reference_number || t.reference_type || 'MANUAL'}</code></strong></td>
+                    <td style="text-align:center;">
+                      <strong style="color:${isPositive ? '#059669' : '#dc2626'}; font-size:0.9rem;">
+                        ${isPositive ? '+' : '-'}${qty % 1 === 0 ? qty : qty.toFixed(2)} ${t.unit || 'PCS'}
+                      </strong>
+                    </td>
+                    <td style="text-align:right;">${cost > 0 ? formatCurrency(cost, 'PKR') : '—'}</td>
+                    <td style="text-align:right;">${cost > 0 ? formatCurrency(qty * cost, 'PKR') : '—'}</td>
+                    <td><span style="font-size:0.78rem; color:#475569;">${t.remarks || '—'}</span></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'warehouses' ? `
+      <!-- TAB 3: WAREHOUSE FACILITIES -->
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="card-title">🏬 Warehouse Facilities & Regional Depots</div>
+          ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
+            <button class="secondary-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openNewWarehouseModal()">+ Add Warehouse</button>
+          ` : ''}
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Warehouse Name</th>
+                <th>Location & City</th>
+                <th>Manager</th>
+                <th>Contact</th>
+                <th>Activity Count</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${warehouses.map(w => `
+                <tr>
+                  <td><strong>${w.warehouse_name}</strong></td>
+                  <td>${w.location || ''}, ${w.city}</td>
+                  <td>${w.manager_name || 'Warehouse Staff'}</td>
+                  <td>${w.contact_phone || '042-3581920'}</td>
+                  <td><span class="badge badge-ready">${w.total_tx_count || 0} Movements</span></td>
+                  <td>
+                    ${!State.isReadOnly() && State.hasPermission('inventory', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('warehouse', '${w.id}')">✏️ Edit</button>` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'procurements' ? `
+      <!-- TAB 4: PROCUREMENTS & LANDED COSTS -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🚢 Local Procurement & Import Landed Cost Tracker</div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Procurement #</th>
+                <th>Type</th>
+                <th>Supplier</th>
+                <th>Origin Country</th>
+                <th>Currency</th>
+                <th>Total Landed Cost</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${procurements.map(pr => `
+                <tr>
+                  <td><strong>${pr.procurement_number}</strong></td>
+                  <td><span class="pill-source">${pr.procurement_type}</span></td>
+                  <td>${pr.supplier_name}</td>
+                  <td>${pr.origin_country || 'Pakistan'}</td>
+                  <td>${pr.currency || 'PKR'}</td>
+                  <td><strong>${formatCurrency(pr.total_landed_cost, 'PKR')}</strong></td>
+                  <td><span class="badge badge-won">${pr.status}</span></td>
+                  <td>
+                    ${!State.isReadOnly() && State.hasPermission('inventory', 'edit') ? `<button class="edit-btn" onclick="openEditEntityModal('procurement', '${pr.id}')">✏️ Edit</button>` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
   `;
 }
+
+// --------------------------------------------------------------------------
+// INWARD GOODS RECEIPT (GRN) MODAL LOGIC (REAL DATABASE INTERACTION)
+// --------------------------------------------------------------------------
+async function openReceiveStockModal(preSelectedProductId = null, preSelectedWarehouseId = null) {
+  try {
+    const form = document.getElementById('form-receive-stock');
+    if (form) form.reset();
+
+    const [warehouses, suppliers, products] = await Promise.all([
+      API.getWarehouses(),
+      API.getSuppliers(),
+      API.getProducts()
+    ]);
+
+    window._cachedWarehouses = warehouses || [];
+    window._cachedSuppliers = suppliers || [];
+    window._cachedProducts = products || [];
+
+    const whSelect = document.getElementById('rec-warehouse-id');
+    const supSelect = document.getElementById('rec-supplier-id');
+    const dateInput = document.getElementById('rec-inward-date');
+    const refInput = document.getElementById('rec-reference-number');
+
+    if (whSelect) {
+      if (warehouses.length === 0) {
+        whSelect.innerHTML = '<option value="">-- No Warehouses Registered --</option>';
+        whSelect.value = '';
+      } else if (warehouses.length === 1 && !preSelectedWarehouseId) {
+        // Exactly 1 warehouse registered
+        whSelect.innerHTML = warehouses.map(w => `<option value="${w.id}" selected>${escapeHtml(w.warehouse_name)} (${escapeHtml(w.city || '')})</option>`).join('');
+        whSelect.value = warehouses[0].id;
+      } else {
+        // Multiple warehouses: Mandatory selection every time, NO default selection
+        whSelect.innerHTML = '<option value="" disabled selected>-- Select Destination Warehouse (Mandatory) --</option>' +
+          warehouses.map(w => `<option value="${w.id}" ${preSelectedWarehouseId === w.id ? 'selected' : ''}>${escapeHtml(w.warehouse_name)} (${escapeHtml(w.city || '')})</option>`).join('');
+        if (!preSelectedWarehouseId) {
+          whSelect.value = '';
+        }
+      }
+      whSelect.onchange = function() {
+        if (this.value) {
+          this.style.borderColor = '';
+          this.style.boxShadow = '';
+        }
+      };
+    }
+
+    if (supSelect) {
+      supSelect.innerHTML = '<option value="">-- Direct Inward / Unknown Supplier --</option>' +
+        suppliers.map(s => `<option value="${s.id}">${s.supplier_name} (${s.origin || 'Pakistan'})</option>`).join('');
+    }
+
+    if (dateInput) {
+      dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
+    if (refInput && !refInput.value) {
+      refInput.value = `GRN-${Date.now().toString().slice(-6)}`;
+    }
+
+    _receiveStockLineItems = [];
+    const tbody = document.getElementById('rec-stock-tbody');
+    if (tbody) tbody.innerHTML = '';
+
+    // Add initial row
+    addReceiveStockRow(preSelectedProductId ? { product_id: preSelectedProductId, quantity: 1 } : null);
+
+    openModal('modal-receive-stock');
+  } catch (err) {
+    console.error('Error opening Receive Stock modal:', err);
+    showToast('Failed to open inward stock modal: ' + err.message, 'danger');
+  }
+}
+window.openReceiveStockModal = openReceiveStockModal;
+
+function addReceiveStockRow(initial = null) {
+  const tbody = document.getElementById('rec-stock-tbody');
+  if (!tbody) return;
+
+  const rowIndex = _receiveStockLineItems.length;
+  const products = window._cachedProducts || [];
+  const rowId = `rec-row-${rowIndex}`;
+
+  const selectedProdId = initial?.product_id || '';
+  const selectedProd = products.find(p => p.id === selectedProdId);
+  const costVal = initial?.unit_cost || (selectedProd ? parseFloat(selectedProd.cost_price || 0) : 0);
+  const qtyVal = initial?.quantity || 1;
+  const unitVal = initial?.unit || (selectedProd ? selectedProd.unit || 'PCS' : 'PCS');
+  const brandVal = initial?.brand_name || selectedProd?.brand_name || '';
+  const batchVal = initial?.batch_number || selectedProd?.batch_number || ('LOT-' + new Date().toISOString().slice(0,10).replace(/-/g,''));
+  const domVal = initial?.manufacturing_date || (selectedProd?.manufacturing_date ? String(selectedProd.manufacturing_date).slice(0,10) : '');
+  const doeVal = initial?.expiry_date || (selectedProd?.expiry_date ? String(selectedProd.expiry_date).slice(0,10) : '');
+
+  const rowHtml = `
+    <tr id="${rowId}" data-index="${rowIndex}">
+      <td>
+        <select class="form-select rec-item-product" style="font-size:0.78rem; padding:4px 6px;" required onchange="onReceiveStockProductSelect(${rowIndex}, this.value)">
+          <option value="">-- Select Product / SKU --</option>
+          ${products.map(p => `
+            <option value="${p.id}" ${selectedProdId === p.id ? 'selected' : ''} data-cost="${p.cost_price || 0}" data-unit="${p.unit || 'PCS'}" data-brand="${p.brand_name || ''}" data-batch="${p.batch_number || ''}" data-dom="${p.manufacturing_date || ''}" data-doe="${p.expiry_date || ''}">
+              [${p.sku || 'SKU'}] ${p.name} ${p.brand_name ? `(${p.brand_name})` : ''}
+            </option>
+          `).join('')}
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-input rec-item-brand" value="${brandVal}" placeholder="Brand (Optional)" style="font-size:0.78rem; padding:4px 6px;">
+      </td>
+      <td>
+        <input type="text" class="form-input rec-item-batch" value="${batchVal}" placeholder="Batch #" style="font-size:0.78rem; padding:4px 6px;">
+      </td>
+      <td>
+        <input type="date" class="form-input rec-item-dom" value="${domVal}" style="font-size:0.78rem; padding:4px 6px;" title="Manufacturing Date [DOM]">
+      </td>
+      <td>
+        <input type="date" class="form-input rec-item-expiry" value="${doeVal}" style="font-size:0.78rem; padding:4px 6px;" title="Date Of Expiry [DOE]">
+      </td>
+      <td>
+        <input type="number" class="form-input rec-item-qty" min="1" step="1" value="${qtyVal}" required style="font-size:0.82rem; padding:4px 6px; text-align:center; font-weight:700;" oninput="recalculateReceiveStockTotals()">
+      </td>
+      <td>
+        <input type="text" class="form-input rec-item-unit" value="${unitVal}" placeholder="PCS" style="font-size:0.78rem; padding:4px 6px; text-align:center;">
+      </td>
+      <td>
+        <input type="text" class="form-input rec-item-cost" value="${costVal ? Number(costVal).toLocaleString() : '0'}" placeholder="0" style="font-size:0.78rem; padding:4px 6px; text-align:right;" oninput="formatCurrencyInput(this); recalculateReceiveStockTotals();">
+      </td>
+      <td>
+        <input type="text" class="form-input rec-item-rack" value="${initial?.storage_location || ''}" placeholder="Rack A-01" style="font-size:0.78rem; padding:4px 6px; text-align:center;">
+      </td>
+      <td style="text-align:right;">
+        <strong class="rec-item-total" style="font-size:0.82rem; color:#0f172a;">${(costVal * qtyVal).toLocaleString()}</strong>
+      </td>
+      <td style="text-align:center;">
+        <button type="button" class="danger-btn" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteReceiveStockRow(${rowIndex})" title="Remove item">&times;</button>
+      </td>
+    </tr>
+  `;
+
+  tbody.insertAdjacentHTML('beforeend', rowHtml);
+  _receiveStockLineItems.push({ index: rowIndex });
+  recalculateReceiveStockTotals();
+}
+window.addReceiveStockRow = addReceiveStockRow;
+
+function deleteReceiveStockRow(index) {
+  const row = document.getElementById(`rec-row-${index}`);
+  if (row) row.remove();
+  recalculateReceiveStockTotals();
+}
+window.deleteReceiveStockRow = deleteReceiveStockRow;
+
+function onReceiveStockProductSelect(rowIndex, productId) {
+  const row = document.getElementById(`rec-row-${rowIndex}`);
+  if (!row) return;
+
+  const products = window._cachedProducts || [];
+  const prod = products.find(p => p.id === productId);
+  if (!prod) return;
+
+  const unitInput = row.querySelector('.rec-item-unit');
+  const costInput = row.querySelector('.rec-item-cost');
+  const brandInput = row.querySelector('.rec-item-brand');
+  const batchInput = row.querySelector('.rec-item-batch');
+  const domInput = row.querySelector('.rec-item-dom');
+  const expInput = row.querySelector('.rec-item-expiry');
+
+  if (unitInput && prod.unit) unitInput.value = prod.unit;
+  if (costInput && prod.cost_price) {
+    costInput.value = Number(prod.cost_price).toLocaleString();
+    formatCurrencyInput(costInput);
+  }
+  if (brandInput && prod.brand_name) brandInput.value = prod.brand_name;
+  if (batchInput && prod.batch_number) batchInput.value = prod.batch_number;
+  if (domInput && prod.manufacturing_date) domInput.value = String(prod.manufacturing_date).slice(0, 10);
+  if (expInput && prod.expiry_date) expInput.value = String(prod.expiry_date).slice(0, 10);
+
+  recalculateReceiveStockTotals();
+}
+window.onReceiveStockProductSelect = onReceiveStockProductSelect;
+
+function recalculateReceiveStockTotals() {
+  const rows = document.querySelectorAll('#rec-stock-tbody tr');
+  let totalUnits = 0;
+  let totalCost = 0;
+
+  rows.forEach(r => {
+    const qty = parseFloat(r.querySelector('.rec-item-qty')?.value || 0);
+    const cost = parseCurrency(r.querySelector('.rec-item-cost')?.value || 0);
+    const lineTotal = qty * cost;
+    totalUnits += qty;
+    totalCost += lineTotal;
+
+    const totalEl = r.querySelector('.rec-item-total');
+    if (totalEl) totalEl.innerText = Number(lineTotal).toLocaleString();
+  });
+
+  const linesDisp = document.getElementById('rec-total-lines-disp');
+  const unitsDisp = document.getElementById('rec-total-units-disp');
+  const costDisp = document.getElementById('rec-total-cost-disp');
+
+  if (linesDisp) linesDisp.innerText = rows.length;
+  if (unitsDisp) unitsDisp.innerText = totalUnits.toLocaleString();
+  if (costDisp) costDisp.innerText = formatCurrency(totalCost, 'PKR');
+}
+window.recalculateReceiveStockTotals = recalculateReceiveStockTotals;
+
+async function submitReceiveStockForm() {
+  const btn = document.getElementById('btn-submit-receive-stock');
+  const warehouseId = document.getElementById('rec-warehouse-id')?.value;
+  const supplierId = document.getElementById('rec-supplier-id')?.value || null;
+  const rawInward = (document.getElementById('rec-inward-date')?.value || '').trim();
+  let inwardDate = new Date().toISOString().split('T')[0];
+  if (rawInward && rawInward !== 'DD/MM/YYYY') {
+    const parts = rawInward.split(/[\/\-\.]/);
+    if (parts.length === 3 && parts[2].length === 4) {
+      inwardDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    } else if (parts.length === 3 && parts[0].length === 4) {
+      inwardDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    } else {
+      inwardDate = rawInward;
+    }
+  }
+  const refNumber = document.getElementById('rec-reference-number')?.value || '';
+  const refType = document.getElementById('rec-reference-type')?.value || 'SUPPLIER_INWARD';
+  const remarks = document.getElementById('rec-remarks')?.value || '';
+
+  if (!warehouseId) {
+    alert('⚠️ Destination Warehouse is mandatory. Please select a Warehouse from the dropdown before confirming inward stock receipt.');
+    showToast('⚠️ Destination Warehouse is mandatory. Please select a warehouse.', 'warning');
+    const whEl = document.getElementById('rec-warehouse-id');
+    if (whEl) {
+      whEl.focus();
+      whEl.style.borderColor = '#ef4444';
+      whEl.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.25)';
+    }
+    return;
+  }
+
+  const rows = document.querySelectorAll('#rec-stock-tbody tr');
+  const items = [];
+
+  rows.forEach(r => {
+    const prodId = r.querySelector('.rec-item-product')?.value;
+    const qty = parseFloat(r.querySelector('.rec-item-qty')?.value || 0);
+    const unitCost = parseCurrency(r.querySelector('.rec-item-cost')?.value || 0);
+    const brand = r.querySelector('.rec-item-brand')?.value?.trim() || null;
+    const batchNo = r.querySelector('.rec-item-batch')?.value?.trim() || 'LOT-PRIMARY';
+    const rawDom = (r.querySelector('.rec-item-dom')?.value || '').trim();
+    const rawExpiry = (r.querySelector('.rec-item-expiry')?.value || '').trim();
+    const rack = r.querySelector('.rec-item-rack')?.value || null;
+
+    let domDate = null;
+    if (rawDom && rawDom !== 'DD/MM/YYYY') {
+      const parts = rawDom.split(/[\/\-\.]/);
+      if (parts.length === 3 && parts[2].length === 4) {
+        domDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else if (parts.length === 3 && parts[0].length === 4) {
+        domDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else {
+        domDate = rawDom;
+      }
+    }
+
+    let expiryDate = null;
+    if (rawExpiry && rawExpiry !== 'DD/MM/YYYY') {
+      const parts = rawExpiry.split(/[\/\-\.]/);
+      if (parts.length === 3 && parts[2].length === 4) {
+        expiryDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else if (parts.length === 3 && parts[0].length === 4) {
+        expiryDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else {
+        expiryDate = rawExpiry;
+      }
+    }
+
+    if (prodId && qty > 0) {
+      items.push({
+        product_id: prodId,
+        quantity: qty,
+        unit_cost: unitCost,
+        brand_name: brand,
+        batch_number: batchNo,
+        manufacturing_date: domDate,
+        expiry_date: expiryDate,
+        storage_location: rack
+      });
+    }
+  });
+
+  if (items.length === 0) {
+    showToast('Please add at least one product with quantity > 0.', 'danger');
+    return;
+  }
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '⏳ Recording Inward Stock...';
+    }
+
+    const payload = {
+      warehouse_id: warehouseId,
+      supplier_id: supplierId,
+      reference_number: refNumber,
+      reference_type: refType,
+      inward_date: inwardDate,
+      remarks,
+      items
+    };
+
+    const res = await API.receiveStockIn(payload);
+
+    if (res && res.success) {
+      showToast(`✓ ${res.message || 'Stock received into warehouse successfully!'}`, 'success');
+      closeModal('modal-receive-stock');
+      // Re-render inventory view with updated live stock from DB
+      await renderActiveView();
+    } else {
+      showToast(res?.message || 'Failed to record inward stock receipt.', 'danger');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '📥 Confirm Inward Receipt & Update Stock';
+    }
+  }
+}
+window.submitReceiveStockForm = submitReceiveStockForm;
 
 // --------------------------------------------------------------------------
 // 10. 3-TIER EXPENSES & OVERHEADS LEDGER (TENDER DIRECT, PO LOGISTICS & OVERHEADS)
@@ -2987,6 +3670,10 @@ async function renderInventoryHTML() {
 
 let _activeExpenseTab = 'ledger';
 let _activeExpenseCatFilterTier = 'all';
+let _expenseFilterScope = 'all'; // 'all' | 'tender' | 'general'
+let _expenseFilterOppId = 'all';
+let _expenseFilterStartDate = '';
+let _expenseFilterEndDate = '';
 
 function switchExpenseTab(tab) {
   _activeExpenseTab = tab;
@@ -2998,14 +3685,118 @@ function filterCategoryCatalogByTier(tier) {
   renderActiveView();
 }
 
+function setExpenseFilterScope(scope) {
+  _expenseFilterScope = scope;
+  if (scope !== 'tender') {
+    _expenseFilterOppId = 'all';
+  }
+  renderActiveView();
+}
+
+function setExpenseFilterOppId(oppId) {
+  _expenseFilterOppId = oppId;
+  renderActiveView();
+}
+window.setExpenseFilterScope = setExpenseFilterScope;
+window.setExpenseFilterOppId = setExpenseFilterOppId;
+
+function applyExpenseDateRangeFilter() {
+  const fromEl = document.getElementById('exp-filter-from-date');
+  const toEl = document.getElementById('exp-filter-to-date');
+  _expenseFilterStartDate = normalizeDateToISO(fromEl ? fromEl.value : '');
+  _expenseFilterEndDate = normalizeDateToISO(toEl ? toEl.value : '');
+
+  if (_expenseFilterStartDate && _expenseFilterEndDate && _expenseFilterStartDate > _expenseFilterEndDate) {
+    const tmp = _expenseFilterStartDate;
+    _expenseFilterStartDate = _expenseFilterEndDate;
+    _expenseFilterEndDate = tmp;
+  }
+  renderActiveView();
+}
+window.applyExpenseDateRangeFilter = applyExpenseDateRangeFilter;
+
+function clearExpenseDateRangeFilter() {
+  _expenseFilterStartDate = '';
+  _expenseFilterEndDate = '';
+  renderActiveView();
+}
+window.clearExpenseDateRangeFilter = clearExpenseDateRangeFilter;
+
+function handleExpenseDateInputChange(isExplicit = false) {
+  const fromEl = document.getElementById('exp-filter-from-date');
+  const toEl = document.getElementById('exp-filter-to-date');
+  const s = normalizeDateToISO(fromEl ? fromEl.value : '');
+  const e = normalizeDateToISO(toEl ? toEl.value : '');
+  _expenseFilterStartDate = s;
+  _expenseFilterEndDate = e;
+
+  // Auto-apply if both dates are selected, or if user explicitly triggered
+  if (isExplicit || (s && e)) {
+    if (s && e && s > e) {
+      _expenseFilterStartDate = e;
+      _expenseFilterEndDate = s;
+    }
+    renderActiveView();
+  }
+}
+window.handleExpenseDateInputChange = handleExpenseDateInputChange;
+
+function setExpenseDatePreset(preset) {
+  const today = new Date();
+  let start = '';
+  let end = today.toISOString().split('T')[0];
+
+  if (preset === 'today') {
+    start = end;
+  } else if (preset === 'this_month') {
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    start = firstDay.toISOString().split('T')[0];
+  } else if (preset === 'last_30_days') {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    start = d.toISOString().split('T')[0];
+  } else if (preset === 'this_quarter') {
+    const qMonth = Math.floor(today.getMonth() / 3) * 3;
+    const firstDay = new Date(today.getFullYear(), qMonth, 1);
+    start = firstDay.toISOString().split('T')[0];
+  } else if (preset === 'this_year') {
+    start = `${today.getFullYear()}-01-01`;
+  } else if (preset === 'clear') {
+    start = '';
+    end = '';
+  }
+  _expenseFilterStartDate = start;
+  _expenseFilterEndDate = end;
+  renderActiveView();
+}
+window.setExpenseDatePreset = setExpenseDatePreset;
+
+function resetExpenseFilters() {
+  _expenseFilterScope = 'all';
+  _expenseFilterOppId = 'all';
+  _expenseFilterStartDate = '';
+  _expenseFilterEndDate = '';
+  renderActiveView();
+}
+window.resetExpenseFilters = resetExpenseFilters;
+
 async function renderExpensesHTML() {
+  const filterParams = {
+    filter_scope: _expenseFilterScope,
+    opportunity_id: _expenseFilterOppId,
+    start_date: _expenseFilterStartDate,
+    end_date: _expenseFilterEndDate
+  };
+
   const [expenses, categories, opps] = await Promise.all([
-    API.getExpenses(State.currentBusinessProfileId),
+    API.getExpenses(State.currentBusinessProfileId, filterParams),
     API.getExpenseCategories(),
     API.getOpportunities(State.currentBusinessProfileId).catch(() => [])
   ]);
   _cachedExpenseCategories = categories;
   _cachedExpenseOpportunities = opps || [];
+
+  const hasActiveFilters = (_expenseFilterScope !== 'all') || (_expenseFilterOppId !== 'all') || !!_expenseFilterStartDate || !!_expenseFilterEndDate;
 
   // Segregate by 3 Tiers
   const tier1Expenses = expenses.filter(e => e.expense_tier === 'Tier 1 - Tender Direct' || e.expense_type === 'Tender Expense' || e.expense_type === 'Quotation Expense' || e.opportunity_id);
@@ -3030,7 +3821,7 @@ async function renderExpensesHTML() {
     <!-- Top 3-Tier KPI Summary Cards -->
     <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
-        <div class="kpi-title">Total Expenditures</div>
+        <div class="kpi-title">${hasActiveFilters ? 'Filtered Expenditures' : 'Total Expenditures'}</div>
         <div class="kpi-value">${formatCurrency(totalAll, 'PKR')}</div>
         <div class="kpi-subtext">${expenses.length} Logged Transactions</div>
       </div>
@@ -3074,11 +3865,129 @@ async function renderExpensesHTML() {
       </div>
     </div>
 
+    <!-- DYNAMIC FILTER BAR: TENDER WISE, GENERAL EXPENSE & DATE RANGE (INDEPENDENT OR COMBINED) -->
+    <div class="card" style="margin-bottom: 20px; padding: 16px 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.1rem;">🔎</span>
+          <span style="font-weight: 700; color: #1e293b; font-size: 0.95rem;">Filter Ledger Expenditures</span>
+          ${hasActiveFilters ? `
+            <span class="badge" style="background:#e0f2fe; color:#0284c7; font-weight:700; font-size:0.75rem;">
+              ✓ Filter Active (${expenses.length} Records)
+            </span>
+          ` : ''}
+        </div>
+        ${hasActiveFilters ? `
+          <button type="button" class="secondary-btn" onclick="resetExpenseFilters()" style="padding: 4px 12px; font-size: 0.78rem; font-weight: 600; color: #dc2626; border-color: #fca5a5; background: #fff5f5;">
+            ✕ Reset / Clear Filters
+          </button>
+        ` : ''}
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; align-items: flex-end;">
+        <!-- 1. Classification Scope (Tender wise vs General Expense vs All) -->
+        <div>
+          <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 4px; display: block;">
+            Classification Scope:
+          </label>
+          <div style="display: flex; gap: 4px; background: #f1f5f9; padding: 3px; border-radius: 8px;">
+            <button type="button" onclick="setExpenseFilterScope('all')" 
+              style="flex: 1; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'all' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              All
+            </button>
+            <button type="button" onclick="setExpenseFilterScope('tender')" 
+              style="flex: 1.2; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'tender' ? 'background: #0284c7; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              🎯 Tender wise
+            </button>
+            <button type="button" onclick="setExpenseFilterScope('general')" 
+              style="flex: 1.3; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'general' ? 'background: #475569; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              🏢 General Expense
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Specific Tender Selection (Only when Tender wise is selected) -->
+        ${_expenseFilterScope === 'tender' ? `
+          <div>
+            <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #0284c7; margin-bottom: 4px; display: block;">
+              Select Specific Tender:
+            </label>
+            <select class="form-control" onchange="setExpenseFilterOppId(this.value)" style="height: 36px; font-size: 0.8rem; border-color: #bae6fd;">
+              <option value="all">-- All Tenders & Bids (${opps.length}) --</option>
+              ${opps.map(o => `
+                <option value="${o.id}" ${_expenseFilterOppId === o.id ? 'selected' : ''}>
+                  ${escapeHtml(o.tender_name || o.title || o.opportunity_number || 'Tender')} (${o.opportunity_number || 'No Ref'})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+        ` : ''}
+
+        <!-- 3. Date Range (From Date) -->
+        <div>
+          <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 4px; display: block;">
+            📅 Date From:
+          </label>
+          <input type="text" id="exp-filter-from-date" class="form-control date-picker" placeholder="DD/MM/YYYY" autocomplete="off"
+            value="${formatDateInput(_expenseFilterStartDate)}" 
+            onchange="handleExpenseDateInputChange(false)"
+            onkeydown="if(event.key==='Enter') applyExpenseDateRangeFilter()" style="height: 36px; font-size: 0.82rem; font-weight: 600;">
+        </div>
+
+        <!-- 4. Date Range (To Date) -->
+        <div>
+          <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 4px; display: block;">
+            📅 Date To:
+          </label>
+          <input type="text" id="exp-filter-to-date" class="form-control date-picker" placeholder="DD/MM/YYYY" autocomplete="off"
+            value="${formatDateInput(_expenseFilterEndDate)}" 
+            onchange="handleExpenseDateInputChange(false)"
+            onkeydown="if(event.key==='Enter') applyExpenseDateRangeFilter()" style="height: 36px; font-size: 0.82rem; font-weight: 600;">
+        </div>
+
+        <!-- 5. Apply Date Filter Action -->
+        <div style="display: flex; gap: 6px;">
+          <button type="button" class="primary-btn" onclick="applyExpenseDateRangeFilter()" 
+            style="height: 36px; padding: 0 16px; font-size: 0.82rem; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
+            <span>🔍 Apply Filter</span>
+          </button>
+          ${_expenseFilterStartDate || _expenseFilterEndDate ? `
+            <button type="button" class="secondary-btn" onclick="clearExpenseDateRangeFilter()" 
+              style="height: 36px; padding: 0 10px; font-size: 0.82rem; font-weight: 600; color: #dc2626; border-color: #fca5a5; background: #fff5f5;" title="Clear Date Range">
+              ✕
+            </button>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- Quick Date Range Presets -->
+      <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; border-top: 1px dashed #f1f5f9; padding-top: 8px;">
+        <span style="font-size: 0.73rem; color: #64748b; font-weight: 600; margin-right: 2px;">Date Presets:</span>
+        <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setExpenseDatePreset('today')">Today</button>
+        <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setExpenseDatePreset('this_month')">This Month</button>
+        <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setExpenseDatePreset('last_30_days')">Last 30 Days</button>
+        <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setExpenseDatePreset('this_quarter')">This Quarter</button>
+        <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setExpenseDatePreset('this_year')">This Year</button>
+        ${_expenseFilterStartDate || _expenseFilterEndDate ? `
+          <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px; color: #ef4444; border-color: #fca5a5;" onclick="setExpenseDatePreset('clear')">Clear Dates</button>
+        ` : ''}
+      </div>
+    </div>
+
     ${_activeExpenseTab === 'ledger' ? `
       <!-- TAB 1: 3-TIER EXPENDITURE TRANSACTIONS LEDGER -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">💳 3-Tier Company & Project Expenditure Ledger</div>
+          <div class="card-title">
+            💳 3-Tier Company & Project Expenditure Ledger
+            ${hasActiveFilters ? `
+              <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem; font-weight:600; margin-left:8px;">
+                Filtered: ${_expenseFilterScope === 'tender' ? '🎯 Tender wise' : (_expenseFilterScope === 'general' ? '🏢 General Expense' : 'All Scope')}
+                ${_expenseFilterOppId && _expenseFilterOppId !== 'all' ? ` (Specific Tender)` : ''}
+                (${expenses.length} results)
+              </span>
+            ` : ''}
+          </div>
           <div style="display:flex; gap:8px;">
             <button class="secondary-btn" style="font-size:0.78rem; padding:4px 10px;" onclick="switchExpenseTab('categories')">View All ${categories.length} Categories in DB</button>
           </div>
@@ -4267,13 +5176,17 @@ async function renderProductsHTML() {
           <span style="font-size:0.75rem; color:var(--text-muted);">${p.description ? p.description : ''}</span>
         </td>
         <td>
-          <span class="badge badge-sec-attached">${p.item_type || 'Product'}</span><br>
+          ${p.brand_name ? `<strong style="font-size:0.84rem; color:#1e293b;">${p.brand_name}</strong>` : '<span style="color:#94a3b8; font-size:0.75rem;">—</span>'}
+        </td>
+        <td>
+          ${p.item_type === 'Medicine' ? `<span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700; font-size:0.72rem;">💊 Medicine</span>` : `<span class="badge badge-sec-attached">${p.item_type || 'Product'}</span>`}<br>
           <span style="font-size:0.8rem; font-weight:600;">${p.unit || 'PCS'}</span>
         </td>
         <td>
           <span style="font-size:0.8rem; font-weight:600; color:#1e293b;">
             ${p.batch_number || p.batch_no ? `<code>Batch: ${p.batch_number || p.batch_no}</code><br>` : '<span style="color:#94a3b8; font-size:0.75rem;">Standard Lot</span><br>'}
           </span>
+          ${p.manufacturing_date ? `<span style="font-size:0.72rem; color:#475569; display:block;">DOM: ${formatDateDDMMYYYY(p.manufacturing_date)}</span>` : ''}
           ${expiryPill || '<span style="font-size:0.75rem; color:#64748b;">No Expiry</span>'}
         </td>
         <td>
@@ -4411,8 +5324,9 @@ async function renderProductsHTML() {
             <tr>
               <th>SKU / Item Code</th>
               <th>Item Name & Specifications</th>
+              <th>Brand Name</th>
               <th>Type & UOM</th>
-              <th>Batch & Shelf Life Expiry</th>
+              <th>Batch / DOM / DOE</th>
               <th>Landed Cost Price</th>
               <th>Benchmark Selling Rate</th>
               <th>Current Stock</th>
@@ -5303,9 +6217,162 @@ async function saveFbrCompanySettings() {
 }
 
 // --------------------------------------------------------------------------
-// COSTING CALCULATOR & BID GOVERNANCE ENGINE
+// COSTING & MARGIN ANALYSIS ENGINE (TENDER WISE, GENERAL EXPENSE & DATE RANGE)
 // --------------------------------------------------------------------------
 let _selectedCostingOpportunity = null;
+let _costingFilterScope = 'tender'; // 'tender' | 'general' | 'consolidated'
+let _costingDateFrom = '';
+let _costingDateTo = '';
+let _costingFetchedGeneralExpenses = 0;
+let _costingGeneralExpensesList = [];
+
+function setCostingScope(scope) {
+  _costingFilterScope = scope;
+  const tenderCard = document.getElementById('costing-selected-tender-details');
+  const emptyState = document.getElementById('costing-empty-state');
+  const tenderSelectContainer = document.getElementById('costing-tender-select-container');
+  const revenueLabel = document.getElementById('costing-revenue-label');
+  const scopeBadge = document.getElementById('costing-scope-badge');
+
+  if (scope === 'general') {
+    if (tenderSelectContainer) tenderSelectContainer.style.display = 'none';
+    if (emptyState) emptyState.style.display = 'none';
+    if (tenderCard) tenderCard.style.display = 'none';
+    if (revenueLabel) revenueLabel.innerText = 'Operating Inflow / Revenue (PKR)';
+    if (scopeBadge) {
+      scopeBadge.style.display = 'inline-block';
+      scopeBadge.innerText = 'Scope: 🏢 General Expense';
+      scopeBadge.style.background = '#f1f5f9';
+      scopeBadge.style.color = '#334155';
+    }
+    // Zero out direct tender procurement costs in pure General mode
+    const supEl = document.getElementById('calc-sup-cost');
+    const logEl = document.getElementById('calc-log-cost');
+    const labEl = document.getElementById('calc-lab-cost');
+    const expEl = document.getElementById('calc-exp-cost');
+    if (supEl) supEl.value = '0';
+    if (logEl) logEl.value = '0';
+    if (labEl) labEl.value = '0';
+    if (expEl) expEl.value = '0';
+  } else {
+    if (tenderSelectContainer) tenderSelectContainer.style.display = 'block';
+    if (revenueLabel) revenueLabel.innerText = 'Tender Revenue / Quoted Bid Price (PKR)';
+    if (scopeBadge) {
+      scopeBadge.style.display = 'inline-block';
+      scopeBadge.innerText = scope === 'consolidated' ? 'Scope: 📊 Consolidated' : 'Scope: 🎯 Tender wise';
+      scopeBadge.style.background = '#e0f2fe';
+      scopeBadge.style.color = '#0284c7';
+    }
+    if (_selectedCostingOpportunity) {
+      onCostingTenderChanged(_selectedCostingOpportunity.id);
+    } else {
+      if (emptyState) emptyState.style.display = 'block';
+    }
+  }
+
+  syncGeneralExpensesForCostingDateRange();
+}
+
+async function handleCostingDateChanged() {
+  const fromEl = document.getElementById('costing-filter-from');
+  const toEl = document.getElementById('costing-filter-to');
+  _costingDateFrom = normalizeDateToISO(fromEl ? fromEl.value : '');
+  _costingDateTo = normalizeDateToISO(toEl ? toEl.value : '');
+  filterCostingTendersByDate();
+  await syncGeneralExpensesForCostingDateRange();
+}
+window.handleCostingDateChanged = handleCostingDateChanged;
+
+function setCostingDatePreset(preset) {
+  const today = new Date();
+  let start = '';
+  let end = today.toISOString().split('T')[0];
+
+  if (preset === 'today') {
+    start = end;
+  } else if (preset === 'this_month') {
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    start = firstDay.toISOString().split('T')[0];
+  } else if (preset === 'last_30_days') {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    start = d.toISOString().split('T')[0];
+  } else if (preset === 'this_quarter') {
+    const qMonth = Math.floor(today.getMonth() / 3) * 3;
+    const firstDay = new Date(today.getFullYear(), qMonth, 1);
+    start = firstDay.toISOString().split('T')[0];
+  } else if (preset === 'this_year') {
+    start = `${today.getFullYear()}-01-01`;
+  } else if (preset === 'clear') {
+    start = '';
+    end = '';
+  }
+
+  _costingDateFrom = start;
+  _costingDateTo = end;
+
+  const fromEl = document.getElementById('costing-filter-from');
+  const toEl = document.getElementById('costing-filter-to');
+  const formattedStart = formatDateInput(start);
+  const formattedEnd = formatDateInput(end);
+
+  if (fromEl) {
+    fromEl.value = formattedStart;
+    if (fromEl._flatpickr) fromEl._flatpickr.setDate(formattedStart, false);
+  }
+  if (toEl) {
+    toEl.value = formattedEnd;
+    if (toEl._flatpickr) toEl._flatpickr.setDate(formattedEnd, false);
+  }
+
+  filterCostingTendersByDate();
+  syncGeneralExpensesForCostingDateRange();
+}
+window.setCostingDatePreset = setCostingDatePreset;
+
+async function syncGeneralExpensesForCostingDateRange() {
+  const ovhEl = document.getElementById('calc-ovh-cost');
+  const ovhBadge = document.getElementById('costing-ovh-sync-badge');
+
+  const fromDate = _costingDateFrom;
+  const toDate = _costingDateTo;
+
+  if (fromDate || toDate) {
+    try {
+      const expenses = await API.getExpenses(State.currentBusinessProfileId, {
+        start_date: fromDate || '',
+        end_date: toDate || '',
+        filter_scope: 'general'
+      });
+      _costingGeneralExpensesList = expenses || [];
+      const genTotal = _costingGeneralExpensesList.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      _costingFetchedGeneralExpenses = genTotal;
+
+      if (ovhEl) {
+        ovhEl.value = Math.round(genTotal).toLocaleString();
+      }
+      if (ovhBadge) {
+        ovhBadge.style.display = 'block';
+        ovhBadge.style.background = '#f0fdf4';
+        ovhBadge.style.color = '#166534';
+        ovhBadge.style.borderColor = '#86efac';
+        ovhBadge.innerHTML = `✓ <strong>Date Range Active:</strong> General Business Overheads of <strong>PKR ${genTotal.toLocaleString()}</strong> (${_costingGeneralExpensesList.length} expenses logged) are automatically included in total cost & margin calculation.`;
+      }
+    } catch (e) {
+      console.warn('Error fetching general expenses for date range:', e);
+    }
+  } else {
+    if (ovhBadge) {
+      ovhBadge.style.display = 'block';
+      ovhBadge.style.background = '#f8fafc';
+      ovhBadge.style.color = '#64748b';
+      ovhBadge.style.borderColor = '#e2e8f0';
+      ovhBadge.innerHTML = `📅 <em>Select a <strong>Date Range</strong> above to automatically pull and factor logged general business overheads into this cost & margin.</em>`;
+    }
+  }
+
+  recalculateCostSheet();
+}
 
 async function renderCostingCalculatorHTML() {
   if (!State.canSeeBiddingPrices()) {
@@ -5315,7 +6382,7 @@ async function renderCostingCalculatorHTML() {
         <h3 style="font-size: 1.3rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Commercial Pricing Restricted</h3>
         <p style="font-size: 0.9rem; color: #64748b; line-height: 1.6; margin-bottom: 24px;">
           Your account is configured with <strong>Price Visibility Masked</strong>.<br>
-          Commercial pricing, supplier rates, costing markups, and bid estimation calculators are hidden from your role.
+          Commercial pricing, supplier rates, and cost & margin calculators are hidden from your role.
         </p>
         <button class="primary-btn" onclick="switchView('opportunities')" style="margin: 0 auto; padding: 10px 20px;">📑 Go to Tenders Pipeline</button>
       </div>
@@ -5326,40 +6393,86 @@ async function renderCostingCalculatorHTML() {
   const tenders = await API.getOpportunities(State.currentBusinessProfileId);
 
   return `
-    <!-- Top Filter Bar: Customer Wise, Cascading Tender Wise, Date Range -->
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="card-body" style="padding: 14px 18px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-          <div style="font-weight:700; color:#0f172a; font-size:0.92rem; display:flex; align-items:center; gap:6px;">
-            <span>🔍 Costing Filters:</span>
+    <!-- Top Filter Bar: Scope (Tender wise, General Expense, Consolidated) & Date Range -->
+    <div class="card" style="margin-bottom: 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <div class="card-body" style="padding: 16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:1.15rem;">🎯</span>
+            <span style="font-weight:800; color:#0f172a; font-size:0.95rem;">Cost & Margin Filter Engine</span>
+            <span id="costing-scope-badge" class="badge" style="background:#e0f2fe; color:#0284c7; font-weight:700; font-size:0.75rem;">
+              Scope: 🎯 Tender wise
+            </span>
           </div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; flex:1; justify-content:flex-end;">
-            <!-- Customer Filter -->
-            <div style="min-width: 180px;">
-              <select class="form-select" id="costing-filter-customer" style="font-size:0.8rem; padding:5px 8px;" onchange="onCostingCustomerChanged(this.value)">
-                <option value="all">-- All Customers --</option>
-                ${customers.map(c => `<option value="${c.id}">${c.business_name}</option>`).join('')}
+
+          <!-- Scope Toggles -->
+          <div style="display:flex; gap:4px; background:#f1f5f9; padding:3px; border-radius:8px;">
+            <button type="button" class="btn-scope-toggle" onclick="setCostingScope('tender')" 
+              style="padding: 6px 12px; font-size: 0.8rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_costingFilterScope === 'tender' ? 'background: #0284c7; color: #ffffff;' : 'background: transparent; color: #64748b;'}">
+              🎯 Tender wise
+            </button>
+            <button type="button" class="btn-scope-toggle" onclick="setCostingScope('general')" 
+              style="padding: 6px 12px; font-size: 0.8rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_costingFilterScope === 'general' ? 'background: #475569; color: #ffffff;' : 'background: transparent; color: #64748b;'}">
+              🏢 General Expense
+            </button>
+            <button type="button" class="btn-scope-toggle" onclick="setCostingScope('consolidated')" 
+              style="padding: 6px 12px; font-size: 0.8rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_costingFilterScope === 'consolidated' ? 'background: #059669; color: #ffffff;' : 'background: transparent; color: #64748b;'}">
+              📊 Consolidated (All)
+            </button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: flex-end;">
+          <!-- Cascading Tender Filter -->
+          <div id="costing-tender-select-container" style="grid-column: span 2; min-width: 280px; ${_costingFilterScope === 'general' ? 'display:none;' : ''}">
+            <label class="form-label" style="font-size:0.78rem; font-weight:700; color:#334155; margin-bottom:4px;">
+              Select Project / Tender:
+            </label>
+            <div style="display:flex; gap:8px;">
+              <select class="form-select" id="costing-filter-customer" style="font-size:0.8rem; height:36px; max-width:180px;" onchange="onCostingCustomerChanged(this.value)">
+                <option value="all">All Customers</option>
+                ${customers.map(c => `<option value="${c.id}">${escapeHtml(c.business_name)}</option>`).join('')}
+              </select>
+              <select class="form-select" id="costing-filter-tender" style="font-size:0.82rem; height:36px; flex:1;" onchange="onCostingTenderChanged(this.value)">
+                <option value="all">-- Select a Tender / Bid Scope (${tenders.length}) --</option>
+                ${tenders.map(t => `<option value="${t.id}" data-customer="${t.customer_id || ''}" data-val="${t.estimated_value || 0}" data-closing="${t.closing_date || ''}">[${t.opportunity_number || 'TND'}] ${escapeHtml(t.tender_name || t.title)}</option>`).join('')}
               </select>
             </div>
-
-            <!-- Cascading Tender Filter -->
-            <div style="min-width: 220px;">
-              <select class="form-select" id="costing-filter-tender" style="font-size:0.8rem; padding:5px 8px;" onchange="onCostingTenderChanged(this.value)">
-                <option value="all">-- All Tenders & Quotations --</option>
-                ${tenders.map(t => `<option value="${t.id}" data-customer="${t.customer_id || ''}" data-val="${t.estimated_value || 0}" data-closing="${t.closing_date || ''}">[${t.opportunity_number || 'TND'}] ${t.tender_name || t.title}</option>`).join('')}
-              </select>
-            </div>
-
-            <!-- Date Range Filters -->
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.75rem; color:#64748b;">From:</span>
-              <input type="date" class="form-input" id="costing-filter-from" style="font-size:0.8rem; padding:4px 6px;" onchange="filterCostingTendersByDate()">
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.75rem; color:#64748b;">To:</span>
-              <input type="date" class="form-input" id="costing-filter-to" style="font-size:0.8rem; padding:4px 6px;" onchange="filterCostingTendersByDate()">
-            </div>
           </div>
+
+          <!-- Date Range Filters -->
+          <div>
+            <label class="form-label" style="font-size:0.78rem; font-weight:700; color:#334155; margin-bottom:4px;">
+              📅 Date From:
+            </label>
+            <input type="text" class="form-input date-picker" id="costing-filter-from" placeholder="DD/MM/YYYY" autocomplete="off"
+              value="${formatDateInput(_costingDateFrom)}" style="font-size:0.82rem; height:36px;" onchange="handleCostingDateChanged()">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:0.78rem; font-weight:700; color:#334155; margin-bottom:4px;">
+              📅 Date To:
+            </label>
+            <input type="text" class="form-input date-picker" id="costing-filter-to" placeholder="DD/MM/YYYY" autocomplete="off"
+              value="${formatDateInput(_costingDateTo)}" style="font-size:0.82rem; height:36px;" onchange="handleCostingDateChanged()">
+          </div>
+        </div>
+
+        <!-- Quick Date Range Presets -->
+        <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; border-top: 1px dashed #f1f5f9; padding-top: 8px;">
+          <span style="font-size: 0.73rem; color: #64748b; font-weight: 600; margin-right: 2px;">Date Presets:</span>
+          <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setCostingDatePreset('today')">Today</button>
+          <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setCostingDatePreset('this_month')">This Month</button>
+          <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setCostingDatePreset('last_30_days')">Last 30 Days</button>
+          <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setCostingDatePreset('this_quarter')">This Quarter</button>
+          <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px;" onclick="setCostingDatePreset('this_year')">This Year</button>
+          ${_costingDateFrom || _costingDateTo ? `
+            <button type="button" class="secondary-btn" style="padding: 2px 8px; font-size: 0.72rem; border-radius: 4px; color: #ef4444; border-color: #fca5a5;" onclick="setCostingDatePreset('clear')">Clear Dates</button>
+          ` : ''}
+        </div>
+
+        <!-- Dynamic Date Range & General Expense Integration Badge -->
+        <div id="costing-ovh-sync-badge" style="margin-top: 10px; font-size: 0.78rem; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b;">
+          📅 <em>Select a <strong>Date Range</strong> above to automatically pull and factor logged general business overheads into this cost & margin.</em>
         </div>
       </div>
     </div>
@@ -5371,23 +6484,32 @@ async function renderCostingCalculatorHTML() {
     <div id="costing-empty-state" style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:var(--radius-md); padding:24px 20px; text-align:center; margin-bottom:20px;">
       <div style="font-size:1.8rem; margin-bottom:8px;">👈 📑</div>
       <strong style="font-size:0.95rem; color:#1e293b; display:block; margin-bottom:4px;">Please Select a Tender Above</strong>
-      <span style="font-size:0.84rem; color:#64748b;">Choose an active tender or quotation from the dropdown above to load its commercial scope, itemized lines, and calculate landed direct costs & margins.</span>
+      <span style="font-size:0.84rem; color:#64748b;">Choose an active tender from the dropdown above to review its cost, quoted revenue, and live margin. Select a date range to automatically integrate general business overheads.</span>
     </div>
 
     <!-- Live Landed Price Warning Alert -->
     <div id="costing-loss-warning" style="display:none; background:#fef2f2; border:1px solid #f87171; color:#991b1b; border-radius:var(--radius-md); padding:12px 16px; margin-bottom:16px;">
-      ⚠️ <strong>Loss Alert:</strong> Recommended Bid Submission Price is lower than Landed Direct Cost. Negative profit margin detected!
+      ⚠️ <strong>Loss Alert:</strong> Total Landed Cost exceeds Revenue. Negative net profit margin detected!
     </div>
 
     <div class="calc-grid">
+      <!-- LEFT: DIRECT COST & REVENUE BREAKDOWN -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">💰 Direct Cost Breakdown</div>
+          <div class="card-title">💰 Cost & Revenue Breakdown</div>
           <span id="costing-tender-title-badge" class="badge badge-won" style="display:none;"></span>
         </div>
         <div class="card-body">
+          <div class="form-group" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
+            <label class="form-label" id="costing-revenue-label" style="font-weight:700; color:#166534; font-size:0.85rem; margin-bottom:4px;">
+              Tender Revenue / Quoted Bid Price (<span class="calc-currency-label">PKR</span>)
+            </label>
+            <input type="text" class="form-input cost-calc-input" id="calc-tender-revenue" value="0" placeholder="0" oninput="formatCurrencyInput(this)" style="font-size:1.05rem; font-weight:800; color:#166534; border-color:#86efac; background:#ffffff;">
+            <span style="font-size:0.72rem; color:#15803d; margin-top:2px; display:block;">Total tender submission value / contracted invoice amount</span>
+          </div>
+
           <div class="form-group">
-            <label class="form-label">Supplier / Product Cost (<span class="calc-currency-label">PKR</span>)</label>
+            <label class="form-label">Supplier / Direct Material Cost (<span class="calc-currency-label">PKR</span>)</label>
             <input type="text" class="form-input cost-calc-input" id="calc-sup-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
@@ -5399,49 +6521,62 @@ async function renderCostingCalculatorHTML() {
             <input type="text" class="form-input cost-calc-input" id="calc-lab-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
           <div class="form-group">
-            <label class="form-label">Allocated Overhead (<span class="calc-currency-label">PKR</span>)</label>
-            <input type="text" class="form-input cost-calc-input" id="calc-ovh-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Tender Expenses & Bid Security (<span class="calc-currency-label">PKR</span>)</label>
+            <label class="form-label">Tender Direct Expenses & Bid Security / CDR (<span class="calc-currency-label">PKR</span>)</label>
             <input type="text" class="form-input cost-calc-input" id="calc-exp-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)">
           </div>
-          <div class="form-group">
-            <label class="form-label">Desired Markup (%)</label>
-            <input type="number" class="form-input cost-calc-input" id="calc-markup-pct" value="18.5" step="0.5">
+          <div class="form-group" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px;">
+            <label class="form-label" style="font-weight:700; color:#334155; font-size:0.85rem; margin-bottom:4px;">
+              General Overhead Expenses (<span class="calc-currency-label">PKR</span>)
+            </label>
+            <input type="text" class="form-input cost-calc-input" id="calc-ovh-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)" style="font-size:0.95rem; font-weight:700;">
+            <span style="font-size:0.72rem; color:#64748b; margin-top:2px; display:block;">Auto-updated when a Date Range is active, or enter allocated company overhead</span>
           </div>
         </div>
       </div>
 
+      <!-- RIGHT: LIVE MARGIN & FINANCIAL SUMMARY -->
       <div class="calc-summary-panel">
         <div>
-          <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">Live Margin & Price Summary</h3>
+          <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">📈 Live Margin & Financial Summary</h3>
           <div class="calc-row">
-            <span>Total Direct Landed Cost:</span>
-            <strong id="disp-total-cost">PKR 0</strong>
+            <span>Total Quoted Revenue:</span>
+            <strong id="disp-tender-revenue" style="color:#10b981;">PKR 0</strong>
           </div>
           <div class="calc-row">
-            <span>Markup Rate:</span>
-            <strong id="disp-markup-rate">18.5%</strong>
+            <span>Direct Sourcing & Logistics Cost:</span>
+            <strong id="disp-direct-cost">PKR 0</strong>
           </div>
           <div class="calc-row">
-            <span>Projected Gross Profit:</span>
-            <strong id="disp-profit-amt" style="color:#10b981;">PKR 0</strong>
+            <span>General Overhead Expenses:</span>
+            <strong id="disp-overhead-cost">PKR 0</strong>
+          </div>
+          <div class="calc-row" style="border-top:1px solid #334155; padding-top:8px; margin-top:6px;">
+            <span>Total Landed Cost:</span>
+            <strong id="disp-total-cost" style="color:#f87171;">PKR 0</strong>
+          </div>
+          <div class="calc-row" style="font-size:1.02rem;">
+            <span>Net Profit Margin (Amount):</span>
+            <strong id="disp-margin-amt" style="color:#10b981;">PKR 0</strong>
           </div>
           <div class="calc-row">
-            <span>Gross Profit Margin %:</span>
-            <strong id="disp-margin-pct">15.6%</strong>
+            <span>Net Profit Margin %:</span>
+            <strong id="disp-margin-pct">0.0%</strong>
+          </div>
+          <div class="calc-row">
+            <span>Cost-to-Revenue Ratio:</span>
+            <strong id="disp-cost-ratio">0.0%</strong>
           </div>
         </div>
 
-        <div class="calc-total-box">
-          <span style="font-size:0.85rem; text-transform:uppercase; color:#94a3b8;">Recommended Bid Submission Price</span>
-          <div class="calc-final-price" id="disp-final-bid-price">PKR 0</div>
+        <div class="calc-total-box" style="margin-top: 20px;">
+          <span style="font-size:0.82rem; text-transform:uppercase; color:#94a3b8; font-weight:700; letter-spacing:0.5px;">NET PROFIT MARGIN</span>
+          <div class="calc-final-price" id="disp-final-margin-highlight" style="font-size: 1.85rem; font-weight: 800; color: #10b981;">+PKR 0</div>
+          <div id="disp-final-margin-subtext" style="font-size:0.75rem; color:#94a3b8; margin-top:4px;">Margin = Revenue - Total Landed Cost</div>
         </div>
 
-        <div style="margin-top: 14px;">
-          <button type="button" class="primary-btn" style="width:100%; justify-content:center; padding:10px;" onclick="saveCostingSheetForSelectedTender()">
-            💾 Save & Submit for Governance Approval
+        <div style="margin-top: 16px;">
+          <button type="button" class="primary-btn" style="width:100%; justify-content:center; padding:12px; font-size:0.9rem;" onclick="saveCostingSheetForSelectedTender()">
+            💾 Save Cost & Margin Sheet
           </button>
         </div>
       </div>
@@ -5454,72 +6589,81 @@ function setupCostingCalculator() {
   inputs.forEach(input => {
     input.addEventListener('input', recalculateCostSheet);
   });
-  recalculateCostSheet();
+  syncGeneralExpensesForCostingDateRange();
 }
 
 function recalculateCostSheet() {
-  const sup = parseCurrency(document.getElementById('calc-sup-cost')?.value);
-  const log = parseCurrency(document.getElementById('calc-log-cost')?.value);
-  const lab = parseCurrency(document.getElementById('calc-lab-cost')?.value);
-  const ovh = parseCurrency(document.getElementById('calc-ovh-cost')?.value);
-  const exp = parseCurrency(document.getElementById('calc-exp-cost')?.value);
-  const markup = parseFloat(document.getElementById('calc-markup-pct')?.value || 0);
+  const currency = _selectedCostingOpportunity?.currency || 'PKR';
+  const rev = parseCurrency(document.getElementById('calc-tender-revenue')?.value || 0);
+  const sup = parseCurrency(document.getElementById('calc-sup-cost')?.value || 0);
+  const log = parseCurrency(document.getElementById('calc-log-cost')?.value || 0);
+  const lab = parseCurrency(document.getElementById('calc-lab-cost')?.value || 0);
+  const exp = parseCurrency(document.getElementById('calc-exp-cost')?.value || 0);
+  const ovh = parseCurrency(document.getElementById('calc-ovh-cost')?.value || 0);
 
-  const totalCost = sup + log + lab + ovh + exp;
-  const profit = (totalCost * markup) / 100;
-  const finalPrice = totalCost + profit;
-  const marginPct = finalPrice > 0 ? ((profit / finalPrice) * 100) : (markup < 0 ? markup : 0);
-  const isLoss = profit < 0 || finalPrice < totalCost || markup < 0;
+  const directCost = sup + log + lab + exp;
+  const totalCost = directCost + ovh;
+  const margin = rev - totalCost;
+  const marginPct = rev > 0 ? ((margin / rev) * 100) : (totalCost > 0 ? -100 : 0);
+  const costRatio = rev > 0 ? ((totalCost / rev) * 100) : 0;
+  const isLoss = margin < 0;
 
-  const totalCostEl = document.getElementById('disp-total-cost');
-  const markupRateEl = document.getElementById('disp-markup-rate');
-  const profitAmtEl = document.getElementById('disp-profit-amt');
-  const marginPctEl = document.getElementById('disp-margin-pct');
-  const finalPriceEl = document.getElementById('disp-final-bid-price');
+  const dispRev = document.getElementById('disp-tender-revenue');
+  const dispDirect = document.getElementById('disp-direct-cost');
+  const dispOvh = document.getElementById('disp-overhead-cost');
+  const dispTotal = document.getElementById('disp-total-cost');
+  const dispMarginAmt = document.getElementById('disp-margin-amt');
+  const dispMarginPct = document.getElementById('disp-margin-pct');
+  const dispCostRatio = document.getElementById('disp-cost-ratio');
+  const dispBigMargin = document.getElementById('disp-final-margin-highlight');
+  const dispBigSubtext = document.getElementById('disp-final-margin-subtext');
 
-  if (totalCostEl) totalCostEl.innerText = formatCurrency(totalCost, 'PKR');
-  if (markupRateEl) {
-    markupRateEl.innerText = `${markup}%`;
-    markupRateEl.className = markup < 0 ? 'loss-text' : '';
-  }
-  if (profitAmtEl) {
+  if (dispRev) dispRev.innerText = formatCurrency(rev, currency);
+  if (dispDirect) dispDirect.innerText = formatCurrency(directCost, currency);
+  if (dispOvh) dispOvh.innerText = formatCurrency(ovh, currency);
+  if (dispTotal) dispTotal.innerText = formatCurrency(totalCost, currency);
+
+  if (dispMarginAmt) {
     if (isLoss) {
-      profitAmtEl.innerText = `-PKR ${Math.abs(profit).toLocaleString()} (Loss)`;
-      profitAmtEl.style.color = '#dc2626';
-      profitAmtEl.style.fontWeight = '800';
+      dispMarginAmt.innerText = `-PKR ${Math.abs(margin).toLocaleString()} (Loss)`;
+      dispMarginAmt.style.color = '#dc2626';
     } else {
-      profitAmtEl.innerText = formatCurrency(profit, 'PKR');
-      profitAmtEl.style.color = '#10b981';
-      profitAmtEl.style.fontWeight = '700';
+      dispMarginAmt.innerText = `+${formatCurrency(margin, currency)}`;
+      dispMarginAmt.style.color = '#10b981';
     }
   }
-  if (marginPctEl) {
+
+  if (dispMarginPct) {
+    dispMarginPct.innerText = `${marginPct >= 0 ? '+' : ''}${marginPct.toFixed(1)}%`;
+    dispMarginPct.style.color = isLoss ? '#dc2626' : '#0f172a';
+  }
+
+  if (dispCostRatio) {
+    dispCostRatio.innerText = `${costRatio.toFixed(1)}% of Revenue`;
+  }
+
+  if (dispBigMargin) {
     if (isLoss) {
-      marginPctEl.innerText = `-${Math.abs(marginPct).toFixed(1)}% (Negative Margin)`;
-      marginPctEl.style.color = '#dc2626';
-      marginPctEl.style.fontWeight = '800';
+      dispBigMargin.innerText = `-PKR ${Math.abs(margin).toLocaleString()}`;
+      dispBigMargin.style.color = '#ef4444';
     } else {
-      marginPctEl.innerText = `${marginPct.toFixed(1)}%`;
-      marginPctEl.style.color = '#0f172a';
-      marginPctEl.style.fontWeight = '700';
+      dispBigMargin.innerText = `+PKR ${margin.toLocaleString()}`;
+      dispBigMargin.style.color = '#10b981';
     }
   }
-  if (finalPriceEl) {
-    finalPriceEl.innerText = formatCurrency(finalPrice, 'PKR');
-    if (isLoss) {
-      finalPriceEl.style.color = '#dc2626';
-      finalPriceEl.style.borderColor = '#f87171';
-    } else {
-      finalPriceEl.style.color = '';
-      finalPriceEl.style.borderColor = '';
-    }
+
+  if (dispBigSubtext) {
+    dispBigSubtext.innerHTML = isLoss 
+      ? `⚠️ <strong>Negative Margin Alert:</strong> Total Cost exceeds Revenue by <strong>${Math.abs(marginPct).toFixed(1)}%</strong>`
+      : `✓ Net Profit Margin: <strong>${marginPct >= 0 ? '+' : ''}${marginPct.toFixed(1)}%</strong> | Cost-to-Revenue: <strong>${costRatio.toFixed(1)}%</strong>`;
+    dispBigSubtext.style.color = isLoss ? '#fca5a5' : '#94a3b8';
   }
 
   const warnEl = document.getElementById('costing-loss-warning');
   if (warnEl) {
-    if (isLoss) {
+    if (isLoss && (rev > 0 || totalCost > 0)) {
       warnEl.className = 'loss-alert-box';
-      warnEl.innerHTML = `⚠️ <strong>Loss Alert:</strong> Recommended Bid Submission Price (${formatCurrency(finalPrice, 'PKR')}) is lower than Landed Direct Cost (${formatCurrency(totalCost, 'PKR')}). Projected Loss: <span class="loss-text">-PKR ${Math.abs(profit).toLocaleString()} (-${Math.abs(marginPct).toFixed(1)}% margin)</span>!`;
+      warnEl.innerHTML = `⚠️ <strong>Loss Alert:</strong> Total Landed Cost (${formatCurrency(totalCost, currency)}) exceeds Revenue (${formatCurrency(rev, currency)}). Projected Net Loss: <span class="loss-text">-PKR ${Math.abs(margin).toLocaleString()} (-${Math.abs(marginPct).toFixed(1)}% margin)</span>!`;
       warnEl.style.display = 'flex';
     } else {
       warnEl.style.display = 'none';
@@ -5557,19 +6701,17 @@ async function onCostingTenderChanged(tenderId) {
   if (!tenderId || tenderId === 'all') {
     _selectedCostingOpportunity = null;
     if (badge) badge.style.display = 'none';
-    if (emptyState) emptyState.style.display = 'block';
+    if (emptyState && _costingFilterScope !== 'general') emptyState.style.display = 'block';
     if (detailsContainer) {
       detailsContainer.style.display = 'none';
       detailsContainer.innerHTML = '';
     }
     // Reset inputs
-    ['calc-sup-cost', 'calc-log-cost', 'calc-lab-cost', 'calc-ovh-cost', 'calc-exp-cost'].forEach(id => {
+    ['calc-tender-revenue', 'calc-sup-cost', 'calc-log-cost', 'calc-lab-cost', 'calc-ovh-cost', 'calc-exp-cost'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '0';
     });
-    const markupEl = document.getElementById('calc-markup-pct');
-    if (markupEl) markupEl.value = '18.5';
-    recalculateCostSheet();
+    syncGeneralExpensesForCostingDateRange();
     return;
   }
 
@@ -5643,9 +6785,9 @@ async function onCostingTenderChanged(tenderId) {
   // Retrieve line items
   const items = target.items || target.tender_items || [];
   const itemsTotalSum = items.reduce((sum, itm) => {
-    const qty = parseFloat(itm.quantity || 1);
+    const q = parseFloat(itm.quantity || 1);
     const up = parseFloat(itm.estimated_unit_price || itm.unit_price || 0);
-    return sum + (parseFloat(itm.estimated_total_price || (qty * up)) || 0);
+    return sum + (parseFloat(itm.estimated_total_price || (q * up)) || 0);
   }, 0);
 
   const estVal = parseFloat(target.estimated_value || itemsTotalSum || 0);
@@ -5682,7 +6824,7 @@ async function onCostingTenderChanged(tenderId) {
               </span>
             ` : `
               <span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.75rem; padding:4px 8px; font-weight:600;">
-                ✨ New Costing Estimation
+                ✨ Live Cost & Margin
               </span>
             `}
           </div>
@@ -5692,8 +6834,8 @@ async function onCostingTenderChanged(tenderId) {
           <!-- Telemetry Chips -->
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px;">
-              <div style="font-size:0.72rem; text-transform:uppercase; color:#64748b; font-weight:700;">Estimated Tender Value</div>
-              <div style="font-size:1.1rem; font-weight:800; color:#0f172a; margin-top:2px;">
+              <div style="font-size:0.72rem; text-transform:uppercase; color:#64748b; font-weight:700;">Quoted Tender Value</div>
+              <div style="font-size:1.1rem; font-weight:800; color:#166534; margin-top:2px;">
                 ${currency} ${estVal.toLocaleString()}
               </div>
             </div>
@@ -5724,34 +6866,65 @@ async function onCostingTenderChanged(tenderId) {
           ${items.length > 0 ? `
             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
               <div style="padding:8px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:0.82rem; font-weight:700; color:#334155;">📦 Tender Scope & Technical Items (${items.length}):</span>
+                <span style="font-size:0.82rem; font-weight:700; color:#334155;">📦 Tender Scope & Warehouse Inventory Items (${items.length}):</span>
                 <span style="font-size:0.78rem; color:#64748b;">Items Total: <strong>${currency} ${itemsTotalSum.toLocaleString()}</strong></span>
               </div>
-              <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+              <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
                 <table class="data-table" style="font-size:0.8rem; margin-bottom:0;">
                   <thead>
                     <tr style="background:#f8fafc;">
                       <th style="width:40px;">#</th>
                       <th>Item Scope / Description</th>
+                      <th>Warehouse Sourcing & Stock</th>
                       <th>Specification / Size</th>
                       <th style="text-align:right;">Quantity</th>
                       <th>Unit</th>
-                      <th style="text-align:right;">Est. Unit Price</th>
+                      <th style="text-align:right;">Landed Unit Cost</th>
+                      <th style="text-align:right;">Quoted Unit Price</th>
                       <th style="text-align:right;">Total (${currency})</th>
                     </tr>
                   </thead>
                   <tbody>
                     ${items.map((itm, idx) => {
                       const q = parseFloat(itm.quantity || 1);
+                      const uc = parseFloat(itm.unit_cost || 0);
                       const up = parseFloat(itm.estimated_unit_price || itm.unit_price || 0);
                       const tot = parseFloat(itm.estimated_total_price || (q * up)) || 0;
+                      const whName = itm.warehouse_name || (itm.warehouse_id ? 'Warehouse Stock' : 'Direct Procure');
+                      const isReserved = Boolean(itm.stock_reserved);
+                      const avail = parseFloat(itm.warehouse_stock_available || itm.stock_at_time_of_tender || 0);
+                      
+                      let stockBadge = '';
+                      if (isReserved) {
+                        stockBadge = `<span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.68rem; padding:1px 5px; font-weight:700;">🔒 Reserved (${q})</span>`;
+                      } else if (itm.warehouse_id && avail >= q) {
+                        stockBadge = `<span class="badge" style="background:#dcfce7; color:#166534; font-size:0.68rem; padding:1px 5px; font-weight:700;">✓ In Stock (${avail})</span>`;
+                      } else if (itm.warehouse_id && avail > 0) {
+                        stockBadge = `<span class="badge" style="background:#fef9c3; color:#854d0e; font-size:0.68rem; padding:1px 5px; font-weight:700;">⚠️ Partial (${avail})</span>`;
+                      } else if (itm.warehouse_id) {
+                        stockBadge = `<span class="badge" style="background:#fee2e2; color:#991b1b; font-size:0.68rem; padding:1px 5px; font-weight:700;">✕ No Stock</span>`;
+                      } else {
+                        stockBadge = `<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.68rem; padding:1px 5px;">Procure</span>`;
+                      }
+
                       return `
                         <tr>
                           <td style="color:#64748b;">${idx + 1}</td>
-                          <td><strong>${itm.item_name || itm.item_description || 'Scope Item'}</strong></td>
-                          <td style="color:#64748b;">${itm.item_size || itm.size || itm.specifications || '-'}</td>
+                          <td>
+                            <strong>${escapeHtml(itm.item_name || itm.item_description || 'Scope Item')}</strong>
+                            ${(itm.brand_name || itm.product_brand_name) ? `<br><span style="font-size:0.72rem; color:#4338ca; font-weight:700;">🏷️ ${escapeHtml(itm.brand_name || itm.product_brand_name)}</span>` : ''}
+                            ${itm.batch_number ? `<span style="font-size:0.7rem; color:#475569; margin-left:4px;">Lot: ${escapeHtml(itm.batch_number)}</span>` : ''}
+                            ${(itm.manufacturing_date || itm.product_dom) ? `<br><span style="font-size:0.68rem; color:#475569;">DOM: ${formatDateDDMMYYYY(itm.manufacturing_date || itm.product_dom)}</span>` : ''}
+                            ${(itm.expiry_date || itm.product_doe) ? `<span style="font-size:0.68rem; color:#dc2626; margin-left:4px;">DOE: ${formatDateDDMMYYYY(itm.expiry_date || itm.product_doe)}</span>` : ''}
+                          </td>
+                          <td>
+                            <div style="font-size:0.75rem; font-weight:600; color:#1e293b;">${whName}</div>
+                            <div style="margin-top:2px;">${stockBadge}</div>
+                          </td>
+                          <td style="color:#64748b;">${escapeHtml(itm.item_size || itm.size || itm.specifications || '-')}</td>
                           <td style="text-align:right; font-weight:600;">${q.toLocaleString()}</td>
                           <td>${itm.unit || 'PCS'}</td>
+                          <td style="text-align:right; color:#475569;">${uc > 0 ? uc.toLocaleString() : '-'}</td>
                           <td style="text-align:right;">${up > 0 ? up.toLocaleString() : '-'}</td>
                           <td style="text-align:right; font-weight:700;">${tot > 0 ? tot.toLocaleString() : '-'}</td>
                         </tr>
@@ -5763,7 +6936,7 @@ async function onCostingTenderChanged(tenderId) {
             </div>
           ` : `
             <div style="font-size:0.82rem; color:#64748b; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px;">
-              ℹ️ Lump-sum tender opportunity: <strong>${target.tender_name || target.title}</strong> (Est. Value: ${currency} ${estVal.toLocaleString()})
+              ℹ️ Lump-sum tender opportunity: <strong>${target.tender_name || target.title}</strong> (Quoted Revenue: ${currency} ${estVal.toLocaleString()})
             </div>
           `}
         </div>
@@ -5771,36 +6944,41 @@ async function onCostingTenderChanged(tenderId) {
     `;
   }
 
-  // Populate Direct Cost Breakdown inputs
+  // Populate Cost Breakdown inputs
+  const revEl = document.getElementById('calc-tender-revenue');
   const supEl = document.getElementById('calc-sup-cost');
   const logEl = document.getElementById('calc-log-cost');
   const labEl = document.getElementById('calc-lab-cost');
   const ovhEl = document.getElementById('calc-ovh-cost');
   const expEl = document.getElementById('calc-exp-cost');
-  const markupEl = document.getElementById('calc-markup-pct');
 
   if (savedCosting) {
+    if (revEl) revEl.value = Math.round(parseFloat(savedCosting.final_bid_price || estVal)).toLocaleString();
     if (supEl) supEl.value = Math.round(parseFloat(savedCosting.supplier_cost_total || 0)).toLocaleString();
     if (logEl) logEl.value = Math.round(parseFloat(savedCosting.logistics_cost_total || 0)).toLocaleString();
     if (labEl) labEl.value = Math.round(parseFloat(savedCosting.labor_cost_total || 0)).toLocaleString();
     if (ovhEl) ovhEl.value = Math.round(parseFloat(savedCosting.overhead_cost_total || 0)).toLocaleString();
     if (expEl) expEl.value = Math.round(parseFloat(savedCosting.tender_expense_total || 0)).toLocaleString();
-    if (markupEl) markupEl.value = parseFloat(savedCosting.desired_markup_pct || 18.5);
   } else {
-    // Determine supplier cost: use items total if available, otherwise 70% of estimated value
-    const calculatedSupCost = itemsTotalSum > 0 ? itemsTotalSum : Math.round(estVal * 0.70);
-    const calculatedExp = (secAmount > 0 ? secAmount : Math.round(estVal * 0.02));
+    // Sourced supplier costs directly from line items in database
+    const itemsLandedCostSum = items.reduce((sum, itm) => {
+      const q = parseFloat(itm.quantity || 1);
+      const uc = parseFloat(itm.unit_cost || 0);
+      return sum + (uc > 0 ? (q * uc) : 0);
+    }, 0);
+    const calculatedExp = secAmount > 0 ? secAmount : 0;
 
-    if (supEl) supEl.value = calculatedSupCost.toLocaleString();
-    if (logEl) logEl.value = Math.round(estVal * 0.06).toLocaleString();
-    if (labEl) labEl.value = Math.round(estVal * 0.05).toLocaleString();
-    if (ovhEl) ovhEl.value = Math.round(estVal * 0.03).toLocaleString();
-    if (expEl) expEl.value = calculatedExp.toLocaleString();
-    if (markupEl) markupEl.value = '18.5';
+    if (revEl) revEl.value = Math.round(estVal).toLocaleString();
+    if (supEl) supEl.value = Math.round(itemsLandedCostSum).toLocaleString();
+    if (logEl) logEl.value = '0';
+    if (labEl) labEl.value = '0';
+    if (ovhEl) ovhEl.value = '0';
+    if (expEl) expEl.value = Math.round(calculatedExp).toLocaleString();
   }
 
-  recalculateCostSheet();
-  showToast(`✓ Loaded data for ${target.opportunity_number || 'Tender'} (${currency} ${estVal.toLocaleString()})`, 'info');
+  // If a Date Range is active, auto-include the general expenses logged for that date range
+  await syncGeneralExpensesForCostingDateRange();
+  showToast(`✓ Loaded Cost & Margin for ${target.opportunity_number || 'Tender'} (${currency} ${estVal.toLocaleString()})`, 'info');
 }
 
 function filterCostingTendersByDate() {
@@ -5823,16 +7001,17 @@ function filterCostingTendersByDate() {
 }
 
 async function saveCostingSheetForSelectedTender() {
-  const sup = parseCurrency(document.getElementById('calc-sup-cost')?.value);
-  const log = parseCurrency(document.getElementById('calc-log-cost')?.value);
-  const lab = parseCurrency(document.getElementById('calc-lab-cost')?.value);
-  const ovh = parseCurrency(document.getElementById('calc-ovh-cost')?.value);
-  const exp = parseCurrency(document.getElementById('calc-exp-cost')?.value);
-  const markup = parseFloat(document.getElementById('calc-markup-pct')?.value || 0);
+  const rev = parseCurrency(document.getElementById('calc-tender-revenue')?.value || 0);
+  const sup = parseCurrency(document.getElementById('calc-sup-cost')?.value || 0);
+  const log = parseCurrency(document.getElementById('calc-log-cost')?.value || 0);
+  const lab = parseCurrency(document.getElementById('calc-lab-cost')?.value || 0);
+  const ovh = parseCurrency(document.getElementById('calc-ovh-cost')?.value || 0);
+  const exp = parseCurrency(document.getElementById('calc-exp-cost')?.value || 0);
 
   const oppId = _selectedCostingOpportunity?.id || (document.getElementById('costing-filter-tender')?.value !== 'all' ? document.getElementById('costing-filter-tender')?.value : null);
   const oppTitle = _selectedCostingOpportunity?.tender_name || _selectedCostingOpportunity?.title || 'Tender Project';
   const oppNumber = _selectedCostingOpportunity?.opportunity_number || 'TND-2026';
+  const items = _selectedCostingOpportunity?.items || _selectedCostingOpportunity?.tender_items || [];
 
   const payload = {
     opportunity_id: oppId,
@@ -5841,13 +7020,14 @@ async function saveCostingSheetForSelectedTender() {
     tender_name: oppTitle,
     opportunity_title: oppTitle,
     opportunity_number: oppNumber,
+    final_bid_price: rev,
     supplier_cost_total: sup,
     logistics_cost_total: log,
     labor_cost_total: lab,
     overhead_cost_total: ovh,
     tender_expense_total: exp,
-    desired_markup_pct: markup,
-    approval_status: 'Pending Review'
+    approval_status: 'Pending Review',
+    items: items
   };
 
   const res = await API.saveCosting(payload);
@@ -5855,7 +7035,7 @@ async function saveCostingSheetForSelectedTender() {
     alert(`⚠️ Failed to save costing: ${res?.message || 'Database error. Record was NOT saved.'}`);
     return;
   }
-  showToast('✓ Costing sheet saved & submitted for Bid Governance Review!', 'success');
+  showToast('✓ Cost & Margin sheet saved successfully!', 'success');
   switchView('approvals');
 }
 
@@ -6564,15 +7744,19 @@ async function openNewTenderModal() {
     let customers = [];
     let profiles = [];
     try {
-      const [cRes, pRes, prRes] = await Promise.all([
+      const [cRes, pRes, prRes, wRes, wsRes] = await Promise.all([
         API.getCustomers(),
         API.getBusinessProfiles(),
-        API.getProducts()
+        API.getProducts(),
+        API.getWarehouses(),
+        API.getWarehouseStock()
       ]);
       customers = cRes || [];
       profiles = pRes || [];
       window._cachedProducts = prRes || [];
       window._cachedCustomers = customers;
+      window._cachedWarehouses = wRes || [];
+      window._cachedWarehouseStock = wsRes || [];
     } catch (e) {
       console.warn('Fallback loading options:', e.message);
     }
@@ -6675,15 +7859,19 @@ async function openEditTenderModal(id) {
 
     let customers = [], profiles = [];
     try {
-      const [cRes, pRes, prRes] = await Promise.all([
+      const [cRes, pRes, prRes, wRes, wsRes] = await Promise.all([
         API.getCustomers(),
         API.getBusinessProfiles(),
-        API.getProducts()
+        API.getProducts(),
+        API.getWarehouses(),
+        API.getWarehouseStock()
       ]);
       customers = cRes || [];
       profiles = pRes || [];
       window._cachedProducts = prRes || [];
       window._cachedCustomers = customers;
+      window._cachedWarehouses = wRes || [];
+      window._cachedWarehouseStock = wsRes || [];
     } catch (refErr) {
       console.warn('Edit modal references warning:', refErr.message);
     }
@@ -6840,6 +8028,7 @@ function addTenderItemRow(initialData = null) {
   if (!tbody) return;
   const rowIndex = _tenderLineItems.length;
   const products = window._cachedProducts || [];
+  const warehouses = window._cachedWarehouses || [];
 
   const rowId = `tnd-row-${rowIndex}`;
 
@@ -6858,6 +8047,12 @@ function addTenderItemRow(initialData = null) {
 
   const currentSize = initialData?.item_size || initialData?.size || initialData?.specifications || '';
   const currentVariant = initialData?.item_variant || initialData?.variant || '';
+  const currentWhId = initialData?.warehouse_id ? String(initialData.warehouse_id) : '';
+  const initialCost = parseFloat(initialData?.unit_cost || selectedProd?.cost_price || 0);
+  const currentBrand = initialData?.brand_name || selectedProd?.brand_name || '';
+  const currentBatch = initialData?.batch_number || selectedProd?.batch_number || '';
+  const currentDom = initialData?.manufacturing_date ? String(initialData.manufacturing_date).slice(0, 10) : (selectedProd?.manufacturing_date ? String(selectedProd.manufacturing_date).slice(0, 10) : '');
+  const currentDoe = initialData?.expiry_date ? String(initialData.expiry_date).slice(0, 10) : (selectedProd?.expiry_date ? String(selectedProd.expiry_date).slice(0, 10) : '');
 
   const rowHtml = `
     <tr id="${rowId}" data-index="${rowIndex}">
@@ -6867,12 +8062,39 @@ function addTenderItemRow(initialData = null) {
           ${products.map(p => {
             const stockVal = parseFloat(p.current_stock || 0);
             const stockText = stockVal % 1 === 0 ? stockVal : stockVal.toFixed(2);
-            return `<option value="${p.id}" ${(initialData && (initialData.product_service_id === p.id || initialData.product_id === p.id)) ? 'selected' : ''} data-name="${p.name}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} (Stock: ${stockText})</option>`;
+            return `<option value="${p.id}" ${(initialData && (String(initialData.product_service_id) === String(p.id) || String(initialData.product_id) === String(p.id))) ? 'selected' : ''} data-name="${p.name}" data-brand="${p.brand_name || ''}" data-batch="${p.batch_number || ''}" data-dom="${p.manufacturing_date || ''}" data-doe="${p.expiry_date || ''}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} ${p.brand_name ? `[${p.brand_name}]` : ''} (Stock: ${stockText})</option>`;
           }).join('')}
         </select>
       </td>
+      <td class="tnd-warehouse-cell" style="vertical-align:top; min-width: 150px;">
+        <select class="form-select tnd-item-warehouse" style="font-size:0.75rem; padding:3px 5px;" onchange="onTenderWarehouseSelect(${rowIndex}, this.value)">
+          <option value="">-- Direct Procure / No Stock --</option>
+          ${warehouses.map(w => {
+            const isSel = (currentWhId && currentWhId === String(w.id)) ? 'selected' : '';
+            return `<option value="${w.id}" ${isSel}>${w.name} (${w.warehouse_code || 'WH'})</option>`;
+          }).join('')}
+        </select>
+        <div class="tnd-stock-badge-container" id="tnd-stock-badge-${rowIndex}" style="margin-top:3px; font-size:0.72rem;">
+          <!-- Live stock badge injected here -->
+        </div>
+        <label style="display:flex; align-items:center; gap:4px; font-size:0.7rem; color:#475569; margin-top:3px; cursor:pointer;" title="Reserve available stock in warehouse for this tender">
+          <input type="checkbox" class="tnd-item-reserve" ${initialData?.stock_reserved ? 'checked' : ''} onchange="onTenderReserveToggle(${rowIndex})">
+          Reserve Stock
+        </label>
+        <input type="hidden" class="tnd-item-avail-stock" value="0">
+      </td>
       <td>
         <input type="text" class="form-input tnd-item-desc" required placeholder="Item Scope / Technical Description" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.item_description || initialData?.item_name || ''}" oninput="recalculateTenderItemsSum()">
+      </td>
+      <td>
+        <input type="text" class="form-input tnd-item-brand" placeholder="Brand Name" style="font-size:0.75rem; padding:4px 6px;" value="${currentBrand}">
+      </td>
+      <td>
+        <input type="text" class="form-input tnd-item-batch" placeholder="Batch #" style="font-size:0.72rem; padding:2px 4px; margin-bottom:2px;" value="${currentBatch}">
+        <div style="display:flex; gap:2px;">
+          <input type="date" class="form-input tnd-item-dom" title="Manufacturing Date [DOM]" style="font-size:0.68rem; padding:2px; width:50%;" value="${currentDom}">
+          <input type="date" class="form-input tnd-item-doe" title="Date Of Expiry [DOE]" style="font-size:0.68rem; padding:2px; width:50%;" value="${currentDoe}">
+        </div>
       </td>
       <td class="tnd-size-cell">
         ${(Array.isArray(prodSizes) && prodSizes.length > 0) ? `
@@ -6897,13 +8119,18 @@ function addTenderItemRow(initialData = null) {
         `}
       </td>
       <td>
-        <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="min-width:95px; width:100%; font-size:0.85rem; padding:4px 6px; text-align:center; font-weight:700;" oninput="recalculateTenderItemsSum()">
+        <input type="number" class="form-input tnd-item-qty" required min="1" step="1" value="${initialData?.quantity || 1}" style="min-width:65px; width:100%; font-size:0.85rem; padding:4px 6px; text-align:center; font-weight:700;" oninput="updateTenderStockBadge(${rowIndex}); recalculateTenderItemsSum();">
       </td>
       <td>
         <input list="uom-datalist" type="text" class="form-input tnd-item-unit" value="${initialData?.unit || 'PCS'}" style="font-size:0.78rem; padding:4px 6px;" placeholder="e.g. PCS, Nos">
       </td>
-      <td>
+      <td style="vertical-align:top;">
+        <input type="hidden" class="tnd-item-cost" value="${initialCost}">
+        <div class="tnd-cost-disp" style="font-size:0.7rem; color:#64748b; margin-bottom:2px;">
+          Cost: PKR ${Math.round(initialCost).toLocaleString()}
+        </div>
         <input type="text" class="form-input tnd-item-price" placeholder="0" style="font-size:0.78rem; padding:4px 6px;" value="${initialData?.estimated_unit_price ? Number(initialData.estimated_unit_price).toLocaleString() : (initialData?.unit_price ? Number(initialData.unit_price).toLocaleString() : '0')}" oninput="formatCurrencyInput(this); recalculateTenderItemsSum();">
+        <div class="tnd-margin-badge" id="tnd-margin-badge-${rowIndex}" style="font-size:0.68rem; margin-top:2px;"></div>
       </td>
       <td>
         <strong class="tnd-item-total" style="font-size:0.8rem; color:#0f172a; display:block; padding:4px 0;">${initialData?.estimated_total_price ? Number(initialData.estimated_total_price).toLocaleString() : '0'}</strong>
@@ -6918,30 +8145,99 @@ function addTenderItemRow(initialData = null) {
   _tenderLineItems.push({
     index: rowIndex,
     product_service_id: initialData?.product_service_id || null,
+    warehouse_id: initialData?.warehouse_id || null,
+    brand_name: currentBrand,
+    batch_number: currentBatch,
+    manufacturing_date: currentDom,
+    expiry_date: currentDoe,
     item_description: initialData?.item_description || '',
     item_size: currentSize,
     item_variant: currentVariant,
     quantity: initialData?.quantity || 1,
     unit: initialData?.unit || 'PCS',
+    unit_cost: initialCost,
     estimated_unit_price: initialData?.estimated_unit_price || 0,
     estimated_total_price: initialData?.estimated_total_price || 0
   });
 
+  updateTenderStockBadge(rowIndex);
   recalculateTenderItemsSum();
 }
+
+function onTenderWarehouseSelect(rowIndex, warehouseId) {
+  updateTenderStockBadge(rowIndex);
+  recalculateTenderItemsSum();
+}
+window.onTenderWarehouseSelect = onTenderWarehouseSelect;
+
+function onTenderReserveToggle(rowIndex) {
+  const row = document.getElementById(`tnd-row-${rowIndex}`);
+  if (!row) return;
+  const reserveCheck = row.querySelector('.tnd-item-reserve');
+  const availStock = parseFloat(row.querySelector('.tnd-item-avail-stock')?.value || 0);
+  if (reserveCheck && reserveCheck.checked && availStock <= 0) {
+    showToast('⚠️ No available warehouse stock to reserve. Will register as back-order reservation.', 'warning');
+  }
+}
+window.onTenderReserveToggle = onTenderReserveToggle;
+
+function updateTenderStockBadge(rowIndex) {
+  const row = document.getElementById(`tnd-row-${rowIndex}`);
+  if (!row) return;
+
+  const prodId = row.querySelector('.tnd-item-product')?.value;
+  const whId = row.querySelector('.tnd-item-warehouse')?.value;
+  const qty = parseFloat(row.querySelector('.tnd-item-qty')?.value || 0);
+  const badgeContainer = document.getElementById(`tnd-stock-badge-${rowIndex}`);
+  const availInput = row.querySelector('.tnd-item-avail-stock');
+  const costInput = row.querySelector('.tnd-item-cost');
+  const costDisp = row.querySelector('.tnd-cost-disp');
+
+  if (!whId) {
+    if (badgeContainer) badgeContainer.innerHTML = '<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.68rem; padding:1px 5px;">Direct Procure</span>';
+    if (availInput) availInput.value = '0';
+    return;
+  }
+
+  const stockList = window._cachedWarehouseStock || [];
+  const entry = stockList.find(s => String(s.product_id) === String(prodId) && String(s.warehouse_id) === String(whId));
+  const avail = entry ? parseFloat(entry.available_quantity || entry.quantity_on_hand || 0) : 0;
+  const cost = entry && parseFloat(entry.cost_price || 0) > 0 ? parseFloat(entry.cost_price) : 0;
+
+  if (availInput) availInput.value = avail;
+
+  if (cost > 0) {
+    if (costInput) costInput.value = cost;
+    if (costDisp) costDisp.innerText = `Cost: PKR ${Math.round(cost).toLocaleString()}`;
+  }
+
+  if (!badgeContainer) return;
+
+  if (avail >= qty && qty > 0) {
+    badgeContainer.innerHTML = `<span class="badge" style="background:#dcfce7; color:#166534; font-size:0.68rem; padding:1px 5px; font-weight:700;">✓ In Stock (${avail} avail)</span>`;
+  } else if (avail > 0) {
+    badgeContainer.innerHTML = `<span class="badge" style="background:#fef9c3; color:#854d0e; font-size:0.68rem; padding:1px 5px; font-weight:700;">⚠️ Partial (${avail} avail / need ${qty})</span>`;
+  } else {
+    badgeContainer.innerHTML = `<span class="badge" style="background:#fee2e2; color:#991b1b; font-size:0.68rem; padding:1px 5px; font-weight:700;">✕ No Stock (0 avail)</span>`;
+  }
+}
+window.updateTenderStockBadge = updateTenderStockBadge;
 
 function onTenderProductSelect(rowIndex, productId) {
   const row = document.getElementById(`tnd-row-${rowIndex}`);
   if (!row) return;
 
   const products = window._cachedProducts || [];
-  const prod = products.find(p => p.id === productId);
+  const prod = products.find(p => String(p.id) === String(productId));
 
   const descInput = row.querySelector('.tnd-item-desc');
   const sizeCell = row.querySelector('.tnd-size-cell');
   const variantCell = row.querySelector('.tnd-variant-cell');
   const unitInput = row.querySelector('.tnd-item-unit');
   const priceInput = row.querySelector('.tnd-item-price');
+  const costInput = row.querySelector('.tnd-item-cost');
+  const costDisp = row.querySelector('.tnd-cost-disp');
+  const whSelect = row.querySelector('.tnd-item-warehouse');
 
   if (prod) {
     // 1. Fix Item Description: display specification / description instead of product name
@@ -6995,6 +8291,32 @@ function onTenderProductSelect(rowIndex, productId) {
       priceInput.value = prod.selling_price ? Number(prod.selling_price).toLocaleString() : '0';
       formatCurrencyInput(priceInput);
     }
+
+    const brandInput = row.querySelector('.tnd-item-brand');
+    const batchInput = row.querySelector('.tnd-item-batch');
+    const domInput = row.querySelector('.tnd-item-dom');
+    const doeInput = row.querySelector('.tnd-item-doe');
+    if (brandInput && prod.brand_name) brandInput.value = prod.brand_name;
+    if (batchInput && prod.batch_number) batchInput.value = prod.batch_number;
+    if (domInput && prod.manufacturing_date) domInput.value = String(prod.manufacturing_date).slice(0, 10);
+    if (doeInput && prod.expiry_date) doeInput.value = String(prod.expiry_date).slice(0, 10);
+
+    const initialCost = parseFloat(prod.cost_price || 0);
+    if (costInput) costInput.value = initialCost;
+    if (costDisp) costDisp.innerText = `Cost: PKR ${Math.round(initialCost).toLocaleString()}`;
+
+    // Auto-select warehouse that has available stock for this product
+    if (whSelect && !whSelect.value) {
+      const stockList = window._cachedWarehouseStock || [];
+      const stockInWh = stockList.find(s => String(s.product_id) === String(productId) && parseFloat(s.available_quantity || 0) > 0);
+      if (stockInWh) {
+        whSelect.value = stockInWh.warehouse_id;
+      } else if ((window._cachedWarehouses || []).length > 0) {
+        whSelect.value = window._cachedWarehouses[0].id;
+      }
+    }
+
+    updateTenderStockBadge(rowIndex);
   } else {
     // Revert to open inputs if Custom Scope Item chosen
     if (sizeCell) {
@@ -7003,6 +8325,9 @@ function onTenderProductSelect(rowIndex, productId) {
     if (variantCell) {
       variantCell.innerHTML = `<input type="text" class="form-input tnd-item-variant" placeholder="Variant / Type" style="font-size:0.78rem; padding:4px 6px;">`;
     }
+    if (costInput) costInput.value = '0';
+    if (costDisp) costDisp.innerText = 'Cost: PKR 0';
+    updateTenderStockBadge(rowIndex);
   }
 
   recalculateTenderItemsSum();
@@ -7043,24 +8368,32 @@ function recalculateTenderItemsSum() {
   let subtotal = 0;
   let hasLossAlert = false;
 
-  rows.forEach(row => {
+  rows.forEach((row, idx) => {
     const qtyInput = row.querySelector('.tnd-item-qty');
     const priceInput = row.querySelector('.tnd-item-price');
     const totalEl = row.querySelector('.tnd-item-total');
-    const prodSelect = row.querySelector('.tnd-item-product');
+    const costInput = row.querySelector('.tnd-item-cost');
+    const marginBadge = row.querySelector('.tnd-margin-badge');
 
     const qty = parseFloat(qtyInput?.value || 0);
     const unitPrice = parseCurrency(priceInput?.value || '0');
+    const costPrice = parseFloat(costInput?.value || 0);
     const lineTotal = qty * unitPrice;
 
     if (totalEl) totalEl.innerText = lineTotal.toLocaleString();
     subtotal += lineTotal;
 
-    if (prodSelect && prodSelect.value) {
-      const opt = prodSelect.selectedOptions[0];
-      const costPrice = parseFloat(opt?.getAttribute('data-cost') || 0);
-      if (costPrice > 0 && unitPrice > 0 && unitPrice < costPrice) {
-        hasLossAlert = true;
+    if (marginBadge) {
+      if (unitPrice > 0 && costPrice > 0) {
+        const marginPct = ((unitPrice - costPrice) / unitPrice) * 100;
+        if (marginPct >= 0) {
+          marginBadge.innerHTML = `<span style="color:#16a34a; font-weight:700;">+${marginPct.toFixed(1)}% margin</span>`;
+        } else {
+          marginBadge.innerHTML = `<span style="color:#dc2626; font-weight:700;">⚠️ ${marginPct.toFixed(1)}% Loss</span>`;
+          hasLossAlert = true;
+        }
+      } else {
+        marginBadge.innerHTML = '';
       }
     }
   });
@@ -7163,6 +8496,14 @@ async function submitNewTenderForm() {
     const items = [];
     rows.forEach(row => {
       const prodId = row.querySelector('.tnd-item-product')?.value || null;
+      const whId = row.querySelector('.tnd-item-warehouse')?.value || null;
+      const isReserved = row.querySelector('.tnd-item-reserve')?.checked || false;
+      const brandName = row.querySelector('.tnd-item-brand')?.value?.trim() || null;
+      const batchNo = row.querySelector('.tnd-item-batch')?.value?.trim() || null;
+      const dom = row.querySelector('.tnd-item-dom')?.value || null;
+      const doe = row.querySelector('.tnd-item-doe')?.value || null;
+      const availStock = parseFloat(row.querySelector('.tnd-item-avail-stock')?.value || 0);
+      const unitCost = parseFloat(row.querySelector('.tnd-item-cost')?.value || 0);
       const itemDesc = row.querySelector('.tnd-item-desc')?.value?.trim();
       const itemSize = row.querySelector('.tnd-item-size')?.value?.trim() || '';
       const itemVariant = row.querySelector('.tnd-item-variant')?.value?.trim() || '';
@@ -7173,6 +8514,14 @@ async function submitNewTenderForm() {
       if (itemDesc) {
         items.push({
           product_service_id: prodId,
+          warehouse_id: whId,
+          brand_name: brandName,
+          batch_number: batchNo,
+          manufacturing_date: dom,
+          expiry_date: doe,
+          stock_reserved: isReserved,
+          stock_at_time_of_tender: availStock,
+          unit_cost: unitCost,
           item_name: itemDesc,
           item_description: itemDesc,
           item_size: itemSize,
@@ -9172,6 +10521,10 @@ async function printDeliveryChallan(dcId) {
             <td style="text-align:center; font-weight:600;">${idx + 1}</td>
             <td>
               <strong>${it.item_name || it.item_description || 'Scope Item'}</strong>
+              ${it.brand_name ? `<br><span style="font-size:11px; color:#4338ca; font-weight:700;">Brand: ${it.brand_name}</span>` : ''}
+              ${it.batch_number ? `<span style="font-size:11px; color:#475569; margin-left:6px;">Batch #: ${it.batch_number}</span>` : ''}
+              ${it.manufacturing_date ? `<br><span style="font-size:10.5px; color:#64748b;">DOM: ${formatDateDDMMYYYY(it.manufacturing_date)}</span>` : ''}
+              ${it.expiry_date ? `<span style="font-size:10.5px; color:#dc2626; margin-left:6px;">DOE: ${formatDateDDMMYYYY(it.expiry_date)}</span>` : ''}
             </td>
             <td style="text-align:center; font-weight:600; color:#64748b;">${it.ordered_quantity || it.quantity || '-'}</td>
             <td style="text-align:center; font-weight:800; color:#059669; font-size:13px;">${it.quantity || it.dispatched_quantity || 1}</td>
@@ -9351,10 +10704,18 @@ async function handleDCPOSSelected(poId) {
         <tr id="dc-item-row-${idx}">
           <td>
             <strong>${it.item_name || it.item_description || 'Item Specification'}</strong>
+            ${it.brand_name ? `<br><span style="font-size:0.72rem; color:#4338ca; font-weight:700;">🏷️ ${it.brand_name}</span>` : ''}
+            ${it.batch_number ? `<span style="font-size:0.7rem; color:#475569; margin-left:4px;">Lot: ${it.batch_number}</span>` : ''}
+            ${it.manufacturing_date ? `<br><span style="font-size:0.68rem; color:#475569;">DOM: ${formatDateDDMMYYYY(it.manufacturing_date)}</span>` : ''}
+            ${it.expiry_date ? `<span style="font-size:0.68rem; color:#dc2626; margin-left:4px;">DOE: ${formatDateDDMMYYYY(it.expiry_date)}</span>` : ''}
             <input type="hidden" id="dc-item-name-${idx}" value="${(it.item_name || it.item_description || '').replace(/"/g, '&quot;')}">
             <input type="hidden" id="dc-item-poi-id-${idx}" value="${it.id || ''}">
             <input type="hidden" id="dc-item-prod-id-${idx}" value="${it.product_service_id || ''}">
             <input type="hidden" id="dc-item-unit-${idx}" value="${it.unit || 'PCS'}">
+            <input type="hidden" id="dc-item-brand-${idx}" value="${it.brand_name || ''}">
+            <input type="hidden" id="dc-item-batch-${idx}" value="${it.batch_number || ''}">
+            <input type="hidden" id="dc-item-dom-${idx}" value="${it.manufacturing_date || ''}">
+            <input type="hidden" id="dc-item-doe-${idx}" value="${it.expiry_date || ''}">
           </td>
           <td>${totalOrderedQty} ${it.unit || 'PCS'}</td>
           <td style="color:#64748b;">${priorDelivered} ${it.unit || 'PCS'}</td>
@@ -9427,7 +10788,11 @@ async function submitDeliveryChallanForm() {
           item_name: itemName,
           ordered_quantity: parseFloat(it.quantity || qty),
           quantity: qty,
-          unit: unit || 'PCS'
+          unit: unit || 'PCS',
+          brand_name: document.getElementById(`dc-item-brand-${idx}`)?.value || null,
+          batch_number: document.getElementById(`dc-item-batch-${idx}`)?.value || null,
+          manufacturing_date: document.getElementById(`dc-item-dom-${idx}`)?.value || null,
+          expiry_date: document.getElementById(`dc-item-doe-${idx}`)?.value || null
         });
       }
     }
@@ -10567,6 +11932,31 @@ function setAdminClientFilter(tenantId) {
 }
 window.setAdminClientFilter = setAdminClientFilter;
 
+function handleProductItemTypeChange(itemType) {
+  const card = document.getElementById('prod-medicine-batch-card');
+  const tag = document.getElementById('prod-medicine-tag');
+  const icon = document.getElementById('prod-batch-icon');
+  const title = document.getElementById('prod-batch-title');
+  if (!card) return;
+
+  if (itemType === 'Medicine') {
+    card.style.background = '#f0fdf4';
+    card.style.borderColor = '#86efac';
+    card.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.15)';
+    if (tag) tag.style.display = 'inline-block';
+    if (icon) icon.innerText = '💊';
+    if (title) title.innerText = 'Medicine Specifications & Lifecyle Tracking';
+  } else {
+    card.style.background = '#f8fafc';
+    card.style.borderColor = '#cbd5e1';
+    card.style.boxShadow = 'none';
+    if (tag) tag.style.display = 'none';
+    if (icon) icon.innerText = '📦';
+    if (title) title.innerText = 'Batch & Lifecyle Tracking';
+  }
+}
+window.handleProductItemTypeChange = handleProductItemTypeChange;
+
 async function openNewProductModal() {
   const form = document.getElementById('form-add-product');
   if (form) form.reset();
@@ -10592,6 +11982,8 @@ async function openNewProductModal() {
   if (skuEl) skuEl.value = `SKU-${yyyymm}-${Math.floor(1000 + Math.random() * 9000)}`;
   const nameEl = document.getElementById('prod-name');
   if (nameEl) nameEl.value = '';
+  const brandEl = document.getElementById('prod-brand-name');
+  if (brandEl) brandEl.value = '';
   const specEl = document.getElementById('prod-spec');
   if (specEl) specEl.value = '';
   const typeEl = document.getElementById('prod-type');
@@ -10600,6 +11992,8 @@ async function openNewProductModal() {
   if (unitEl) unitEl.value = 'PCS';
   const batchEl = document.getElementById('prod-batch-no');
   if (batchEl) batchEl.value = '';
+  const mfgEl = document.getElementById('prod-mfg-date');
+  if (mfgEl) mfgEl.value = '';
   const hsEl = document.getElementById('prod-hs-code');
   if (hsEl) hsEl.value = '';
   const taxEl = document.getElementById('prod-tax-cat');
@@ -10626,6 +12020,7 @@ async function openNewProductModal() {
     if (title) title.innerHTML = '📦 Register Master Product / Item SKU';
   }
 
+  handleProductItemTypeChange('Product');
   checkProductSellingPriceMargin();
   openModal('modal-add-product');
 }
@@ -10648,12 +12043,18 @@ async function openEditProductModal(id) {
   document.getElementById('prod-edit-id').value = p.id;
   document.getElementById('prod-sku').value = p.sku || '';
   document.getElementById('prod-name').value = p.name || '';
+  const brandEl = document.getElementById('prod-brand-name');
+  if (brandEl) brandEl.value = p.brand_name || '';
   const specEl = document.getElementById('prod-spec');
   if (specEl) specEl.value = p.specifications || p.spec || '';
   document.getElementById('prod-type').value = p.item_type || 'Product';
   document.getElementById('prod-unit').value = p.unit || 'PCS';
   const batchEl = document.getElementById('prod-batch-no');
   if (batchEl) batchEl.value = p.batch_number || p.batch_no || '';
+  const mfgEl = document.getElementById('prod-mfg-date');
+  if (mfgEl) mfgEl.value = p.manufacturing_date ? String(p.manufacturing_date).slice(0, 10) : '';
+  const expEl = document.getElementById('prod-expiry-date');
+  if (expEl) expEl.value = p.expiry_date ? String(p.expiry_date).slice(0, 10) : '';
   const hsEl = document.getElementById('prod-hs-code');
   if (hsEl) hsEl.value = p.hs_code || '';
   const taxEl = document.getElementById('prod-tax-cat');
@@ -10666,8 +12067,6 @@ async function openEditProductModal(id) {
   if (costEl) costEl.value = p.cost_price ? Number(p.cost_price).toLocaleString() : '';
   const sellEl = document.getElementById('prod-selling-price');
   if (sellEl) sellEl.value = p.selling_price ? Number(p.selling_price).toLocaleString() : '';
-  const expEl = document.getElementById('prod-expiry-date');
-  if (expEl) expEl.value = p.expiry_date || '';
   const descEl = document.getElementById('prod-description');
   if (descEl) descEl.value = p.description || '';
 
@@ -10706,6 +12105,7 @@ async function openEditProductModal(id) {
     if (title) title.innerHTML = '✏️ Edit Master Product SKU';
   }
 
+  handleProductItemTypeChange(p.item_type || 'Product');
   checkProductSellingPriceMargin();
   openModal('modal-add-product');
 }
@@ -10723,10 +12123,13 @@ async function submitNewProductForm() {
   const editId = document.getElementById('prod-edit-id')?.value;
   const sku = document.getElementById('prod-sku')?.value?.trim();
   const name = document.getElementById('prod-name')?.value?.trim();
+  const brand = document.getElementById('prod-brand-name')?.value?.trim() || null;
   const spec = document.getElementById('prod-spec')?.value?.trim() || '';
   const type = document.getElementById('prod-type')?.value || 'Product';
   const unit = document.getElementById('prod-unit')?.value?.trim() || 'PCS';
-  const batchNo = document.getElementById('prod-batch-no')?.value?.trim() || '';
+  const batchNo = document.getElementById('prod-batch-no')?.value?.trim() || null;
+  const mfgDate = document.getElementById('prod-mfg-date')?.value || null;
+  const expDate = document.getElementById('prod-expiry-date')?.value || null;
   const hsCode = document.getElementById('prod-hs-code')?.value?.trim() || '';
   const taxCat = document.getElementById('prod-tax-cat')?.value || '18% Standard Sales Tax';
   const supplierId = document.getElementById('prod-supplier-select')?.value || document.getElementById('prod-supplier')?.value || null;
@@ -10736,7 +12139,6 @@ async function submitNewProductForm() {
   const cost = parseCurrency(costInput?.value || 0);
   const priceInput = document.getElementById('prod-selling-price');
   const price = parseCurrency(priceInput?.value || 0);
-  const expDate = document.getElementById('prod-expiry-date')?.value || null;
   const desc = document.getElementById('prod-description')?.value?.trim() || '';
 
   if (!sku || !name || isNaN(cost)) {
@@ -10771,6 +12173,7 @@ async function submitNewProductForm() {
     const payload = {
       sku: sku,
       name: name,
+      brand_name: brand,
       specifications: spec,
       sizes: _currentProductSizes,
       variants: _currentProductVariants,
@@ -10778,6 +12181,8 @@ async function submitNewProductForm() {
       unit: unit,
       batch_number: batchNo,
       batch_no: batchNo,
+      manufacturing_date: mfgDate,
+      expiry_date: expDate,
       hs_code: hsCode,
       tax_category: taxCat,
       default_supplier_id: supplierId,
@@ -10785,7 +12190,6 @@ async function submitNewProductForm() {
       reorder_level: reorder,
       cost_price: cost,
       selling_price: price || cost,
-      expiry_date: expDate,
       description: desc
     };
 

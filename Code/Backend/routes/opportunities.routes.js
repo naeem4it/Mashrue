@@ -110,11 +110,18 @@ router.get('/:id', authenticate, requirePermission('opportunities', 'view'), asy
       return res.status(404).json({ success: false, message: 'Opportunity/Tender not found' });
     }
 
-    // Fetch Tender Items
+    // Fetch Tender Items with linked Warehouse and Product Stock
     const itemsRes = await db.query(
-      `SELECT ti.*, p.sku, p.current_stock
+      `SELECT ti.*, 
+              p.sku, p.current_stock, p.cost_price as standard_cost_price,
+              p.item_type as product_item_type, p.brand_name as product_brand_name,
+              w.warehouse_name, w.city as warehouse_city,
+              ws.quantity_on_hand as warehouse_stock_on_hand,
+              (COALESCE(ws.quantity_on_hand, 0) - COALESCE(ws.quantity_reserved, 0)) as warehouse_stock_available
        FROM tender_items ti
        LEFT JOIN products_services p ON ti.product_service_id = p.id
+       LEFT JOIN warehouses w ON ti.warehouse_id = w.id
+       LEFT JOIN warehouse_stock ws ON (ti.warehouse_id = ws.warehouse_id AND ti.product_service_id = ws.product_id)
        WHERE ti.opportunity_id::text = $1 
        ORDER BY ti.created_at ASC`,
       [String(req.params.id)]
@@ -302,59 +309,80 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
     // Insert Items if provided (Auto-population)
     if (items && Array.isArray(items) && items.length > 0) {
       for (const itm of items) {
+        const prodId = itm.product_service_id || null;
+        const whId = itm.warehouse_id || null;
+        const itemQty = parseFloat(itm.quantity || 1);
+        const unitCost = parseFloat(itm.unit_cost || 0);
+        const estUnitPrice = parseFloat(itm.estimated_unit_price || 0);
+        const estTotalPrice = estUnitPrice * itemQty;
+        const isReserved = !!itm.stock_reserved;
+        const batchNo = itm.batch_number || null;
+        const brandName = itm.brand_name || null;
+        const dom = parseSafeDate(itm.manufacturing_date || itm.dom);
+        const doe = parseSafeDate(itm.expiry_date || itm.doe);
+        const stockAtTender = parseFloat(itm.stock_at_time_of_tender || 0);
+
         try {
           await db.query(
             `INSERT INTO tender_items 
-             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size, item_variant)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+             (opportunity_id, product_service_id, warehouse_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size, item_variant, batch_number, stock_at_time_of_tender, stock_reserved, unit_cost, brand_name, manufacturing_date, expiry_date)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
             [
               createdOpp.id,
-              itm.product_service_id || null,
+              prodId,
+              whId,
               itm.item_name || 'Generic Item',
               itm.item_description || '',
-              parseFloat(itm.quantity || 1),
+              itemQty,
               itm.unit || 'PCS',
-              parseFloat(itm.estimated_unit_price || 0),
-              parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
+              estUnitPrice,
+              estTotalPrice,
               itm.item_size || itm.size || null,
-              itm.item_variant || itm.variant || null
+              itm.item_variant || itm.variant || null,
+              batchNo,
+              stockAtTender,
+              isReserved,
+              unitCost,
+              brandName,
+              dom,
+              doe
             ]
           );
-        } catch (colErr) {
-          try {
+
+          // If reservation requested and warehouse selected, register stock reservation
+          if (isReserved && prodId && whId) {
             await db.query(
-              `INSERT INTO tender_items 
-               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-              [
-                createdOpp.id,
-                itm.product_service_id || null,
-                itm.item_name || 'Generic Item',
-                itm.item_description || '',
-                parseFloat(itm.quantity || 1),
-                itm.unit || 'PCS',
-                parseFloat(itm.estimated_unit_price || 0),
-                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
-                itm.item_size || itm.size || null
-              ]
+              `INSERT INTO stock_reservations 
+               (tenant_id, opportunity_id, product_id, warehouse_id, batch_number, reserved_quantity, status, reserved_by)
+               VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7)`,
+              [tenantId, createdOpp.id, prodId, whId, batchNo || 'LOT-PRIMARY', itemQty, req.user?.id || null]
             );
-          } catch (fallbackErr) {
+
             await db.query(
-              `INSERT INTO tender_items 
-               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [
-                createdOpp.id,
-                itm.product_service_id || null,
-                itm.item_name || 'Generic Item',
-                (itm.item_size ? `${itm.item_description || ''} (Size: ${itm.item_size})` : itm.item_description) || '',
-                parseFloat(itm.quantity || 1),
-                itm.unit || 'PCS',
-                parseFloat(itm.estimated_unit_price || 0),
-                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
-              ]
+              `INSERT INTO warehouse_stock (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved)
+               VALUES ($1, $2, $3, $4, 0, $5)
+               ON CONFLICT (warehouse_id, product_id, batch_number)
+               DO UPDATE SET quantity_reserved = warehouse_stock.quantity_reserved + $5, updated_at = CURRENT_TIMESTAMP`,
+              [tenantId, whId, prodId, batchNo || 'LOT-PRIMARY', itemQty]
             );
           }
+        } catch (colErr) {
+          await db.query(
+            `INSERT INTO tender_items 
+             (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              createdOpp.id,
+              prodId,
+              itm.item_name || 'Generic Item',
+              itm.item_description || '',
+              itemQty,
+              itm.unit || 'PCS',
+              estUnitPrice,
+              estTotalPrice,
+              itm.item_size || itm.size || null
+            ]
+          );
         }
       }
     }
@@ -402,19 +430,21 @@ router.post('/:id/select', authenticate, requirePermission('opportunities', 'edi
 
 // POST Add or update Tender Items
 router.post('/:id/items', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
-  const { product_service_id, item_name, item_description, quantity, unit, estimated_unit_price } = req.body;
+  const { product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, brand_name, batch_number, manufacturing_date, expiry_date, dom, doe } = req.body;
 
   try {
     const qty = parseFloat(quantity || 1);
     const unitPrice = parseFloat(estimated_unit_price || 0);
     const totalPrice = qty * unitPrice;
+    const safeDom = parseSafeDate(manufacturing_date || dom);
+    const safeDoe = parseSafeDate(expiry_date || doe);
 
     const result = await db.query(
       `INSERT INTO tender_items 
-       (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, brand_name, batch_number, manufacturing_date, expiry_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
-      [req.params.id, product_service_id || null, item_name, item_description || '', qty, unit || 'PCS', unitPrice, totalPrice]
+      [req.params.id, product_service_id || null, item_name, item_description || '', qty, unit || 'PCS', unitPrice, totalPrice, brand_name || null, batch_number || null, safeDom, safeDoe]
     );
 
     res.status(201).json({ success: true, data: result.rows[0], message: 'Item added to tender' });
@@ -536,61 +566,96 @@ router.put('/:id', optionalAuth, async (req, res) => {
     // Synchronize tender items if passed
     if (items && Array.isArray(items)) {
       try {
+        // Release previous reservations for this opportunity first before re-syncing
+        const oldRes = await db.query(`SELECT * FROM stock_reservations WHERE opportunity_id = $1 AND status = 'Active'`, [req.params.id]);
+        for (const r of oldRes.rows) {
+          await db.query(
+            `UPDATE warehouse_stock 
+             SET quantity_reserved = GREATEST(0, quantity_reserved - $1), updated_at = CURRENT_TIMESTAMP
+             WHERE warehouse_id = $2 AND product_id = $3 AND batch_number = $4`,
+            [parseFloat(r.reserved_quantity), r.warehouse_id, r.product_id, r.batch_number]
+          );
+        }
+        await db.query(`DELETE FROM stock_reservations WHERE opportunity_id = $1`, [req.params.id]);
         await db.query(`DELETE FROM tender_items WHERE opportunity_id = $1`, [req.params.id]);
+
+        const oppTenantId = result.rows[0]?.tenant_id || req.user?.tenantId || 'a0000000-0000-0000-0000-000000000001';
+
         for (const itm of items) {
+          const prodId = itm.product_service_id || null;
+          const whId = itm.warehouse_id || null;
+          const itemQty = parseFloat(itm.quantity || 1);
+          const unitCost = parseFloat(itm.unit_cost || 0);
+          const estUnitPrice = parseFloat(itm.estimated_unit_price || 0);
+          const estTotalPrice = estUnitPrice * itemQty;
+          const isReserved = !!itm.stock_reserved;
+          const batchNo = itm.batch_number || null;
+          const brandName = itm.brand_name || null;
+          const dom = parseSafeDate(itm.manufacturing_date || itm.dom);
+          const doe = parseSafeDate(itm.expiry_date || itm.doe);
+          const stockAtTender = parseFloat(itm.stock_at_time_of_tender || 0);
+
           try {
             await db.query(
               `INSERT INTO tender_items 
-               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size, item_variant)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+               (opportunity_id, product_service_id, warehouse_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size, item_variant, batch_number, stock_at_time_of_tender, stock_reserved, unit_cost, brand_name, manufacturing_date, expiry_date)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
               [
                 req.params.id,
-                itm.product_service_id || null,
+                prodId,
+                whId,
                 itm.item_name || itm.item_description || 'Scope Item',
                 itm.item_description || itm.item_name || '',
-                parseFloat(itm.quantity || 1),
+                itemQty,
                 itm.unit || 'PCS',
-                parseFloat(itm.estimated_unit_price || 0),
-                parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
+                estUnitPrice,
+                estTotalPrice,
                 itm.item_size || itm.size || null,
-                itm.item_variant || itm.variant || null
+                itm.item_variant || itm.variant || null,
+                batchNo,
+                stockAtTender,
+                isReserved,
+                unitCost,
+                brandName,
+                dom,
+                doe
               ]
             );
-          } catch (colErr) {
-            try {
+
+            // If reservation requested and warehouse selected, register stock reservation
+            if (isReserved && prodId && whId) {
               await db.query(
-                `INSERT INTO tender_items 
-                 (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                [
-                  req.params.id,
-                  itm.product_service_id || null,
-                  itm.item_name || itm.item_description || 'Scope Item',
-                  itm.item_description || itm.item_name || '',
-                  parseFloat(itm.quantity || 1),
-                  itm.unit || 'PCS',
-                  parseFloat(itm.estimated_unit_price || 0),
-                  parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1),
-                  itm.item_size || itm.size || null
-                ]
+                `INSERT INTO stock_reservations 
+                 (tenant_id, opportunity_id, product_id, warehouse_id, batch_number, reserved_quantity, status, reserved_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7)`,
+                [oppTenantId, req.params.id, prodId, whId, batchNo || 'LOT-PRIMARY', itemQty, req.user?.id || null]
               );
-            } catch (fallbackErr) {
+
               await db.query(
-                `INSERT INTO tender_items 
-                 (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [
-                  req.params.id,
-                  itm.product_service_id || null,
-                  itm.item_name || itm.item_description || 'Scope Item',
-                  (itm.item_size ? `${itm.item_description || itm.item_name || ''} (Size: ${itm.item_size})` : (itm.item_description || itm.item_name)) || '',
-                  parseFloat(itm.quantity || 1),
-                  itm.unit || 'PCS',
-                  parseFloat(itm.estimated_unit_price || 0),
-                  parseFloat(itm.estimated_unit_price || 0) * parseFloat(itm.quantity || 1)
-                ]
+                `INSERT INTO warehouse_stock (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved)
+                 VALUES ($1, $2, $3, $4, 0, $5)
+                 ON CONFLICT (warehouse_id, product_id, batch_number)
+                 DO UPDATE SET quantity_reserved = warehouse_stock.quantity_reserved + $5, updated_at = CURRENT_TIMESTAMP`,
+                [oppTenantId, whId, prodId, batchNo || 'LOT-PRIMARY', itemQty]
               );
             }
+          } catch (colErr) {
+            await db.query(
+              `INSERT INTO tender_items 
+               (opportunity_id, product_service_id, item_name, item_description, quantity, unit, estimated_unit_price, estimated_total_price, item_size)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [
+                req.params.id,
+                prodId,
+                itm.item_name || itm.item_description || 'Scope Item',
+                itm.item_description || itm.item_name || '',
+                itemQty,
+                itm.unit || 'PCS',
+                estUnitPrice,
+                estTotalPrice,
+                itm.item_size || itm.size || null
+              ]
+            );
           }
         }
       } catch (itemErr) {

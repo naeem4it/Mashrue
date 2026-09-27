@@ -413,18 +413,21 @@
             </div>
 
             <div class="table-responsive" style="max-height: 240px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: white;">
-              <table class="data-table" style="font-size:0.82rem; margin:0; width:100%; table-layout:fixed;" id="tender-items-table">
+              <table class="data-table" style="font-size:0.82rem; margin:0; width:100%; min-width: 1050px;" id="tender-items-table">
                 <thead>
                   <tr style="background:#f1f5f9;">
-                    <th style="width: 25%; min-width: 190px; padding: 8px 4px;">Item / Catalog SKU</th>
-                    <th style="width: 28%; min-width: 210px; padding: 8px 4px;">Description *</th>
-                    <th style="width: 80px; padding: 8px 3px;">Size</th>
-                    <th style="width: 85px; padding: 8px 3px;">Variant</th>
-                    <th style="width: 68px; padding: 8px 3px; text-align:center;">Qty *</th>
-                    <th style="width: 58px; padding: 8px 3px; text-align:center;">Unit</th>
-                    <th style="width: 95px; padding: 8px 3px; text-align:right;">Unit Price (<span class="currency-label">PKR</span>)</th>
-                    <th style="width: 90px; padding: 8px 3px; text-align:right;">Total (<span class="currency-label">PKR</span>)</th>
-                    <th style="width: 32px; padding: 8px 2px; text-align:center;">Action</th>
+                    <th style="min-width: 155px; padding: 8px 4px;">Item / Catalog SKU</th>
+                    <th style="min-width: 150px; padding: 8px 4px;">Warehouse & Stock</th>
+                    <th style="min-width: 150px; padding: 8px 4px;">Description / Scope *</th>
+                    <th style="min-width: 110px; padding: 8px 3px;">Brand Name</th>
+                    <th style="min-width: 110px; padding: 8px 3px;">Batch / DOM / DOE</th>
+                    <th style="width: 70px; padding: 8px 3px;">Size</th>
+                    <th style="width: 70px; padding: 8px 3px;">Variant</th>
+                    <th style="width: 65px; padding: 8px 3px; text-align:center;">Qty *</th>
+                    <th style="width: 50px; padding: 8px 3px; text-align:center;">Unit</th>
+                    <th style="min-width: 105px; padding: 8px 3px; text-align:right;">Cost & Price (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 80px; padding: 8px 3px; text-align:right;">Total (<span class="currency-label">PKR</span>)</th>
+                    <th style="width: 30px; padding: 8px 2px; text-align:center;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="tender-items-tbody">
@@ -1040,15 +1043,22 @@
           <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">SKU / Item Code *</label>
-              <input type="text" class="form-input" id="prod-sku" required placeholder="e.g. TRF-132KV-01">
+              <input type="text" class="form-input" id="prod-sku" required placeholder="e.g. TRF-132KV-01 / MED-001">
             </div>
             <div class="form-group">
               <label class="form-label">Item / Product Name *</label>
-              <input type="text" class="form-input" id="prod-name" required placeholder="e.g. Syringe, Paper Rim, Gloves">
+              <input type="text" class="form-input" id="prod-name" required placeholder="e.g. Paracetamol, Syringe, Paper Rim">
             </div>
             <div class="form-group">
+              <label class="form-label">Brand Name (Optional)</label>
+              <input type="text" class="form-input" id="prod-brand-name" placeholder="e.g. Panadol, GlaxoSmithKline, Siemens, 3M">
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom:0;">
               <label class="form-label">Product Specification / Size / Variant</label>
-              <input type="text" class="form-input" id="prod-spec" placeholder="e.g. 5cc, A4, Size 7.5, 100ml, 20 MVA">
+              <input type="text" class="form-input" id="prod-spec" placeholder="e.g. 500mg, 5cc, A4, Size 7.5, 100ml, 20 MVA">
             </div>
           </div>
 
@@ -1102,10 +1112,12 @@
           <div class="form-row-3">
             <div class="form-group">
               <label class="form-label">Item Type *</label>
-              <select class="form-select" id="prod-type" required>
+              <select class="form-select" id="prod-type" required onchange="handleProductItemTypeChange(this.value)">
                 <option value="Product" selected>Physical Product / Equipment</option>
-                <option value="Service">Engineering / Technical Service</option>
+                <option value="Medicine">💊 Medicine / Pharmaceutical</option>
+                <option value="General Goods">General Goods</option>
                 <option value="Consumable">Consumable / Spare Part</option>
+                <option value="Service">Engineering / Technical Service</option>
               </select>
             </div>
             <div class="form-group">
@@ -1202,18 +1214,26 @@
             </div>
           </div>
 
-          <!-- Batch Number & Expiry Date Lifecycle Tracking -->
-          <div class="form-row-3" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px;">
-            <div class="form-group">
-              <label class="form-label">Batch / Lot #</label>
+          <!-- Batch Number & Expiry Date Lifecycle Tracking (Optional / Non-Mandatory) -->
+          <div id="prod-medicine-batch-card" class="form-row-3" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px; transition: all 0.25s ease;">
+            <div style="grid-column: 1 / -1; display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <div style="font-size:0.82rem; font-weight:700; color:#1e293b; display:flex; align-items:center; gap:6px;">
+                <span id="prod-batch-icon">📦</span>
+                <span id="prod-batch-title">Batch & Lifecyle Tracking</span>
+                <span style="font-size:0.75rem; color:#64748b; font-weight:500;">(Non-mandatory / Optional)</span>
+              </div>
+              <span id="prod-medicine-tag" class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-size:0.72rem; font-weight:700; display:none;">💊 Medicine Specifications</span>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Batch number</label>
               <input type="text" class="form-input" id="prod-batch-no" placeholder="e.g. BATCH-2026-A1">
             </div>
-            <div class="form-group">
-              <label class="form-label">Manufacturing Date</label>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Manufacturing Date [DOM]</label>
               <input type="date" class="form-input" id="prod-mfg-date">
             </div>
-            <div class="form-group">
-              <label class="form-label">Shelf Life Expiry Date</label>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Date Of Expiry [DOE]</label>
               <input type="date" class="form-input" id="prod-expiry-date">
             </div>
           </div>
@@ -2533,6 +2553,108 @@
           <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px;">
             <button type="button" class="secondary-btn" onclick="closeModal('modal-add-warehouse')">Cancel</button>
             <button type="submit" class="primary-btn">💾 Save Warehouse</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10.5 Inward Stock Receipt / Receive Goods into Warehouse (GRN) Modal -->
+  <div class="modal-backdrop" id="modal-receive-stock">
+    <div class="modal-card modal-lg" style="max-width: 1120px; width: 96vw;">
+      <div class="modal-header">
+        <h2 style="font-size: 1.15rem; font-weight: 700; color: #1e293b;">📥 Inward Stock Receipt / Receive Goods into Warehouse (GRN)</h2>
+        <button class="modal-close-btn" onclick="closeModal('modal-receive-stock')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-receive-stock" onsubmit="event.preventDefault(); submitReceiveStockForm();">
+          <div class="form-row-3" style="margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">Receiving Warehouse *</label>
+              <select class="form-select" id="rec-warehouse-id" required>
+                <option value="" disabled selected>-- Select Destination Warehouse (Mandatory) --</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">Supplier / Source Vendor</label>
+              <select class="form-select" id="rec-supplier-id">
+                <option value="">-- Direct Inward / Unknown Supplier --</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">Inward Date *</label>
+              <input type="date" class="form-input" id="rec-inward-date" required>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom: 14px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">Inward Reference / Challan / PO #</label>
+              <input type="text" class="form-input" id="rec-reference-number" placeholder="e.g. DC-1092 / PO-8821 / BL-7762">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">Procurement / Receipt Type</label>
+              <select class="form-select" id="rec-reference-type">
+                <option value="SUPPLIER_INWARD" selected>Local Supplier Delivery</option>
+                <option value="IMPORT_CUSTOMS">Import Shipment Clearance</option>
+                <option value="PURCHASE_RECEIPT">PO Purchase Receipt</option>
+                <option value="STOCK_ADJUSTMENT">Physical Audit Stock Adjustment</option>
+                <option value="RETURN_INWARD">Customer Return / Re-stock</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <div style="font-weight: 700; font-size: 0.9rem; color: #1e293b;">
+                📦 Inward Line Items to Stock
+              </div>
+              <button type="button" class="secondary-btn" style="padding: 4px 12px; font-size: 0.8rem;" onclick="addReceiveStockRow()">
+                ➕ Add Item Line
+              </button>
+            </div>
+
+            <div class="table-responsive" style="max-height: 280px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;">
+              <table class="data-table" style="font-size: 0.82rem; margin: 0; width: 100%;">
+                <thead>
+                  <tr style="background: #f1f5f9;">
+                    <th style="min-width: 170px;">Item / Product Catalog *</th>
+                    <th style="min-width: 110px;">Brand Name</th>
+                    <th style="min-width: 95px;">Batch number</th>
+                    <th style="min-width: 105px;">DOM (Mfg)</th>
+                    <th style="min-width: 105px;">DOE (Expiry)</th>
+                    <th style="width: 70px; text-align:center;">Qty *</th>
+                    <th style="width: 55px; text-align:center;">Unit</th>
+                    <th style="min-width: 95px; text-align:right;">Unit Cost</th>
+                    <th style="min-width: 80px; text-align:center;">Rack / Bin</th>
+                    <th style="min-width: 95px; text-align:right;">Line Total</th>
+                    <th style="width: 35px; text-align:center;"></th>
+                  </tr>
+                </thead>
+                <tbody id="rec-stock-tbody">
+                  <!-- Inward lines injected here -->
+                </tbody>
+              </table>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding: 6px 4px; font-size: 0.84rem;">
+              <div style="color: #64748b;">
+                Total Lines: <strong id="rec-total-lines-disp" style="color:#0f172a;">0</strong> | Total Units: <strong id="rec-total-units-disp" style="color:#0f172a;">0</strong>
+              </div>
+              <div style="font-size: 0.95rem; font-weight: 700; color: #0f172a;">
+                Shipment Total Cost: <span style="color:#2563eb;" id="rec-total-cost-disp">PKR 0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label">Inspection & Receiving Remarks</label>
+            <input type="text" class="form-input" id="rec-remarks" placeholder="e.g. Physical package inspection passed. Quality verified against technical spec.">
+          </div>
+
+          <div class="modal-footer" style="padding: 14px 0 0; margin-top: 14px; border-top: 1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:10px;">
+            <button type="button" class="secondary-btn" onclick="closeModal('modal-receive-stock')">Cancel</button>
+            <button type="submit" class="primary-btn" id="btn-submit-receive-stock">📥 Confirm Inward Receipt & Update Stock</button>
           </div>
         </form>
       </div>
@@ -4025,8 +4147,8 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- JavaScript Modules -->
-  <script src="js/api.js?v=14.5"></script>
-  <script src="js/state.js?v=14.5"></script>
-  <script src="js/app.js?v=14.5"></script>
+  <script src="js/api.js?v=14.7"></script>
+  <script src="js/state.js?v=14.7"></script>
+  <script src="js/app.js?v=14.7"></script>
 </body>
 </html>

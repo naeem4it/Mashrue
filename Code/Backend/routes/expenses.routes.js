@@ -58,6 +58,8 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   { tier: 'Tier 3 - General Overheads', name: 'Miscellaneous General Expense', description: 'General sundry expenses, office cleaning supplies, small repair and maintenance' }
 ];
 
+const EXPENSE_CATEGORIES = DEFAULT_EXPENSE_CATEGORIES.map(c => c.name);
+
 // Ensure columns & tables exist on database and seed initial categories
 (async () => {
   try {
@@ -212,9 +214,21 @@ router.delete('/categories/:id', authenticate, requirePermission('expenses', 'de
   }
 });
 
-// GET all expenses
+// GET all expenses with comprehensive filters (Tender wise, General Expense, Date Range)
 router.get('/', authenticate, requirePermission('expenses', 'view'), async (req, res) => {
-  const { opportunity_id, contract_id, category, business_profile_id, expense_type } = req.query;
+  const { 
+    opportunity_id, 
+    contract_id, 
+    category, 
+    business_profile_id, 
+    expense_type,
+    expense_tier,
+    filter_scope,
+    start_date,
+    end_date,
+    date_from,
+    date_to
+  } = req.query;
 
   try {
     let queryText = `
@@ -253,12 +267,33 @@ router.get('/', authenticate, requirePermission('expenses', 'view'), async (req,
       return res.json({ success: true, data: [], expense_names: [], categories: EXPENSE_CATEGORIES });
     }
 
-    if (opportunity_id) {
-      params.push(opportunity_id);
-      queryText += ` AND ge.opportunity_id = $${params.length}`;
+    // 1. Filter Scope: 'tender' vs 'general'
+    if (filter_scope === 'tender' || filter_scope === 'tender_wise') {
+      queryText += ` AND (ge.opportunity_id IS NOT NULL OR ge.purchase_order_id IS NOT NULL OR ge.expense_tier IN ('Tier 1 - Tender Direct', 'Tier 2 - PO Execution') OR ge.expense_type IN ('Tender Expense', 'Quotation Expense'))`;
+    } else if (filter_scope === 'general' || filter_scope === 'general_expense') {
+      queryText += ` AND (ge.opportunity_id IS NULL AND ge.purchase_order_id IS NULL AND (ge.expense_tier = 'Tier 3 - General Overheads' OR ge.expense_tier IS NULL OR ge.expense_type = 'General Expense'))`;
     }
 
-    if (contract_id) {
+    // 2. Specific Opportunity / Tender
+    if (opportunity_id && opportunity_id !== 'all') {
+      params.push(opportunity_id);
+      queryText += ` AND (ge.opportunity_id = $${params.length} OR po.opportunity_id = $${params.length})`;
+    }
+
+    // 3. Date Range (Integrates with both Scope filters and works independently)
+    const effectiveStartDate = parseSafeDate(start_date || date_from);
+    if (effectiveStartDate) {
+      params.push(effectiveStartDate);
+      queryText += ` AND ge.expense_date >= $${params.length}`;
+    }
+
+    const effectiveEndDate = parseSafeDate(end_date || date_to);
+    if (effectiveEndDate) {
+      params.push(effectiveEndDate);
+      queryText += ` AND ge.expense_date <= $${params.length}`;
+    }
+
+    if (contract_id && contract_id !== 'all') {
       params.push(contract_id);
       queryText += ` AND ge.contract_id = $${params.length}`;
     }
@@ -271,6 +306,11 @@ router.get('/', authenticate, requirePermission('expenses', 'view'), async (req,
     if (expense_type && expense_type !== 'all') {
       params.push(expense_type);
       queryText += ` AND ge.expense_type = $${params.length}`;
+    }
+
+    if (expense_tier && expense_tier !== 'all') {
+      params.push(expense_tier);
+      queryText += ` AND ge.expense_tier = $${params.length}`;
     }
 
     if (business_profile_id && business_profile_id !== 'all') {

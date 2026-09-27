@@ -65,7 +65,31 @@ async function runSafeMigration() {
     await db.query(`
       ALTER TABLE products_services ADD COLUMN IF NOT EXISTS sizes JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE products_services ADD COLUMN IF NOT EXISTS variants JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS expiry_date DATE;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS batch_number VARCHAR(100);
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS item_type VARCHAR(100) DEFAULT 'General Goods';
+
+      ALTER TABLE warehouse_stock ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE warehouse_stock ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+
       ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS item_variant VARCHAR(255);
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
       ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS issue_date DATE;
       ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS instrument_image_url TEXT;
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_tier VARCHAR(50) DEFAULT 'Tier 1 - Tender Direct';

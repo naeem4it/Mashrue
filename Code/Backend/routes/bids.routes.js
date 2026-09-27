@@ -4,6 +4,24 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
+function parseSafeDate(d) {
+  if (!d || d === 'null' || d === 'undefined' || d === 'N/A') return null;
+  if (d instanceof Date) return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    if (parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+  }
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? null : dt.toISOString().split('T')[0];
+}
+
 // GET all bids
 router.get('/', authenticate, requirePermission('bids', 'view'), async (req, res) => {
   const { opportunity_id, business_profile_id } = req.query;
@@ -127,17 +145,39 @@ router.post('/save-costing', authenticate, requirePermission('bids', 'edit'), as
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
+    let bizId = business_profile_id;
+    if (!bizId && opportunity_id) {
+      const oppRes = await db.query(`SELECT business_profile_id FROM opportunities WHERE id = $1`, [opportunity_id]);
+      bizId = oppRes.rows[0]?.business_profile_id;
+    }
+    if (!bizId) {
+      const bpRes = await db.query(`SELECT id FROM business_profiles LIMIT 1`);
+      bizId = bpRes.rows[0]?.id;
+    }
+
     const cSupplier = parseFloat(supplier_cost_total || 0);
     const cLogistics = parseFloat(logistics_cost_total || 0);
     const cLabor = parseFloat(labor_cost_total || 0);
     const cOverhead = parseFloat(overhead_cost_total || 0);
     const cExpenses = parseFloat(tender_expense_total || 0);
-    const markupPct = parseFloat(desired_markup_pct || 20);
 
     const totalCost = cSupplier + cLogistics + cLabor + cOverhead + cExpenses;
-    const profitAmount = (totalCost * markupPct) / 100;
-    const finalPrice = totalCost + profitAmount;
-    const grossMarginPct = finalPrice > 0 ? ((profitAmount / finalPrice) * 100) : 0;
+
+    let finalPrice = parseFloat(req.body.final_bid_price || req.body.tender_revenue || 0);
+    let profitAmount = 0;
+    let grossMarginPct = 0;
+    let markupPct = 0;
+
+    if (finalPrice > 0) {
+      profitAmount = finalPrice - totalCost;
+      grossMarginPct = (profitAmount / finalPrice) * 100;
+      markupPct = totalCost > 0 ? ((profitAmount / totalCost) * 100) : 0;
+    } else {
+      markupPct = parseFloat(desired_markup_pct || 0);
+      profitAmount = (totalCost * markupPct) / 100;
+      finalPrice = totalCost + profitAmount;
+      grossMarginPct = finalPrice > 0 ? ((profitAmount / finalPrice) * 100) : 0;
+    }
 
     const bidNum = bid_number || `BID-${Date.now().toString().slice(-6)}`;
 
@@ -148,7 +188,7 @@ router.post('/save-costing', authenticate, requirePermission('bids', 'edit'), as
        RETURNING *`,
       [
         tenantId,
-        business_profile_id,
+        bizId,
         opportunity_id,
         bidNum,
         cSupplier,
@@ -169,18 +209,31 @@ router.post('/save-costing', authenticate, requirePermission('bids', 'edit'), as
     // Insert items if provided
     if (items && Array.isArray(items)) {
       for (const itm of items) {
+        const itemBrand = itm.brand_name || null;
+        const itemDom = parseSafeDate(itm.manufacturing_date || itm.dom);
+        const itemDoe = parseSafeDate(itm.expiry_date || itm.doe);
+
         await db.query(
-          `INSERT INTO bid_items (bid_id, item_description, quantity, unit_cost, total_cost, markup_pct, unit_price, total_price)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          `INSERT INTO bid_items (bid_id, product_service_id, warehouse_id, item_name, item_description, quantity, unit, unit_cost, total_cost, markup_pct, unit_price, total_price, batch_number, stock_on_hand, brand_name, manufacturing_date, expiry_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
           [
             newBid.id,
-            itm.item_description || 'Bid Item',
+            itm.product_service_id || null,
+            itm.warehouse_id || null,
+            itm.item_name || itm.item_description || 'Bid Item',
+            itm.item_description || itm.item_name || 'Bid Item',
             parseFloat(itm.quantity || 1),
+            itm.unit || 'PCS',
             parseFloat(itm.unit_cost || 0),
             parseFloat(itm.total_cost || 0),
             parseFloat(itm.markup_pct || markupPct),
             parseFloat(itm.unit_price || 0),
-            parseFloat(itm.total_price || 0)
+            parseFloat(itm.total_price || 0),
+            itm.batch_number || null,
+            parseFloat(itm.stock_on_hand || 0),
+            itemBrand,
+            itemDom,
+            itemDoe
           ]
         );
       }

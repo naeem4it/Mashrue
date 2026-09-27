@@ -70,10 +70,12 @@ router.get('/inventory/transactions', authenticate, requirePermission('inventory
     let queryText = `
       SELECT it.*, 
              p.name as product_name, p.sku, p.unit,
-             w.warehouse_name
+             w.warehouse_name,
+             s.supplier_name
       FROM inventory_transactions it
       JOIN products_services p ON it.product_id = p.id
       JOIN warehouses w ON it.warehouse_id = w.id
+      LEFT JOIN suppliers s ON it.supplier_id = s.id
       WHERE 1=1
     `;
     const params = [];
@@ -469,11 +471,14 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
         const cleanPoiId = (itm.purchase_order_item_id && isUuid(itm.purchase_order_item_id)) ? itm.purchase_order_item_id : null;
         const finalQty = parseFloat(itm.quantity || 1);
         const finalOrderedQty = parseFloat(itm.ordered_quantity || finalQty);
+        const itemBrand = itm.brand_name || null;
+        const itemDom = parseSafeDate(itm.manufacturing_date || itm.dom);
+        const itemDoe = parseSafeDate(itm.expiry_date || itm.doe);
 
         await db.query(
           `INSERT INTO delivery_challan_items 
-           (delivery_challan_id, product_service_id, purchase_order_item_id, item_name, quantity, unit, ordered_quantity, batch_number, serial_number)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+           (delivery_challan_id, product_service_id, purchase_order_item_id, item_name, quantity, unit, ordered_quantity, batch_number, serial_number, brand_name, manufacturing_date, expiry_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             createdDC.id,
             cleanProdId,
@@ -483,7 +488,10 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
             itm.unit || 'PCS',
             finalOrderedQty,
             itm.batch_number || null,
-            itm.serial_number || null
+            itm.serial_number || null,
+            itemBrand,
+            itemDom,
+            itemDoe
           ]
         );
 
@@ -501,6 +509,27 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
               `UPDATE products_services SET current_stock = GREATEST(0, current_stock - $1) WHERE id = $2`,
               [finalQty, cleanProdId]
             );
+
+            // Deduct stock balance from warehouse_stock table
+            await db.query(
+              `UPDATE warehouse_stock 
+               SET quantity_on_hand = GREATEST(0, quantity_on_hand - $1),
+                   quantity_reserved = GREATEST(0, quantity_reserved - $1),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE warehouse_id = $2 AND product_id = $3`,
+              [finalQty, cleanWarehouseId, cleanProdId]
+            );
+
+            // Fulfill active reservations for this opportunity and product if linked to PO
+            const linkedOppId = po?.opportunity_id;
+            if (linkedOppId) {
+              await db.query(
+                `UPDATE stock_reservations 
+                 SET status = 'Fulfilled', updated_at = CURRENT_TIMESTAMP
+                 WHERE opportunity_id = $1 AND product_id = $2 AND status = 'Active'`,
+                [linkedOppId, cleanProdId]
+              );
+            }
           }
         }
       }
@@ -645,12 +674,127 @@ router.put('/procurements/:id', async (req, res) => {
 // ============================================================================
 
 // GET Warehouse Stock Balances with Reservations & Batches
+// POST Receive Inward Stock into Warehouse (GRN / Purchase Inward)
+router.post('/inventory/receive-stock', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const {
+    warehouse_id,
+    supplier_id,
+    reference_type,
+    reference_number,
+    inward_date,
+    remarks,
+    items
+  } = req.body;
+
+  if (!warehouse_id) {
+    return res.status(400).json({ success: false, message: 'Receiving Warehouse is mandatory.' });
+  }
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'At least one item line must be provided for inward stock receipt.' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    let tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      const tenantRes = await client.query(`SELECT id FROM tenants LIMIT 1`);
+      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    }
+
+    const refNum = reference_number || `GRN-${Date.now().toString().slice(-6)}`;
+    const refType = reference_type || 'SUPPLIER_INWARD';
+    const receivedDate = parseSafeDate(inward_date) || new Date().toISOString().split('T')[0];
+    const createdTxRows = [];
+
+    for (const itm of items) {
+      const prodId = itm.product_id || itm.product_service_id;
+      if (!prodId) continue;
+
+      const qty = parseFloat(itm.quantity || 0);
+      if (qty <= 0) continue;
+
+      const unitCost = parseFloat(itm.unit_cost || 0);
+      const batchNo = (itm.batch_number || 'LOT-PRIMARY').trim();
+      const itemBrand = (itm.brand_name || '').trim() || null;
+      const mfgDate = parseSafeDate(itm.manufacturing_date || itm.dom);
+      const expDate = parseSafeDate(itm.expiry_date || itm.doe);
+      const rack = (itm.storage_location || '').trim() || null;
+      const itemRemarks = itm.remarks || remarks || `Inward Receipt against ${refNum}`;
+
+      // 1. Insert audited inventory transaction
+      const txRes = await client.query(
+        `INSERT INTO inventory_transactions 
+         (tenant_id, product_id, warehouse_id, supplier_id, transaction_type, quantity, unit_cost, batch_number, expiry_date, reference_type, reference_number, storage_location, remarks, created_by, created_at, brand_name, manufacturing_date)
+         VALUES ($1, $2, $3, $4, 'STOCK_IN', $5::numeric, $6::numeric, $7, $8::date, $9, $10, $11, $12, $13, $14, $15, $16::date)
+         RETURNING *`,
+        [tenantId, prodId, warehouse_id, supplier_id || null, qty, unitCost, batchNo, expDate, refType, refNum, rack, itemRemarks, req.user?.id || null, receivedDate, itemBrand, mfgDate]
+      );
+      createdTxRows.push(txRes.rows[0]);
+
+      // 2. Upsert warehouse_stock
+      await client.query(
+        `INSERT INTO warehouse_stock (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved, storage_location, brand_name, manufacturing_date, expiry_date)
+         VALUES ($1, $2, $3, $4, $5::numeric, 0, $6, $7, $8::date, $9::date)
+         ON CONFLICT (warehouse_id, product_id, batch_number)
+         DO UPDATE SET 
+           quantity_on_hand = warehouse_stock.quantity_on_hand + $5::numeric,
+           storage_location = COALESCE($6, warehouse_stock.storage_location),
+           brand_name = COALESCE($7, warehouse_stock.brand_name),
+           manufacturing_date = COALESCE($8::date, warehouse_stock.manufacturing_date),
+           expiry_date = COALESCE($9::date, warehouse_stock.expiry_date),
+           updated_at = CURRENT_TIMESTAMP`,
+        [tenantId, warehouse_id, prodId, batchNo, qty, rack, itemBrand, mfgDate, expDate]
+      );
+
+      // 3. Update products_services (current_stock and weighted average cost)
+      await client.query(
+        `UPDATE products_services
+         SET cost_price = CASE 
+                            WHEN $1::numeric > 0 AND current_stock > 0 THEN ((cost_price * current_stock) + ($1::numeric * $2::numeric)) / (current_stock + $2::numeric)
+                            WHEN $1::numeric > 0 THEN $1::numeric
+                            ELSE cost_price 
+                          END,
+             current_stock = current_stock + $2::numeric,
+             batch_number = COALESCE($3, batch_number),
+             expiry_date = COALESCE($4::date, expiry_date),
+             brand_name = COALESCE($5, brand_name),
+             manufacturing_date = COALESCE($6::date, manufacturing_date),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $7`,
+        [unitCost, qty, batchNo, expDate, itemBrand, mfgDate, prodId]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      success: true,
+      data: createdTxRows,
+      message: `Successfully received ${createdTxRows.length} item(s) into warehouse with Reference ${refNum}.`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message, message: 'Failed to record inward stock receipt: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET Warehouse Stock Balances with Reservations & Batches
 router.get('/warehouse-stock', optionalAuth, async (req, res) => {
   const { warehouse_id, product_id } = req.query;
   try {
     let queryText = `
       SELECT ws.*, 
-             p.name as product_name, p.sku, p.unit, p.reorder_level,
+             COALESCE(ws.brand_name, p.brand_name) as brand_name,
+             COALESCE(ws.manufacturing_date, p.manufacturing_date) as manufacturing_date,
+             COALESCE(ws.expiry_date, p.expiry_date) as expiry_date,
+             p.item_type as product_item_type,
+             p.brand_name as product_brand_name,
+             (ws.quantity_on_hand - ws.quantity_reserved) as available_quantity,
+             p.name as product_name, p.sku, p.unit, p.reorder_level, p.cost_price, p.selling_price, p.specifications,
              w.warehouse_name, w.city as warehouse_city
       FROM warehouse_stock ws
       JOIN products_services p ON ws.product_id = p.id
@@ -665,7 +809,7 @@ router.get('/warehouse-stock', optionalAuth, async (req, res) => {
       queryText += ` AND ws.tenant_id::text = $${params.length}`;
     }
 
-    if (warehouse_id) {
+    if (warehouse_id && warehouse_id !== 'all') {
       params.push(warehouse_id);
       queryText += ` AND ws.warehouse_id = $${params.length}`;
     }

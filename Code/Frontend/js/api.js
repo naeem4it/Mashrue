@@ -1787,6 +1787,74 @@ const API = {
     }
   },
 
+  async getWarehouseStock(warehouseIdOrParams = null, productId = null) {
+    try {
+      let whId = null;
+      let prodId = null;
+      if (warehouseIdOrParams && typeof warehouseIdOrParams === 'object') {
+        whId = warehouseIdOrParams.warehouse_id || warehouseIdOrParams.warehouseId || null;
+        prodId = warehouseIdOrParams.product_id || warehouseIdOrParams.productId || null;
+      } else {
+        whId = warehouseIdOrParams;
+        prodId = productId;
+      }
+
+      const q = new URLSearchParams();
+      if (whId && whId !== 'all') q.append('warehouse_id', whId);
+      if (prodId) q.append('product_id', prodId);
+      const url = `${API_BASE}/warehouse-stock${q.toString() ? '?' + q.toString() : ''}`;
+      const res = await fetch(url, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && Array.isArray(json.data)) return json.data;
+      if (Array.isArray(json)) return json;
+      return [];
+    } catch (e) {
+      console.warn('Error fetching warehouse stock:', e);
+      return [];
+    }
+  },
+
+  async receiveStockIn(payload) {
+    const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
+    try {
+      const res = await fetch(`${API_BASE}/inventory/receive-stock`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ ...payload, tenant_id: tid })
+      });
+      const json = await res.json();
+      return json;
+    } catch (e) {
+      return { success: false, message: e.message || 'Network error receiving stock into warehouse.' };
+    }
+  },
+
+  async reserveTenderStock(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/reserve`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to reserve stock.' };
+    }
+  },
+
+  async releaseTenderStock(reservationId, reason = '') {
+    try {
+      const res = await fetch(`${API_BASE}/release-reservation`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ reservation_id: reservationId, reason })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to release reservation.' };
+    }
+  },
+
   // 11. Procurements (Local / Import)
   async getProcurements() {
     let apiData = [];
@@ -1990,11 +2058,35 @@ const API = {
     }
   },
 
-  // 15. Expenses (STRICT ZERO-TRUST TENANT ISOLATION)
-  async getExpenses(businessProfileId = 'all') {
+  // 15. Expenses (STRICT ZERO-TRUST TENANT ISOLATION & ADVANCED FILTERING)
+  async getExpenses(businessProfileId = 'all', filters = {}) {
     let apiData = [];
     try {
-      const res = await fetch(`${API_BASE}/expenses?business_profile_id=${businessProfileId}`, { headers: this.getHeaders() });
+      const q = new URLSearchParams();
+      if (businessProfileId && businessProfileId !== 'all') {
+        q.append('business_profile_id', businessProfileId);
+      }
+      if (filters.filter_scope && filters.filter_scope !== 'all') {
+        q.append('filter_scope', filters.filter_scope);
+      }
+      if (filters.opportunity_id && filters.opportunity_id !== 'all') {
+        q.append('opportunity_id', filters.opportunity_id);
+      }
+      if (filters.start_date) {
+        q.append('start_date', filters.start_date);
+      }
+      if (filters.end_date) {
+        q.append('end_date', filters.end_date);
+      }
+      if (filters.category && filters.category !== 'all') {
+        q.append('category', filters.category);
+      }
+      if (filters.expense_tier && filters.expense_tier !== 'all') {
+        q.append('expense_tier', filters.expense_tier);
+      }
+
+      const queryString = q.toString() ? `?${q.toString()}` : '';
+      const res = await fetch(`${API_BASE}/expenses${queryString}`, { headers: this.getHeaders() });
       const json = await res.json();
       if (json && Array.isArray(json.data)) apiData = json.data;
     } catch (e) {}
@@ -2004,7 +2096,33 @@ const API = {
     for (const exp of localList) {
       if (!merged.some(m => m.id === exp.id)) merged.push(exp);
     }
-    return this.filterTenantData(merged, businessProfileId);
+    let filtered = this.filterTenantData(merged, businessProfileId);
+
+    // Apply client-side fallback filtering
+    if (filters.filter_scope === 'tender' || filters.filter_scope === 'tender_wise') {
+      filtered = filtered.filter(e => e.opportunity_id || e.purchase_order_id || e.expense_tier === 'Tier 1 - Tender Direct' || e.expense_tier === 'Tier 2 - PO Execution' || e.expense_type === 'Tender Expense' || e.expense_type === 'Quotation Expense');
+      if (filters.opportunity_id && filters.opportunity_id !== 'all') {
+        filtered = filtered.filter(e => e.opportunity_id === filters.opportunity_id);
+      }
+    } else if (filters.filter_scope === 'general' || filters.filter_scope === 'general_expense') {
+      filtered = filtered.filter(e => !e.opportunity_id && !e.purchase_order_id && (!e.expense_tier || e.expense_tier === 'Tier 3 - General Overheads' || e.expense_type === 'General Expense'));
+    }
+
+    if (filters.start_date) {
+      filtered = filtered.filter(e => {
+        const d = (e.expense_date || '').slice(0, 10);
+        return d ? d >= filters.start_date : true;
+      });
+    }
+
+    if (filters.end_date) {
+      filtered = filtered.filter(e => {
+        const d = (e.expense_date || '').slice(0, 10);
+        return d ? d <= filters.end_date : true;
+      });
+    }
+
+    return filtered;
   },
 
   async getExpenseSuggestions() {
@@ -2474,17 +2592,6 @@ const API = {
   // ADVANCED INVENTORY & WORKFLOW GATING API METHODS
   // ==========================================================================
 
-  async getWarehouseStock(params = {}) {
-    try {
-      const q = new URLSearchParams(params).toString();
-      const res = await fetch(`${API_BASE}/logistics/warehouse-stock?${q}`, { headers: this.getHeaders() });
-      const data = await res.json();
-      return data.success ? data.data : [];
-    } catch (e) {
-      console.warn('Backend warehouse stock fallback:', e.message);
-      return [];
-    }
-  },
 
   async getStockReservations(params = {}) {
     try {

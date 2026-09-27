@@ -154,6 +154,7 @@ app.use('/api/bid-securities', bidSecuritiesRoutes);
 app.use('/api', awardsAndContractsRoutes); // /api/awards, /api/guarantees, /api/contracts
 app.use('/api/purchase-orders', purchaseOrdersRoutes);
 app.use('/api', inventoryAndLogisticsRoutes); // /api/warehouses, /api/inventory, /api/procurements, /api/delivery-challans
+app.use('/api/logistics', inventoryAndLogisticsRoutes); // /api/logistics/warehouse-stock, /api/logistics/reservations, /api/logistics/grn
 app.use('/api/invoices', invoicesRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/expenses', expensesRoutes);
@@ -267,7 +268,82 @@ app.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS abbreviation VARCHAR(50);
       ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
 
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS batch_number VARCHAR(100);
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS expiry_date DATE;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS specifications TEXT;
       ALTER TABLE products_services ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+      CREATE TABLE IF NOT EXISTS warehouse_stock (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL,
+        warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+        product_id UUID NOT NULL REFERENCES products_services(id) ON DELETE CASCADE,
+        batch_number VARCHAR(100) DEFAULT 'STANDARD',
+        quantity_on_hand NUMERIC(18, 4) DEFAULT 0,
+        quantity_reserved NUMERIC(18, 4) DEFAULT 0,
+        reorder_level NUMERIC(18, 4) DEFAULT 10,
+        storage_location VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(warehouse_id, product_id, batch_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS stock_reservations (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL,
+        opportunity_id UUID REFERENCES opportunities(id) ON DELETE SET NULL,
+        purchase_order_id UUID REFERENCES purchase_orders(id) ON DELETE SET NULL,
+        product_id UUID NOT NULL REFERENCES products_services(id) ON DELETE CASCADE,
+        warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+        batch_number VARCHAR(100) DEFAULT 'STANDARD',
+        reserved_quantity NUMERIC(18, 4) DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'Active',
+        reserved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES warehouses(id) ON DELETE SET NULL;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS batch_number VARCHAR(100);
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS stock_at_time_of_tender NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN DEFAULT FALSE;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS item_size VARCHAR(100);
+
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES warehouses(id) ON DELETE SET NULL;
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS item_name VARCHAR(255);
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'PCS';
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS batch_number VARCHAR(100);
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS stock_on_hand NUMERIC(18, 4) DEFAULT 0;
+
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL;
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS expiry_date DATE;
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS reference_number VARCHAR(100);
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS storage_location VARCHAR(100);
+      ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS warehouse_code VARCHAR(50);
+
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS item_type VARCHAR(100) DEFAULT 'General Goods';
+
+      ALTER TABLE warehouse_stock ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE warehouse_stock ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE warehouse_stock ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS brand_name VARCHAR(150);
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS manufacturing_date DATE;
+      ALTER TABLE delivery_challan_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
 
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_business_profile_limit INT DEFAULT 2;
       ALTER TABLE tenants ADD COLUMN IF NOT EXISTS additional_profile_monthly_fee NUMERIC(10,2) DEFAULT 4500.00;
@@ -297,7 +373,7 @@ app.listen(PORT, '0.0.0.0', async () => {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, tenants, subscription_payments).');
+    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, warehouses, warehouse_stock, tenants, subscription_payments).');
   } catch (schemaErr) {
     console.warn('Schema auto-migration warning:', schemaErr.message);
   }
