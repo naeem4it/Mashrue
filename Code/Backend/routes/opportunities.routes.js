@@ -4,9 +4,25 @@ const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 const { requirePermission, resolveTenantId, sanitizePrices } = require('../middleware/rbac.middleware');
 
+// Auto-migration for quotation enhancements
+(async () => {
+  try {
+    await db.query(`
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS is_quotation BOOLEAN DEFAULT FALSE;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS quotation_category VARCHAR(50) DEFAULT 'Private Commercial';
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS quotation_validity_days INTEGER DEFAULT 30;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS delivery_lead_time VARCHAR(100);
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(100);
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS rfq_reference VARCHAR(100);
+    `);
+  } catch (err) {
+    console.warn('Opportunities quotation schema migration note:', err.message);
+  }
+})();
+
 // GET all opportunities (Tenders and Direct Sales) - Tenant Isolated & Price Protected
 router.get('/', authenticate, requirePermission('opportunities', 'view'), async (req, res) => {
-  const { business_profile_id, status, tender_source, tender_type } = req.query;
+  const { business_profile_id, status, tender_source, tender_type, scope } = req.query;
 
   try {
     let queryText = `
@@ -70,6 +86,12 @@ router.get('/', authenticate, requirePermission('opportunities', 'view'), async 
       queryText += ` AND o.tender_type = $${params.length}`;
     }
 
+    if (scope === 'quotations') {
+      queryText += ` AND (o.tender_type = 'Direct Sales / Quotation' OR o.is_quotation = TRUE OR UPPER(o.tender_source) = 'DIRECT SALES' OR UPPER(o.tender_source) = 'GOVT QUOTATION')`;
+    } else if (scope === 'tenders') {
+      queryText += ` AND (o.tender_type != 'Direct Sales / Quotation' OR o.tender_type IS NULL) AND (o.is_quotation IS NOT TRUE) AND (UPPER(COALESCE(o.tender_source, '')) NOT IN ('DIRECT SALES', 'GOVT QUOTATION'))`;
+    }
+
     queryText += ` ORDER BY COALESCE(o.opening_date, o.closing_date, o.created_at::date) DESC, o.created_at DESC`;
 
     const result = await db.query(queryText, params);
@@ -88,12 +110,21 @@ router.get('/:id', authenticate, requirePermission('opportunities', 'view'), asy
 
   try {
     let queryText = `SELECT o.*, 
-              bp.business_name, 
+              COALESCE(bp.business_name, (SELECT bp2.business_name FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), t.company_name, 'Mashrue Enterprise') as business_name,
+              COALESCE(bp.legal_name, (SELECT bp2.legal_name FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), t.company_name) as business_legal_name,
+              COALESCE(bp.ntn, (SELECT bp2.ntn FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), '') as business_ntn,
+              COALESCE(bp.strn, (SELECT bp2.strn FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), '') as business_strn,
+              COALESCE(bp.address, (SELECT bp2.address FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), '') as business_address,
+              COALESCE(bp.phone, (SELECT bp2.phone FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), '') as business_phone,
+              COALESCE(bp.email, (SELECT bp2.email FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), '') as business_email,
+              COALESCE(bp.logo_url, (SELECT bp2.logo_url FROM business_profiles bp2 WHERE bp2.tenant_id = o.tenant_id ORDER BY bp2.created_at ASC LIMIT 1), '') as business_logo_url,
+              t.company_name as tenant_company_name,
               c.business_name as customer_name, 
               c.org_type as customer_org_type, 
               c.ntn as customer_ntn
        FROM opportunities o
        LEFT JOIN business_profiles bp ON o.business_profile_id = bp.id
+       LEFT JOIN tenants t ON o.tenant_id = t.id
        LEFT JOIN customers c ON o.customer_id = c.id
        WHERE o.id::text = $1`;
     const params = [String(req.params.id)];
@@ -189,7 +220,13 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
     currency,
     location,
     workflow_gates,
-    items
+    items,
+    is_quotation,
+    quotation_category,
+    quotation_validity_days,
+    delivery_lead_time,
+    payment_terms,
+    rfq_reference
   } = req.body;
 
   if (!tender_name && !title) {
@@ -203,7 +240,10 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
-    const oppNumber = opportunity_number || (tender_source === 'DIRECT SALES' ? `QTN-${Date.now().toString().slice(-6)}` : `TND-${Date.now().toString().slice(-6)}`);
+    const isQuote = !!(is_quotation || tender_type === 'Direct Sales / Quotation' || tender_source === 'DIRECT SALES' || tender_source === 'GOVT QUOTATION');
+    const oppNumber = opportunity_number || (isQuote 
+      ? `QTN-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}` 
+      : `TND-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`);
     const nameStr = tender_name || title;
     const titleStr = title || tender_name;
 
@@ -212,10 +252,11 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
       tenantId,
       opportunity_number: oppNumber,
       tender_name: nameStr,
+      isQuote,
       closing_date
     });
     // Enforce dynamic tender quota leverage according to subscription
-    if (req.user?.role !== 'SuperAdmin') {
+    if (req.user?.role !== 'SuperAdmin' && !isQuote) {
       try {
         const tenantRow = await db.query(`SELECT subscription_plan, tender_limit, status FROM tenants WHERE id = $1`, [tenantId]);
         if (tenantRow.rows.length > 0) {
@@ -227,7 +268,7 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
           const isUnlimited = (tLimit === 'unlimited' || tLimit === -1 || tLimit === null || tLimit === 'Unlimited' || tnt.subscription_plan === 'Advance' || tnt.subscription_plan === 'Enterprise');
           if (!isUnlimited) {
             const maxAllowed = parseInt(tLimit, 10) || 5;
-            const countRes = await db.query(`SELECT COUNT(*) FROM opportunities WHERE tenant_id = $1`, [tenantId]);
+            const countRes = await db.query(`SELECT COUNT(*) FROM opportunities WHERE tenant_id = $1 AND (is_quotation IS NOT TRUE)`, [tenantId]);
             const currentCount = parseInt(countRes.rows[0]?.count || 0, 10);
             if (currentCount >= maxAllowed) {
               return res.status(402).json({
@@ -248,12 +289,12 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
       `SELECT id FROM opportunities 
        WHERE (LOWER(tender_name) = LOWER($1) OR (external_tender_number IS NOT NULL AND LOWER(external_tender_number) = LOWER($2))) 
          AND tenant_id = $3`,
-      [nameStr.trim(), (external_tender_number || '').trim(), tenantId]
+      [nameStr.trim(), (external_tender_number || rfq_reference || '').trim(), tenantId]
     );
     if (dupCheck.rows.length > 0) {
       return res.status(409).json({
         success: false,
-        message: `Duplicate Error: A tender named "${nameStr.trim()}" or reference number already exists in your organization.`
+        message: `Duplicate Error: A record named "${nameStr.trim()}" or reference number already exists in your organization.`
       });
     }
 
@@ -261,12 +302,12 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
     let gates = workflow_gates;
     if (!gates) {
       gates = {
-        requires_bid_security: tender_source !== 'DIRECT SALES',
-        requires_performance_guarantee: tender_source !== 'DIRECT SALES',
-        requires_stamp_duty: tender_source !== 'DIRECT SALES',
+        requires_bid_security: !isQuote,
+        requires_performance_guarantee: !isQuote,
+        requires_stamp_duty: !isQuote,
         requires_dtl_inspection: false,
         requires_fbr_e_invoice: true,
-        requires_diary_tracking: tender_source !== 'DIRECT SALES'
+        requires_diary_tracking: !isQuote
       };
     }
 
@@ -276,18 +317,18 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
 
     const result = await db.query(
       `INSERT INTO opportunities 
-       (tenant_id, business_profile_id, opportunity_number, external_tender_number, tender_name, title, tender_source, tender_type, description, customer_id, department, publication_date, closing_date, submission_deadline, opening_date, estimated_value, currency, location, status, selection_status, workflow_gates)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+       (tenant_id, business_profile_id, opportunity_number, external_tender_number, tender_name, title, tender_source, tender_type, description, customer_id, department, publication_date, closing_date, submission_deadline, opening_date, estimated_value, currency, location, status, selection_status, workflow_gates, is_quotation, quotation_category, quotation_validity_days, delivery_lead_time, payment_terms, rfq_reference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
        RETURNING *`,
       [
         tenantId,
         business_profile_id,
         oppNumber,
-        external_tender_number || null,
+        external_tender_number || rfq_reference || null,
         nameStr,
         titleStr,
-        tender_source || 'PPRA',
-        tender_type || (tender_source === 'DIRECT SALES' ? 'Direct Sales / Quotation' : 'Public Tender'),
+        tender_source || (isQuote ? 'DIRECT SALES' : 'PPRA'),
+        tender_type || (isQuote ? 'Direct Sales / Quotation' : 'Public Tender'),
         description || '',
         customer_id || null,
         department || null,
@@ -300,7 +341,13 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
         location || 'Pakistan',
         'New',
         'Pending',
-        JSON.stringify(gates)
+        JSON.stringify(gates),
+        isQuote,
+        quotation_category || (tender_source === 'GOVT QUOTATION' ? 'Government Departmental' : 'Private Commercial'),
+        parseInt(quotation_validity_days || 30, 10),
+        delivery_lead_time || '10-15 Working Days',
+        payment_terms || '30 Days Net',
+        rfq_reference || external_tender_number || null
       ]
     );
 

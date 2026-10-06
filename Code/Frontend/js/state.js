@@ -10,6 +10,9 @@ const State = {
   token: sessionStorage.getItem('mashrue_token') || null,
   currentUser: JSON.parse(sessionStorage.getItem('mashrue_user') || 'null'),
   activeView: 'dashboard',
+  dashboardPrivacy: sessionStorage.getItem('mashrue_dash_privacy') === 'true',
+  dashboardDecimals: sessionStorage.getItem('mashrue_dash_decimals') !== 'false',
+  dashboardAutoReload: false,
 
   // Session-scoped persistence: Automatically destroyed when browser or tab is closed
   setSession(token, user) {
@@ -189,11 +192,74 @@ const State = {
     window.dispatchEvent(new CustomEvent('businessProfileChanged', { detail: { id } }));
   },
 
-  getCurrentBusinessProfile() {
+  getCurrentBusinessProfile(options = {}) {
+    if (options && options.forPrint) {
+      return this.getPrintableBusinessProfile(options.documentData);
+    }
     if (this.currentBusinessProfileId === 'all') {
       return { business_name: 'All Business Entities', ntn: 'Consolidated View' };
     }
     return this.businessProfiles.find(b => b.id === this.currentBusinessProfileId) || { business_name: 'Primary Entity', ntn: 'N/A' };
+  },
+
+  // ── Universal Rule: Concrete Commercial Entity for ALL Current and Future Printouts ──
+  // Printed documents (Tenders, Dossiers, BoQ, Quotations, Invoices, Delivery Challans,
+  // POs, Financial & Executive Reports) must NEVER print "All Business Entities" or "Consolidated View".
+  getPrintableBusinessProfile(documentData = null) {
+    let profile = null;
+    const profiles = Array.isArray(this.businessProfiles) ? this.businessProfiles : [];
+
+    // 1. If document is explicitly tied to a business_profile_id, match it
+    const bizId = documentData?.business_profile_id || documentData?.businessProfileId;
+    if (bizId && profiles.length > 0) {
+      profile = profiles.find(b => String(b.id) === String(bizId));
+    }
+
+    // 2. If document carries enriched business entity data from backend query join
+    if (!profile && documentData && documentData.business_name && documentData.business_name !== 'All Business Entities') {
+      profile = {
+        id: documentData.business_profile_id || null,
+        business_name: documentData.business_name,
+        legal_name: documentData.business_legal_name || documentData.business_name,
+        ntn: (documentData.business_ntn && documentData.business_ntn !== 'Consolidated View') ? documentData.business_ntn : '',
+        strn: (documentData.business_strn && documentData.business_strn !== 'N/A') ? documentData.business_strn : '',
+        address: documentData.business_address || '',
+        phone: documentData.business_phone || '',
+        email: documentData.business_email || '',
+        logo_url: documentData.business_logo_url || ''
+      };
+    }
+
+    // 3. If currently selected business profile in switcher is a specific entity (NOT 'all')
+    if (!profile && this.currentBusinessProfileId && this.currentBusinessProfileId !== 'all') {
+      const active = profiles.find(b => String(b.id) === String(this.currentBusinessProfileId));
+      if (active && active.business_name && active.business_name !== 'All Business Entities') {
+        profile = active;
+      }
+    }
+
+    // 4. Fallback: First registered concrete commercial entity in profile list
+    if (!profile && profiles.length > 0) {
+      const valid = profiles.find(b => b.id !== 'all' && b.business_name && b.business_name !== 'All Business Entities');
+      if (valid) profile = valid;
+    }
+
+    // 5. Fallback: Tenant organization / company name from authenticated session
+    if (!profile) {
+      const tenantName = this.currentUser?.tenant?.company_name || this.currentUser?.company_name || 'Mashrue Enterprise';
+      profile = {
+        business_name: tenantName,
+        legal_name: tenantName,
+        ntn: '',
+        strn: '',
+        address: 'Head Office, Pakistan',
+        phone: '',
+        email: '',
+        logo_url: ''
+      };
+    }
+
+    return profile;
   },
 
   // Persistent Local Registry for seamless offline/hybrid operation

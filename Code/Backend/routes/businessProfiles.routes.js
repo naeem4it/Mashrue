@@ -191,6 +191,7 @@ router.post('/', authenticate, async (req, res) => {
       invoice_prefix: invoice_prefix || 'INV',
       po_prefix: po_prefix || 'PO',
       dc_prefix: dc_prefix || 'DC',
+      logo_url: req.body.logo_url || null,
       created_by: isUuid(req.user?.id) ? req.user.id : null
     };
 
@@ -301,7 +302,7 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// Auto-check business_profiles columns for company-level FBR configuration
+// Auto-check business_profiles columns for company-level FBR configuration and branding logo
 db.query(`
   ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS abbreviation VARCHAR(50);
   ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS created_by UUID;
@@ -309,7 +310,39 @@ db.query(`
   ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_bearer_token TEXT;
   ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_pos_id VARCHAR(100) DEFAULT 'POS-01';
   ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS fbr_seller_ntn VARCHAR(50);
+  ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT;
 `).catch(e => console.warn('business_profiles schema notice:', e.message));
+
+// PUT update company business logo directly
+router.put('/:id/logo', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { logo_url } = req.body;
+
+  try {
+    let updateSql = `UPDATE business_profiles SET logo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id::text = $2`;
+    const params = [logo_url || null, id];
+
+    if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
+      const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+      params.push(tid);
+      updateSql += ` AND tenant_id::text = $3`;
+    }
+    updateSql += ` RETURNING *`;
+
+    const result = await db.query(updateSql, params);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Business Profile not found or unauthorized' });
+    }
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: 'Business Profile logo updated successfully'
+    });
+  } catch (err) {
+    console.error('Update Business Profile Logo Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // PUT update business profile (including company-level FBR settings)
 router.put('/:id', authenticate, async (req, res) => {
@@ -332,7 +365,8 @@ router.put('/:id', authenticate, async (req, res) => {
     fbr_seller_ntn,
     invoice_prefix,
     po_prefix,
-    dc_prefix
+    dc_prefix,
+    logo_url
   } = req.body;
 
   const cleanNtn = ntn ? String(ntn).replace(/[^0-9]/g, '') : null;
@@ -344,7 +378,7 @@ router.put('/:id', authenticate, async (req, res) => {
       const colRes = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'business_profiles'`);
       bpCols = new Set(colRes.rows.map(r => r.column_name));
     } catch (e) {
-      bpCols = new Set(['business_name', 'legal_name', 'ntn', 'strn', 'city']);
+      bpCols = new Set(['business_name', 'legal_name', 'ntn', 'strn', 'city', 'logo_url']);
     }
 
     const candidateUpdates = {
@@ -365,7 +399,8 @@ router.put('/:id', authenticate, async (req, res) => {
       fbr_seller_ntn: fbr_seller_ntn || null,
       invoice_prefix: invoice_prefix || null,
       po_prefix: po_prefix || null,
-      dc_prefix: dc_prefix || null
+      dc_prefix: dc_prefix || null,
+      logo_url: logo_url !== undefined ? logo_url : null
     };
 
     const setClauses = [];

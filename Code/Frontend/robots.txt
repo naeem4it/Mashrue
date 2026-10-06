@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Allow: /plans.html
+Allow: /contact.html
+Allow: /assets/
+Allow: /css/
+Allow: /js/
+Disallow: /api/
+
+Sitemap: https://mashrue.com/sitemap.xml

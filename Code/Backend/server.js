@@ -38,6 +38,7 @@ const expensesRoutes = require('./routes/expenses.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const fbrRoutes = require('./routes/fbr.routes');
 const usersRoutes = require('./routes/users.routes');
+const templatesRoutes = require('./routes/templates.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3033;
@@ -160,6 +161,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/fbr', fbrRoutes);
+app.use('/api/templates', templatesRoutes);
 
 // 9.5 Dedicated Public Page Routes (/plans, /contact)
 app.get('/plans', (req, res) => res.sendFile(path.join(frontendDir, 'plans.html')));
@@ -216,6 +218,27 @@ app.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE bid_securities ALTER COLUMN issue_date TYPE DATE USING issue_date::date;
       ALTER TABLE bid_securities ALTER COLUMN expiry_date TYPE DATE USING expiry_date::date;
       ALTER TABLE performance_guarantees ALTER COLUMN issue_date TYPE DATE USING issue_date::date;
+      -- Quotations & PO Enhancements (Non-destructive)
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS is_quotation BOOLEAN DEFAULT FALSE;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS quotation_category VARCHAR(100);
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS quotation_validity_days INTEGER;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS delivery_lead_time VARCHAR(100);
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS rfq_reference VARCHAR(150);
+
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS opportunity_id UUID REFERENCES opportunities(id) ON DELETE SET NULL;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS subtotal NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS gst_amount NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE purchase_orders ALTER COLUMN award_letter_id DROP NOT NULL;
+      ALTER TABLE purchase_orders ALTER COLUMN contract_id DROP NOT NULL;
+
+      ALTER TABLE purchase_order_items ALTER COLUMN award_item_id DROP NOT NULL;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS item_description TEXT;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS quantity NUMERIC(18, 4);
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price NUMERIC(18, 4);
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS total_price NUMERIC(18, 4);
+
       ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS business_profile_id UUID;
       ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS opportunity_id UUID REFERENCES opportunities(id) ON DELETE SET NULL;
       ALTER TABLE performance_guarantees ADD COLUMN IF NOT EXISTS account_title VARCHAR(255) DEFAULT '';

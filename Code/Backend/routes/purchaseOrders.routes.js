@@ -14,12 +14,20 @@ router.get('/', authenticate, requirePermission('purchase_orders', 'view'), asyn
              c.business_name as customer_name,
              bp.business_name,
              cnt.contract_number,
+             COALESCE(al.award_number, o.opportunity_number, 'Direct PO') as award_number,
+             o.opportunity_number,
+             o.tender_name as opportunity_title,
+             o.is_quotation,
+             o.quotation_category,
+             o.rfq_reference,
              (SELECT COUNT(*) FROM delivery_challans dc WHERE dc.purchase_order_id = po.id) as dc_count,
              (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) as item_count
       FROM purchase_orders po
       JOIN customers c ON po.customer_id = c.id
       JOIN business_profiles bp ON po.business_profile_id = bp.id
       LEFT JOIN contracts cnt ON po.contract_id = cnt.id
+      LEFT JOIN award_letters al ON po.award_letter_id = al.id
+      LEFT JOIN opportunities o ON po.opportunity_id = o.id
       WHERE 1=1
     `;
     const params = [];
@@ -66,10 +74,21 @@ router.get('/', authenticate, requirePermission('purchase_orders', 'view'), asyn
 // GET single PO with items
 router.get('/:id', authenticate, requirePermission('purchase_orders', 'view'), async (req, res) => {
   try {
-    let queryText = `SELECT po.*, c.business_name as customer_name, c.ntn as customer_ntn, bp.business_name
+    let queryText = `SELECT po.*, 
+              c.business_name as customer_name, 
+              c.ntn as customer_ntn, 
+              bp.business_name,
+              COALESCE(al.award_number, o.opportunity_number, 'Direct PO') as award_number,
+              o.opportunity_number,
+              o.tender_name as opportunity_title,
+              o.is_quotation,
+              o.quotation_category,
+              o.rfq_reference
        FROM purchase_orders po
        JOIN customers c ON po.customer_id = c.id
        JOIN business_profiles bp ON po.business_profile_id = bp.id
+       LEFT JOIN award_letters al ON po.award_letter_id = al.id
+       LEFT JOIN opportunities o ON po.opportunity_id = o.id
        WHERE po.id = $1`;
     const params = [req.params.id];
 
@@ -142,6 +161,9 @@ router.post('/', authenticate, async (req, res) => {
     payment_terms,
     total_amount,
     tax_amount,
+    gst_amount,
+    subtotal,
+    net_amount,
     items
   } = req.body;
 
@@ -224,9 +246,9 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'A valid Business Profile is required to issue a Purchase Order.' });
     }
 
-    const sub = parseFloat(total_amount || 0);
-    const tax = parseFloat(tax_amount || 0);
-    const net = sub + tax;
+    const sub = parseFloat(subtotal != null ? subtotal : (total_amount || 0));
+    const tax = parseFloat(gst_amount != null ? gst_amount : (tax_amount || 0));
+    const net = parseFloat(net_amount != null ? net_amount : (sub + tax));
     const safePoDate = parseSafeDate(po_date) || new Date().toISOString().split('T')[0];
     const safeDeadline = parseSafeDate(delivery_deadline);
 

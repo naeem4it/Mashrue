@@ -531,6 +531,29 @@ const API = {
     }
   },
 
+  async updateBusinessProfileLogo(id, logoUrl) {
+    try {
+      const res = await fetch(`${API_BASE}/business-profiles/${id}/logo`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ logo_url: logoUrl })
+      });
+      const json = await res.json();
+      if (json && json.success && json.data) {
+        // Update local State business profiles list
+        if (State.businessProfiles) {
+          const idx = State.businessProfiles.findIndex(b => b.id === id);
+          if (idx !== -1) {
+            State.businessProfiles[idx].logo_url = json.data.logo_url;
+          }
+        }
+      }
+      return json;
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to update company logo.' };
+    }
+  },
+
   async submitAddonPaymentSlip(payload) {
     try {
       const res = await fetch(`${API_BASE}/users/tenant/pay-addon`, {
@@ -934,11 +957,11 @@ const API = {
     return { success: false, message: `Unknown entity type: ${entityType}` };
   },
 
-  // 5. Opportunities / Tenders / Direct Sales (STRICT ZERO-TRUST TENANT ISOLATION)
+  // 5. Opportunities / Tenders (Formal Public & Enterprise Tenders)
   async getOpportunities(businessProfileId = 'all') {
     let apiData = [];
     try {
-      const url = `${API_BASE}/opportunities?business_profile_id=${businessProfileId}`;
+      const url = `${API_BASE}/opportunities?scope=tenders&business_profile_id=${businessProfileId}`;
       const res = await fetch(url, { headers: this.getHeaders() });
       const json = await res.json();
       if (json && Array.isArray(json.data)) apiData = json.data;
@@ -946,16 +969,48 @@ const API = {
       console.warn('getOpportunities fallback:', e.message);
     }
 
-    // STRICT: Only merge valid persisted records, never ghost/fake items
+    // STRICT: Filter out quotations to keep tenders screen clean
     const localList = State.getTenantEntityList('opportunities').filter(o => 
-      o && o.id && !String(o.id).startsWith('f-') && !String(o.id).startsWith('tnd-')
+      o && o.id && !o.is_quotation && o.tender_type !== 'Direct Sales / Quotation' && !String(o.opportunity_number || '').startsWith('QTN-')
     );
     const merged = [...apiData];
     for (const opp of localList) {
       if (!merged.some(m => String(m.id) === String(opp.id))) merged.push(opp);
     }
 
-    return this.filterTenantData(merged, businessProfileId); // Returns [] for new tenants!
+    return this.filterTenantData(merged, businessProfileId);
+  },
+
+  // 5b. Dedicated Quotations & RFQs (Govt Departmental & Private Commercial)
+  async getQuotations(businessProfileId = 'all') {
+    let apiData = [];
+    try {
+      const url = `${API_BASE}/opportunities?scope=quotations&business_profile_id=${businessProfileId}`;
+      const res = await fetch(url, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && Array.isArray(json.data)) apiData = json.data;
+    } catch (e) {
+      console.warn('getQuotations fallback:', e.message);
+    }
+
+    const localList = State.getTenantEntityList('opportunities').filter(o => 
+      o && o.id && (o.is_quotation || o.tender_type === 'Direct Sales / Quotation' || String(o.opportunity_number || '').startsWith('QTN-') || String(o.tender_source || '').toUpperCase() === 'DIRECT SALES' || String(o.tender_source || '').toUpperCase() === 'GOVT QUOTATION')
+    );
+    const merged = [...apiData];
+    for (const opp of localList) {
+      if (!merged.some(m => String(m.id) === String(opp.id))) merged.push(opp);
+    }
+
+    return this.filterTenantData(merged, businessProfileId);
+  },
+
+  async createQuotation(payload) {
+    payload.is_quotation = true;
+    payload.tender_type = 'Direct Sales / Quotation';
+    if (!payload.tender_source) {
+      payload.tender_source = payload.quotation_category === 'Government Departmental' ? 'GOVT QUOTATION' : 'DIRECT SALES';
+    }
+    return this.createOpportunity(payload);
   },
 
   async getOpportunityById(id) {
@@ -974,16 +1029,18 @@ const API = {
   async createOpportunity(payload) {
     const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || 'system';
 
-    // 1. Quota & Suspension Check (15-Day Trial 5 Tenders, Starter 5 Bids, Suspended Check)
-    const check = State.checkTenantQuotaLimit('tender', tid);
-    if (!check.allowed) {
-      console.warn('[QUOTA / SUSPENSION CHECK FAILED]:', check.message);
-      return {
-        success: false,
-        suspended: check.suspended || false,
-        quotaExceeded: check.quotaExceeded || false,
-        message: check.message
-      };
+    // 1. Quota & Suspension Check (Only applies to formal tenders, not direct quotations)
+    if (!payload.is_quotation && payload.tender_type !== 'Direct Sales / Quotation') {
+      const check = State.checkTenantQuotaLimit('tender', tid);
+      if (!check.allowed) {
+        console.warn('[QUOTA / SUSPENSION CHECK FAILED]:', check.message);
+        return {
+          success: false,
+          suspended: check.suspended || false,
+          quotaExceeded: check.quotaExceeded || false,
+          message: check.message
+        };
+      }
     }
 
     const genOppNo = payload.opportunity_number || ('TND-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
@@ -2211,14 +2268,27 @@ const API = {
     }
   },
 
-  // 16. Reports & Executive KPIs (STRICT DYNAMIC CALCULATION PER TENANT)
+  // 16. Reports & Executive KPIs (FAST DIRECT BACKEND QUERY OR PARALLEL FALLBACK)
   async getDashboardKPIs(businessProfileId = 'all') {
-    const opps = await this.getOpportunities(businessProfileId);
-    const securities = await this.getBidSecurities(businessProfileId);
-    const invoices = await this.getInvoices(businessProfileId);
-    const payments = await this.getPayments(businessProfileId);
-    const dcs = await this.getDeliveryChallans(businessProfileId);
-    const expenses = await this.getExpenses(businessProfileId);
+    try {
+      const res = await fetch(`${API_BASE}/reports/dashboard-kpis?business_profile_id=${encodeURIComponent(businessProfileId)}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && json.success && json.data) {
+        return json.data;
+      }
+    } catch (e) {
+      console.warn('API getDashboardKPIs server call fallback:', e.message);
+    }
+
+    // Parallel fetch fallback
+    const [opps, securities, invoices, payments, dcs, expenses] = await Promise.all([
+      this.getOpportunities(businessProfileId).catch(() => []),
+      this.getBidSecurities(businessProfileId).catch(() => []),
+      this.getInvoices(businessProfileId).catch(() => []),
+      this.getPayments(businessProfileId).catch(() => []),
+      this.getDeliveryChallans(businessProfileId).catch(() => []),
+      this.getExpenses(businessProfileId).catch(() => [])
+    ]);
 
     const totalPipelineValue = opps.reduce((sum, o) => sum + parseFloat(o.estimated_value || 0), 0);
     const wonCount = opps.filter(o => o.status && String(o.status).toLowerCase() === 'won').length;
@@ -2282,6 +2352,101 @@ const API = {
   async getPendingBills() {
     const invoices = await this.getInvoices();
     return invoices.filter(i => (parseFloat(i.outstanding_amount || i.total_amount || 0) > 0));
+  },
+
+  async getBidSecuritiesAndGuaranteesReport(businessProfileId = 'all', filters = {}) {
+    try {
+      const q = new URLSearchParams({
+        business_profile_id: businessProfileId,
+        start_date: filters.startDate || '',
+        end_date: filters.endDate || '',
+        scope: filters.scope || 'all',
+        status: filters.status || 'all',
+        instrument_filter: filters.instrumentFilter || 'all'
+      });
+      const res = await fetch(`${API_BASE}/reports/bid-securities-and-guarantees?${q.toString()}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json && json.success ? json : { success: false, data: [], summary: {} };
+    } catch (e) {
+      console.warn('getBidSecuritiesAndGuaranteesReport error:', e);
+      return { success: false, data: [], summary: {} };
+    }
+  },
+
+  async getExpensesReport(businessProfileId = 'all', filters = {}) {
+    try {
+      const q = new URLSearchParams({
+        business_profile_id: businessProfileId,
+        start_date: filters.startDate || '',
+        end_date: filters.endDate || '',
+        scope: filters.scope || 'all',
+        tier: filters.tier || 'all',
+        category: filters.category || 'all'
+      });
+      const res = await fetch(`${API_BASE}/reports/expenses-ledger?${q.toString()}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json && json.success ? json : { success: false, data: [], summary: {} };
+    } catch (e) {
+      console.warn('getExpensesReport error:', e);
+      return { success: false, data: [], summary: {} };
+    }
+  },
+
+  async getReceivablesReport(businessProfileId = 'all', filters = {}) {
+    try {
+      const q = new URLSearchParams({
+        business_profile_id: businessProfileId,
+        customer_id: filters.customerId || 'all',
+        start_date: filters.startDate || '',
+        end_date: filters.endDate || '',
+        scope: filters.scope || 'all',
+        aging_bracket: filters.agingBracket || 'all'
+      });
+      const res = await fetch(`${API_BASE}/reports/pending-receivables?${q.toString()}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json && json.success ? json : { success: false, data: [], summary: {} };
+    } catch (e) {
+      console.warn('getReceivablesReport error:', e);
+      return { success: false, data: [], summary: {} };
+    }
+  },
+
+  async getAccountsPayableReport(businessProfileId = 'all', filters = {}) {
+    try {
+      const q = new URLSearchParams({
+        business_profile_id: businessProfileId,
+        supplier_id: filters.supplierId || 'all',
+        start_date: filters.startDate || '',
+        end_date: filters.endDate || '',
+        scope: filters.scope || 'all',
+        due_status: filters.dueStatus || 'all'
+      });
+      const res = await fetch(`${API_BASE}/reports/accounts-payable?${q.toString()}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json && json.success ? json : { success: false, data: [], summary: {} };
+    } catch (e) {
+      console.warn('getAccountsPayableReport error:', e);
+      return { success: false, data: [], summary: {} };
+    }
+  },
+
+  async getSupplyStatusReport(businessProfileId = 'all', filters = {}) {
+    try {
+      const q = new URLSearchParams({
+        business_profile_id: businessProfileId,
+        customer_id: filters.customerId || 'all',
+        start_date: filters.startDate || '',
+        end_date: filters.endDate || '',
+        scope: filters.scope || 'all',
+        supply_status: filters.supplyStatus || 'all'
+      });
+      const res = await fetch(`${API_BASE}/reports/supply-status?${q.toString()}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json && json.success ? json : { success: false, data: [], summary: {} };
+    } catch (e) {
+      console.warn('getSupplyStatusReport error:', e);
+      return { success: false, data: [], summary: {} };
+    }
   },
 
   // 17. Generic & Dedicated Entity Updates
@@ -2737,6 +2902,129 @@ const API = {
     } catch (e) {
       console.warn('Backend portfolio fallback:', e.message);
       return [];
+    }
+  },
+
+  // ── Print Template Engine APIs ──
+  async getTemplates(docType) {
+    try {
+      const url = docType ? `${API_BASE}/templates?doc_type=${encodeURIComponent(docType)}` : `${API_BASE}/templates`;
+      const res = await fetch(url, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('API.getTemplates error:', e.message);
+      return [];
+    }
+  },
+
+  async getTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : null;
+    } catch (e) {
+      console.warn('API.getTemplate error:', e.message);
+      return null;
+    }
+  },
+
+  async createTemplate(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/templates`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async updateTemplate(id, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async deleteTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async setDefaultTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}/set-default`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getCustomerTemplateMappings() {
+    try {
+      const res = await fetch(`${API_BASE}/templates/customer-mappings/all`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('API.getCustomerTemplateMappings error:', e.message);
+      return [];
+    }
+  },
+
+  async saveCustomerTemplateMapping(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/customer-mappings`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async deleteCustomerTemplateMapping(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/customer-mappings/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async parseSampleTemplate(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/parse-sample`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
     }
   }
 };

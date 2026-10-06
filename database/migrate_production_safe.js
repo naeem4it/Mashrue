@@ -94,6 +94,58 @@ async function runSafeMigration() {
       ALTER TABLE bid_securities ADD COLUMN IF NOT EXISTS instrument_image_url TEXT;
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_tier VARCHAR(50) DEFAULT 'Tier 1 - Tender Direct';
       
+      -- Quotations & PO Enhancements (100% Non-destructive)
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS is_quotation BOOLEAN DEFAULT FALSE;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS quotation_category VARCHAR(100);
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS quotation_validity_days INTEGER;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS delivery_lead_time VARCHAR(100);
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+      ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS rfq_reference VARCHAR(150);
+
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS opportunity_id UUID REFERENCES opportunities(id) ON DELETE SET NULL;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS subtotal NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS gst_amount NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18, 4) DEFAULT 0;
+      ALTER TABLE purchase_orders ALTER COLUMN award_letter_id DROP NOT NULL;
+      ALTER TABLE purchase_orders ALTER COLUMN contract_id DROP NOT NULL;
+
+      ALTER TABLE purchase_order_items ALTER COLUMN award_item_id DROP NOT NULL;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS item_description TEXT;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS quantity NUMERIC(18, 4);
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price NUMERIC(18, 4);
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS total_price NUMERIC(18, 4);
+
+      -- Warehouse Stock & Reservations (100% Non-destructive)
+      CREATE TABLE IF NOT EXISTS warehouse_stock (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL,
+        warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+        product_id UUID NOT NULL REFERENCES products_services(id) ON DELETE CASCADE,
+        batch_number VARCHAR(100) DEFAULT 'STANDARD',
+        quantity_on_hand NUMERIC(18, 4) DEFAULT 0,
+        quantity_reserved NUMERIC(18, 4) DEFAULT 0,
+        reorder_level NUMERIC(18, 4) DEFAULT 10,
+        storage_location VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(warehouse_id, product_id, batch_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS stock_reservations (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL,
+        opportunity_id UUID REFERENCES opportunities(id) ON DELETE SET NULL,
+        purchase_order_id UUID REFERENCES purchase_orders(id) ON DELETE SET NULL,
+        product_id UUID NOT NULL REFERENCES products_services(id) ON DELETE CASCADE,
+        warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+        batch_number VARCHAR(100) DEFAULT 'STANDARD',
+        reserved_quantity NUMERIC(18, 4) DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'Active',
+        reserved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      
       CREATE TABLE IF NOT EXISTS expense_categories (
           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
           tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,

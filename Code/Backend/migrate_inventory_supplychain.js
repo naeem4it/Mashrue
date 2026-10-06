@@ -1,4 +1,21 @@
-const db = require('./config/db');
+const fs = require('fs');
+const path = require('path');
+
+const dbCandidates = [
+  path.join(__dirname, './config/db'),
+  path.join(__dirname, '../backend/config/db'),
+  path.join(__dirname, '../Code/Backend/config/db'),
+  path.join(__dirname, '../../Code/Backend/config/db')
+];
+
+let db = null;
+for (const c of dbCandidates) {
+  if (fs.existsSync(c + '.js') || fs.existsSync(c)) {
+    db = require(c);
+    break;
+  }
+}
+if (!db) db = require('./config/db');
 
 async function migrateInventoryAndSupplyChain() {
   try {
