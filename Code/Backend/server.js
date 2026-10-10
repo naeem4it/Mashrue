@@ -144,6 +144,17 @@ const handleHealthCheck = async (req, res) => {
 app.get('/health', handleHealthCheck);
 app.get('/api/health', handleHealthCheck);
 
+// 8.5 Strict Real-Time Data Integrity (Zero Caching for All Business Data)
+app.use('/api', (req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store'
+  });
+  next();
+});
+
 // 9. Mount All Modular REST API Endpoints
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
@@ -395,8 +406,20 @@ app.listen(PORT, '0.0.0.0', async () => {
         remarks TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- High Performance B-Tree Indexes for Instant Live Queries (Zero-caching optimizations)
+      CREATE INDEX IF NOT EXISTS idx_opportunities_tenant_biz ON opportunities (tenant_id, business_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_bid_securities_tenant_biz ON bid_securities (tenant_id, business_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_invoices_tenant_biz ON invoices (tenant_id, business_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_payments_tenant_biz ON payments (tenant_id, business_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_expenses_tenant_biz ON general_expenses (tenant_id, business_profile_id);
+      CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers (tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_products_tenant ON products_services (tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant ON purchase_orders (tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_delivery_challans_tenant ON delivery_challans (tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_users_tenant_role ON users (tenant_id, role);
     `);
-    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, warehouses, warehouse_stock, tenants, subscription_payments).');
+    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, warehouses, warehouse_stock, tenants, subscription_payments, indexes).');
   } catch (schemaErr) {
     console.warn('Schema auto-migration warning:', schemaErr.message);
   }

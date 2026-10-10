@@ -4,6 +4,49 @@
  * Dynamic Columns, Logo/Letterhead Branding, Paper Sizes, and Customer Mappings.
  */
 
+function convertNumberToWordsPKR(amount) {
+  if (amount == null || isNaN(amount)) return '';
+  const num = Math.round(Number(amount));
+  if (num === 0) return 'Zero Rupees Only';
+
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function convertChunk(n) {
+    let str = '';
+    if (n >= 100) {
+      str += ones[Math.floor(n / 100)] + ' Hundred ';
+      n %= 100;
+    }
+    if (n >= 20) {
+      str += tens[Math.floor(n / 10)] + (n % 10 > 0 ? '-' + ones[n % 10] : '') + ' ';
+    } else if (n > 0) {
+      str += ones[n] + ' ';
+    }
+    return str.trim();
+  }
+
+  const billions = Math.floor(num / 1000000000);
+  let rem = num % 1000000000;
+  const millions = Math.floor(rem / 1000000);
+  rem = rem % 1000000;
+  const thousands = Math.floor(rem / 1000);
+  const hundreds = rem % 1000;
+
+  let words = '';
+  if (billions > 0) words += convertChunk(billions) + ' Billion ';
+  if (millions > 0) words += convertChunk(millions) + ' Million ';
+  if (thousands > 0) words += convertChunk(thousands) + ' Thousand ';
+  if (hundreds > 0) {
+    if (words !== '' && hundreds < 100) words += 'and ';
+    words += convertChunk(hundreds) + ' ';
+  }
+
+  return words.trim() + ' Only';
+}
+window.convertNumberToWordsPKR = convertNumberToWordsPKR;
+
 window.TemplatesEngine = {
   templates: [],
   customerMappings: [],
@@ -60,6 +103,114 @@ window.TemplatesEngine = {
   },
 
   getStandardFallbackTemplate(docType = 'quotation') {
+    if (docType === 'purchase_order') {
+      return {
+        id: 'standard-po-mayo',
+        template_name: 'Institutional Purchase Order (Mayo Hospital Standard)',
+        doc_type: 'purchase_order',
+        is_default: true,
+        paper_size: 'A4',
+        paper_orientation: 'portrait',
+        letterhead_mode: 'digital',
+        top_margin_mm: 12,
+        bottom_margin_mm: 12,
+        accent_color: '#000000',
+        font_family: 'Arial, sans-serif',
+        show_company_header: true,
+        show_company_footer: true,
+        show_signature_blocks: false,
+        columns_config: [
+          { key: "item_description", label: "Item Description", visible: true, width: "16%", align: "left" },
+          { key: "specs", label: "Specification", visible: true, width: "16%", align: "left" },
+          { key: "unit", label: "Unit Of Measure", visible: true, width: "9%", align: "center" },
+          { key: "pack_size", label: "Pack Size", visible: true, width: "7%", align: "center" },
+          { key: "unit_price", label: "Price", visible: true, width: "10%", align: "right" },
+          { key: "quantity", label: "Quantity", visible: true, width: "8%", align: "center" },
+          { key: "amount", label: "Amount", visible: true, width: "11%", align: "right" },
+          { key: "tax_amount", label: "Tax Amount", visible: true, width: "10%", align: "right" },
+          { key: "delivery_date", label: "Delivery Date", visible: true, width: "13%", align: "center" }
+        ],
+        custom_terms: `AS PER PPRA should mention brand and Defacement is mandatory (govt. property, mayo Hospital Lahore. NOT FOR SALE) DRAP registration/Enlistment is compulsory (if applicable)`
+      };
+    }
+
+    if (docType === 'technical_proposal') {
+      return {
+        id: 'standard-tech-proposal',
+        template_name: 'Government Technical Proposal (Mayo Hospital Framework)',
+        doc_type: 'technical_proposal',
+        is_default: true,
+        paper_size: 'A4',
+        paper_orientation: 'portrait',
+        letterhead_mode: 'digital',
+        top_margin_mm: 15,
+        bottom_margin_mm: 15,
+        accent_color: '#000000',
+        font_family: 'Arial, sans-serif',
+        show_company_header: true,
+        show_company_footer: true,
+        show_signature_blocks: true,
+        columns_config: [
+          { key: "sr", label: "Sr.#", visible: true, width: "6%", align: "center" },
+          { key: "item_name_specs", label: "Item Name & Description / Specification", visible: true, width: "55%", align: "left" },
+          { key: "brand", label: "Brand", visible: true, width: "17%", align: "left" },
+          { key: "unit", label: "Unit", visible: true, width: "11%", align: "center" },
+          { key: "quantity", label: "Qty", visible: true, width: "11%", align: "center" }
+        ],
+        custom_terms: `Note:\nBid Validity as per Bidding Documents`
+      };
+    }
+
+    if (docType === 'financial_proposal') {
+      return {
+        id: 'standard-financial-pitb',
+        template_name: 'Government Financial Proposal (PITB Framework Format)',
+        doc_type: 'financial_proposal',
+        is_default: true,
+        paper_size: 'A4',
+        paper_orientation: 'portrait',
+        letterhead_mode: 'digital',
+        top_margin_mm: 15,
+        bottom_margin_mm: 15,
+        accent_color: '#000000',
+        font_family: 'Arial, sans-serif',
+        show_company_header: true,
+        show_company_footer: true,
+        show_signature_blocks: true,
+        columns_config: [
+          { key: "sr", label: "Sr.#", visible: true, width: "6%", align: "center" },
+          { key: "item_name", label: "Item Name", visible: true, width: "22%", align: "left" },
+          { key: "specs", label: "Offered Parameters (Specification/Dimensions)", visible: true, width: "28%", align: "left" },
+          { key: "unit", label: "Medium", visible: true, width: "9%", align: "center" },
+          { key: "unit_price", label: "Unit price (inclusive of all taxes & duties etc.)", visible: true, width: "13%", align: "right" },
+          { key: "quantity", label: "Quantity", visible: true, width: "8%", align: "center" },
+          { key: "total_price", label: "Total price (inclusive of all taxes & duties etc.)", visible: true, width: "14%", align: "right" }
+        ],
+        custom_terms: `Note: Bid Validity as per Tender`
+      };
+    }
+
+    if (docType === 'executive_report') {
+      return {
+        id: 'standard-exec-report',
+        template_name: 'C-Suite Executive Audit Ledger',
+        doc_type: 'executive_report',
+        is_default: true,
+        paper_size: 'A4',
+        paper_orientation: 'landscape',
+        letterhead_mode: 'digital',
+        top_margin_mm: 10,
+        bottom_margin_mm: 10,
+        accent_color: '#0f172a',
+        font_family: 'Inter, Arial, sans-serif',
+        show_company_header: true,
+        show_company_footer: true,
+        show_signature_blocks: true,
+        columns_config: [],
+        custom_terms: `🔒 STRICTLY CONFIDENTIAL • FOR INTERNAL MANAGEMENT & AUDIT PURPOSES ONLY`
+      };
+    }
+
     return {
       id: 'standard-fallback',
       template_name: docType === 'tender' ? 'Standard PPRA Tender BoQ' : 'Standard Commercial Quotation',
@@ -1345,6 +1496,9 @@ window.TemplatesEngine = {
               <select id="cust-mapping-doc-type" class="form-select" onchange="TemplatesEngine.filterMappingTemplatesDropdown(this.value)">
                 <option value="quotation">Commercial Quotations</option>
                 <option value="tender">Tenders & BoQ Submissions</option>
+                <option value="purchase_order">Purchase Orders (PO)</option>
+                <option value="technical_proposal">Technical Proposals</option>
+                <option value="financial_proposal">Financial Proposals</option>
                 <option value="delivery_challan">Delivery Challans</option>
                 <option value="invoice">Tax Invoices</option>
               </select>
@@ -1526,9 +1680,313 @@ window.TemplatesEngine = {
     return this.compileDocumentHTML(tpl, dynamicData);
   },
 
+  compilePurchaseOrderHTML(tpl, docData, currentProfile) {
+    const cust = docData.customer || {};
+    const items = docData.items && docData.items.length > 0 ? docData.items : [
+      { item_name: 'Surgical gloves', specs: 'SURGICAL GLOVES 7.0', unit: 'EACH', pack_size: 1, estimated_unit_price: 120, quantity: 4000, estimated_total_price: 480000, delivery_date: 'Mar 16, 2026', quoted_delivery_date: 'Mar 16, 2026' }
+    ];
+
+    const subtotal = items.reduce((acc, itm) => acc + (parseFloat(itm.estimated_total_price) || (parseFloat(itm.quantity || 1) * parseFloat(itm.estimated_unit_price || 0))), 0);
+    const taxRate = docData.tax_rate_pct != null ? parseFloat(docData.tax_rate_pct) : 0;
+    const taxTotal = (subtotal * taxRate) / 100;
+    const grandTotal = subtotal + taxTotal;
+
+    const poNumber = docData.po_number || docData.opportunity_number || '3464344';
+    const poDateStr = formatDateDDMMYYYY(docData.po_date || docData.created_at || new Date());
+    const validDateStr = formatDateDDMMYYYY(docData.validity_date || new Date(Date.now() + 14 * 86400000));
+    const generatedBy = docData.generated_by || State.currentUser?.fullName || 'Amber Iqbal Khan';
+
+    const supplierName = docData.supplier_name || currentProfile.business_name || 'ECON&CO';
+    const supplierMobile = docData.supplier_mobile || currentProfile.phone || '+923224670704';
+    const supplierEmail = docData.supplier_email || currentProfile.email || 'ahmedch08@gmail.com';
+    const supplierAddress = docData.supplier_address || currentProfile.address || 'House no 191-b B block Johar town';
+
+    const orgTitle = docData.organization_name || cust.business_name || 'Mayo Hospital, Lahore - SH&MED';
+    const orgAddress = docData.organization_address || cust.address || 'Hospital Rd, Anarkali Bazaar Lahore, Punjab 54000 Phone: 042-99211129 Fax: ';
+
+    this.injectPrintPageStyle(tpl.paper_size || 'A4', tpl.paper_orientation || 'portrait', tpl.top_margin_mm || 12, tpl.bottom_margin_mm || 12);
+
+    return `
+      <div class="printable-content-root po-mayo-style" style="font-family:${tpl.font_family || 'Arial, sans-serif'}; font-size:8pt; line-height:1.35; color:#000; background:#fff; padding:4px;">
+        <div style="text-align:center; margin-bottom:12px;">
+          <div style="font-size:12pt; font-weight:bold; letter-spacing:-0.2px;">${orgTitle}</div>
+          <div style="font-size:7.5pt; color:#222; margin-top:2px;">${orgAddress}</div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:14px; font-size:7.5pt; margin-bottom:10px; line-height:1.45;">
+          <div>
+            <div style="font-weight:bold; font-size:8.5pt;">PO# ${poNumber}</div>
+            <div><strong>Supplier:</strong> ${supplierName}</div>
+            <div style="padding-left:18px;"><strong>Mobile:</strong> ${supplierMobile}</div>
+            <div style="padding-left:18px;"><strong>Email:</strong> ${supplierEmail}</div>
+            <div style="padding-left:18px;"><strong>Supplier Address:</strong> ${supplierAddress}</div>
+          </div>
+          <div style="text-align:right;">
+            <div><strong>PO Date:</strong> ${poDateStr}</div>
+            <div><strong>Generated By:</strong> ${generatedBy}</div>
+            <div><strong>Validity Date:</strong> ${validDateStr}</div>
+          </div>
+        </div>
+
+        <div style="font-size:7pt; margin-bottom:12px; line-height:1.35;">
+          <strong>Term(s) and Condition(s):</strong><br>
+          ${tpl.custom_terms || 'AS PER PPRA should mention brand and Defacement is mandatory (govt. property, mayo Hospital Lahore. NOT FOR SALE) DRAP registration/Enlistment is compulsory (if applicable)'}
+        </div>
+
+        <div style="text-align:center; font-weight:bold; font-size:10.5pt; letter-spacing:1px; margin:10px 0 8px 0;">
+          PURCHASE ORDER
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-bottom:12px; font-size:7.5pt;">
+          <thead>
+            <tr style="background:#000; color:#fff; font-weight:bold; text-align:left;">
+              <th style="padding:6px 6px; border:1px solid #000; width:15%;">Item Description</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:15%;">Specification</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:9%; text-align:center;">Unit Of Measure</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:7%; text-align:center;">Pack Size</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:9%; text-align:right;">Price</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:8%; text-align:center;">Quantity</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:11%; text-align:right;">Amount</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:9%; text-align:right;">Tax Amount</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:9%; text-align:center;">Delivery Date</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:9%; text-align:center;">Quoted Delivery Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(it => {
+              const uPrice = parseFloat(it.estimated_unit_price || it.price || 0);
+              const qty = parseFloat(it.quantity || 1);
+              const lineAmt = parseFloat(it.estimated_total_price || (uPrice * qty));
+              const lineTax = parseFloat(it.tax_amount || 0);
+              return `
+                <tr style="border-bottom:1px solid #ddd;">
+                  <td style="padding:6px 6px; border:1px solid #eee; vertical-align:top;">${it.item_name || it.item_description || 'Scope Item'}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; vertical-align:top;">${it.specs || it.specifications || it.specification || '-'}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:center; vertical-align:top;">${it.unit || it.uom || 'EACH'}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:center; vertical-align:top;">${it.pack_size || 1}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:right; vertical-align:top;">PKR. ${uPrice.toLocaleString('en-PK', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:center; vertical-align:top;">${qty}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:right; vertical-align:top;">PKR. ${lineAmt.toLocaleString('en-PK', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:right; vertical-align:top;">PKR. ${lineTax.toLocaleString('en-PK', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:center; vertical-align:top;">${it.delivery_date || poDateStr}</td>
+                  <td style="padding:6px 6px; border:1px solid #eee; text-align:center; vertical-align:top;">${it.quoted_delivery_date || poDateStr}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+          <table style="font-size:7.5pt; border-collapse:collapse; min-width:320px;">
+            <tr>
+              <td style="padding:3px 12px; text-align:left;">Total Exclusive Tax Amount</td>
+              <td style="padding:3px 12px; text-align:right; font-weight:bold;">PKR. ${subtotal.toLocaleString('en-PK', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+            </tr>
+            <tr>
+              <td style="padding:3px 12px; text-align:left;">Total Tax</td>
+              <td style="padding:3px 12px; text-align:right; font-weight:bold;">PKR. ${taxTotal.toLocaleString('en-PK', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+            </tr>
+            <tr style="border-top:1px solid #000; font-weight:bold;">
+              <td style="padding:5px 12px; text-align:left;">Total Inclusive Tax Amount</td>
+              <td style="padding:5px 12px; text-align:right;">PKR. ${grandTotal.toLocaleString('en-PK', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="text-align:center; font-size:7.5pt; color:#333; margin-top:28px;">
+          This is a system generated document and does not deem necessary to have physical signatures.
+        </div>
+        <div style="text-align:right; font-size:7pt; color:#555; margin-top:10px;">
+          Print Date and Time: ${new Date().toLocaleString('en-GB')}
+        </div>
+      </div>
+    `;
+  },
+
+  compileTechnicalProposalHTML(tpl, docData, currentProfile) {
+    const cust = docData.customer || {};
+    const items = docData.items && docData.items.length > 0 ? docData.items : [
+      { item_name: 'Rolled Register Hard Binding Size 8*13 Paper Weight 68gm Pages 200', specs: '', brand: 'As per sample', unit: 'Per Nos', quantity: 2200 },
+      { item_name: 'White Paper Size A4 Paper Weight 80gm Pages of 500/Rim Type Imported', specs: '', brand: 'BLC', unit: 'Per Nos', quantity: 20000 },
+      { item_name: 'Ball Point Color: Blue/Red', specs: '', brand: 'Piano', unit: 'Per Nos', quantity: 22000 }
+    ];
+
+    const currentYear = new Date().getFullYear();
+    const financialYear = `${currentYear}-${currentYear + 1}`;
+    const subjectTitle = (docData.tender_name || docData.title || 'PROCUREMENT OF STATIONARY ITEMS (A-16)').toUpperCase();
+    const orgName = (cust.business_name || cust.name || 'MAYO HOSPITAL LAHORE').toUpperCase();
+    const sectionTitle = (docData.lot_title || docData.category_name || 'STAIONARY ITEMS').toUpperCase();
+
+    this.injectPrintPageStyle(tpl.paper_size || 'A4', tpl.paper_orientation || 'portrait', tpl.top_margin_mm || 15, tpl.bottom_margin_mm || 15);
+
+    return `
+      <div class="printable-content-root tech-proposal-style" style="font-family:${tpl.font_family || 'Arial, sans-serif'}; font-size:9pt; line-height:1.4; color:#000; background:#fff; padding:6px;">
+        <div style="margin-bottom:14px; font-size:9.5pt; line-height:1.45;">
+          <div>To,</div>
+          <div style="font-weight:bold;">${docData.addressed_to || 'Chief Executive Officer'}</div>
+          <div style="font-weight:bold;">${cust.business_name || cust.name || 'Mayo Hospital Lahore.'}</div>
+        </div>
+
+        <div style="margin-bottom:14px; font-size:9.5pt; line-height:1.45;">
+          <strong>Subject: TECHNICAL PROPOSAL FRAMEWORK CONTRACT FOR ${subjectTitle} FOR THE FINANCIAL YEAR ${financialYear} ${orgName}.</strong>
+        </div>
+
+        <div style="text-align:center; font-weight:bold; font-size:10.5pt; letter-spacing:0.5px; margin:14px 0 8px 0;">
+          ${sectionTitle}
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-bottom:18px; font-size:8.5pt;">
+          <thead>
+            <tr style="background:#fff; font-weight:bold; text-align:left;">
+              <th style="padding:6px 8px; border:1px solid #000; width:7%; text-align:center;">Sr.#</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:55%;">Item Name & Description / Specification</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:16%;">Brand</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:11%; text-align:center;">Unit</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:11%; text-align:center;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((it, idx) => {
+              const fullDesc = [it.item_name || it.item_description, it.specs || it.specifications].filter(Boolean).join('<br>');
+              return `
+                <tr>
+                  <td style="padding:6px 8px; border:1px solid #000; text-align:center; vertical-align:top;">${idx + 1}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; vertical-align:top;">${fullDesc || 'Scope Item Specification Compliant'}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; vertical-align:top;">${it.brand || it.brand_name || 'As per sample'}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; text-align:center; vertical-align:top;">${it.unit || 'Per Nos'}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; text-align:center; vertical-align:top;">${it.quantity || 1}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <div style="font-size:8.5pt; margin-top:16px;">
+          <strong>Note:</strong><br>
+          ${tpl.custom_terms || 'Bid Validity as per Bidding Documents'}
+        </div>
+
+        <div style="margin-top:40px; font-size:12pt; font-weight:900; letter-spacing:1px;">
+          ${(currentProfile.business_name || 'DO WIDE TRADERS').toUpperCase()}
+        </div>
+        <div style="font-size:7.5pt; color:#555; margin-top:4px;">
+          Authorized Corporate Representative & Stamp
+        </div>
+      </div>
+    `;
+  },
+
+  compileFinancialProposalHTML(tpl, docData, currentProfile) {
+    const cust = docData.customer || {};
+    const items = docData.items && docData.items.length > 0 ? docData.items : [
+      { item_name: 'Standee with stand', specs: "Size 2'x5', 4 color printing on star flex with A+ stand", unit: 'Nos', unit_price: 837, quantity: 3500, total_price: 2929500 },
+      { item_name: 'Standees (Print only)', specs: "Size 2' x 5', 4 color printing on star flex without Stands", unit: 'Nos', unit_price: 405, quantity: 500, total_price: 202500 }
+    ];
+
+    const grandTotal = items.reduce((acc, itm) => acc + (parseFloat(itm.total_price) || (parseFloat(itm.quantity || 1) * parseFloat(itm.unit_price || 0))), 0);
+    const inWords = convertNumberToWordsPKR(grandTotal);
+
+    const docDateStr = formatDateDDMMYYYY(docData.opening_date || docData.created_at || new Date());
+    const subjectTitle = (docData.tender_name || docData.title || 'Procurement of Printing & Publication').toUpperCase();
+    const customerTitle = cust.business_name || 'Punjab Information Technology Board,';
+    const customerCity = cust.city || 'Lahore.';
+    const frameworkRef = docData.rfq_reference || docData.external_tender_number || 'Framework Contract NDP – 01';
+
+    this.injectPrintPageStyle(tpl.paper_size || 'A4', tpl.paper_orientation || 'portrait', tpl.top_margin_mm || 15, tpl.bottom_margin_mm || 15);
+
+    return `
+      <div class="printable-content-root financial-proposal-style" style="font-family:${tpl.font_family || 'Arial, sans-serif'}; font-size:9pt; line-height:1.4; color:#000; background:#fff; padding:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; font-size:9.5pt;">
+          <div>
+            <div>To,</div>
+            <div style="font-weight:bold;">${customerTitle}</div>
+            <div>${customerCity}</div>
+          </div>
+          <div style="font-weight:bold;">
+            Date: ${docDateStr}
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px; font-size:9.5pt; line-height:1.45;">
+          <strong>Subject: Financial Proposal for the ${subjectTitle} for ${customerTitle} and its Various Projects Under ${frameworkRef}</strong>
+        </div>
+
+        <div style="margin-top:12px; border:1px solid #000; background:#e2e8f0; text-align:center; padding:4px; font-weight:bold; font-size:9.5pt;">
+          ${docData.lot_name || 'LOT No. 1'}
+        </div>
+        <div style="border:1px solid #000; border-top:none; background:#cbd5e1; text-align:center; padding:4px; font-weight:bold; font-size:9.5pt; margin-bottom:0;">
+          ${(docData.category_name || 'FLEXOGRAPHIC PRINTING ITEMS').toUpperCase()}
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-bottom:0; font-size:8.5pt;">
+          <thead>
+            <tr style="background:#f1f5f9; font-weight:bold; text-align:left;">
+              <th style="padding:6px 6px; border:1px solid #000; width:5%; text-align:center;">Sr.#</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:20%;">Item Name</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:30%;">Offered Parameters<br>(Specification/Dimensions)</th>
+              <th style="padding:6px 6px; border:1px solid #000; width:8%; text-align:center;">Medium</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:13%; text-align:right;">Unit price<br>(inclusive of all taxes & duties etc.)</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:9%; text-align:center;">Quantity</th>
+              <th style="padding:6px 8px; border:1px solid #000; width:15%; text-align:right;">Total price<br>(inclusive of all taxes & duties etc.)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((it, idx) => {
+              const uPrice = parseFloat(it.unit_price || it.estimated_unit_price || 0);
+              const qty = parseFloat(it.quantity || 1);
+              const lineTot = parseFloat(it.total_price || it.estimated_total_price || (uPrice * qty));
+              return `
+                <tr>
+                  <td style="padding:6px 6px; border:1px solid #000; text-align:center; vertical-align:top;">${idx + 1}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; vertical-align:top; font-weight:600;">${it.item_name || 'Scope Item'}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; vertical-align:top;">${it.specs || it.specifications || it.description || '-'}</td>
+                  <td style="padding:6px 6px; border:1px solid #000; text-align:center; vertical-align:top;">${it.unit || it.medium || 'Nos'}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; text-align:right; vertical-align:top;">${uPrice.toLocaleString('en-PK')}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; text-align:center; vertical-align:top;">${qty.toLocaleString('en-PK')}</td>
+                  <td style="padding:6px 8px; border:1px solid #000; text-align:right; vertical-align:top; font-weight:600;">${lineTot.toLocaleString('en-PK')}</td>
+                </tr>
+              `;
+            }).join('')}
+            <tr style="font-weight:bold; background:#fff;">
+              <td colspan="6" style="padding:6px 12px; border:1px solid #000; text-align:right;">Total Bid Price:</td>
+              <td style="padding:6px 8px; border:1px solid #000; text-align:right; font-size:9.5pt;">${grandTotal.toLocaleString('en-PK')}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:12px; font-size:9pt; line-height:1.6;">
+          <div>Total Bid value (against which a Bid shall be evaluated) in figure (PKR). <strong>${grandTotal.toLocaleString('en-PK')}/-</strong></div>
+          <div>Total Bid value (against which a Bid shall be evaluated) in words (PKR). <strong>${inWords}</strong></div>
+        </div>
+
+        <div style="margin-top:20px; font-size:8.5pt;">
+          <strong>Note:</strong> ${tpl.custom_terms || 'Bid Validity as per Tender'}
+        </div>
+
+        <div style="margin-top:35px; text-align:right; font-size:12pt; font-weight:900; letter-spacing:1px;">
+          ${(currentProfile.business_name || 'ECON & CO').toUpperCase()}
+        </div>
+        <div style="text-align:right; font-size:7.5pt; color:#555; margin-top:4px;">
+          Authorized Corporate Representative & Stamp
+        </div>
+      </div>
+    `;
+  },
+
   compileDocumentHTML(tpl, docData) {
     // ── Universal Rule: Concrete Commercial Entity for ALL Current and Future Printouts ──
     const currentProfile = State.getPrintableBusinessProfile(docData);
+    const docType = (tpl.doc_type || 'quotation').toLowerCase();
+
+    if (docType === 'purchase_order') {
+      return this.compilePurchaseOrderHTML(tpl, docData, currentProfile);
+    }
+    if (docType === 'technical_proposal') {
+      return this.compileTechnicalProposalHTML(tpl, docData, currentProfile);
+    }
+    if (docType === 'financial_proposal') {
+      return this.compileFinancialProposalHTML(tpl, docData, currentProfile);
+    }
 
     const cust = docData.customer || {};
     const items = docData.items && docData.items.length > 0 ? docData.items : [
@@ -1783,9 +2241,11 @@ window.TemplatesEngine = {
                   <select id="tpl-edit-doc-type" class="form-select">
                     <option value="quotation" ${tpl.doc_type === 'quotation' ? 'selected' : ''}>Commercial Quotation</option>
                     <option value="tender" ${tpl.doc_type === 'tender' ? 'selected' : ''}>Tender & BoQ Bidding</option>
+                    <option value="purchase_order" ${tpl.doc_type === 'purchase_order' ? 'selected' : ''}>Institutional Purchase Order (Mayo Hospital Format)</option>
+                    <option value="technical_proposal" ${tpl.doc_type === 'technical_proposal' ? 'selected' : ''}>Government Technical Proposal (Mayo Hospital Format)</option>
+                    <option value="financial_proposal" ${tpl.doc_type === 'financial_proposal' ? 'selected' : ''}>Government Financial Proposal (PITB Format)</option>
                     <option value="delivery_challan" ${tpl.doc_type === 'delivery_challan' ? 'selected' : ''}>Delivery Challan (DC)</option>
                     <option value="invoice" ${tpl.doc_type === 'invoice' ? 'selected' : ''}>Tax Invoice</option>
-                    <option value="purchase_order" ${tpl.doc_type === 'purchase_order' ? 'selected' : ''}>Purchase Order (PO)</option>
                   </select>
                 </div>
               </div>

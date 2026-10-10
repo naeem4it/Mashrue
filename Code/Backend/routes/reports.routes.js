@@ -86,7 +86,7 @@ router.get('/dashboard-kpis', authenticate, requirePermission('reports', 'view')
       SELECT COALESCE(SUM(amount), 0) as total_expenses FROM general_expenses ${filterClause}
     `, params);
 
-    res.json({
+      res.json({
       success: true,
       data: {
         tenders: oppSummaryRes.rows[0],
@@ -94,6 +94,170 @@ router.get('/dashboard-kpis', authenticate, requirePermission('reports', 'view')
         supply: dcSummaryRes.rows[0],
         financials: invSummaryRes.rows[0],
         expenses: expSummaryRes.rows[0]
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Consolidated Real-Time Dashboard Bundle (Single Round-Trip, Zero Data Caching)
+router.get('/dashboard-bundle', authenticate, requirePermission('reports', 'view'), async (req, res) => {
+  const { business_profile_id } = req.query;
+
+  try {
+    let whereClauses = [];
+    const params = [];
+
+    if (req.user) {
+      if (req.user.role !== 'SuperAdmin' && req.user.role !== 'LimitedSuperAdmin') {
+        const tid = req.user.tenantId || '00000000-0000-0000-0000-000000000000';
+        params.push(tid);
+        whereClauses.push(`tenant_id::text = $${params.length}`);
+      }
+    } else {
+      return res.json({ success: true, data: { kpis: {}, invoices: [], payments: [], expenses: [], products: [], customers: [], dcs: [], pos: [], securities: [] } });
+    }
+
+    if (business_profile_id && business_profile_id !== 'all') {
+      params.push(business_profile_id);
+      whereClauses.push(`business_profile_id = $${params.length}`);
+    }
+
+    const filterClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const [
+      oppSummaryRes,
+      secSummaryRes,
+      dcSummaryRes,
+      invSummaryRes,
+      expSummaryRes,
+      invoicesRes,
+      paymentsRes,
+      expensesRes,
+      productsRes,
+      customersRes,
+      dcsRes,
+      posRes,
+      securitiesRes
+    ] = await Promise.all([
+      db.query(`
+        SELECT 
+          COUNT(*) as total_tenders,
+          COUNT(*) FILTER (WHERE status IN ('New', 'Under Review', 'Selected', 'Bid Preparation', 'Ready to submit', 'Submitted')) as in_process,
+          COUNT(*) FILTER (WHERE LOWER(status) = 'won') as won_count,
+          COUNT(*) FILTER (WHERE LOWER(status) IN ('loose', 'lost')) as lost_count,
+          COUNT(*) FILTER (WHERE LOWER(status) IN ('withdraw', 'withdrawn', 'cancelled', 'rejected')) as closed_count,
+          COALESCE(SUM(estimated_value), 0) as total_pipeline_value
+        FROM opportunities ${filterClause}
+      `, params).catch(() => ({ rows: [{}] })),
+
+      db.query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE status IN ('Active', 'Submitted')) as active_securities_count,
+          COALESCE(SUM(amount) FILTER (WHERE status IN ('Active', 'Submitted')), 0) as active_securities_amount,
+          COUNT(*) FILTER (WHERE status = 'Released') as released_securities_count,
+          COUNT(*) FILTER (WHERE status = 'Pending') as pending_securities_count
+        FROM bid_securities ${filterClause}
+      `, params).catch(() => ({ rows: [{}] })),
+
+      db.query(`
+        SELECT 
+          COUNT(*) as total_dcs,
+          COUNT(*) FILTER (WHERE status = 'Delivered') as delivered_dcs,
+          COUNT(*) FILTER (WHERE status IN ('Dispatched', 'In_Transit')) as in_transit_dcs,
+          COUNT(*) FILTER (WHERE status = 'Pending') as pending_dcs
+        FROM delivery_challans ${filterClause}
+      `, params).catch(() => ({ rows: [{}] })),
+
+      db.query(`
+        SELECT 
+          COALESCE(SUM(total_amount), 0) as total_invoiced,
+          COALESCE(SUM(paid_amount), 0) as total_collected,
+          COALESCE(SUM(total_amount - COALESCE(paid_amount, 0)), 0) as total_receivables,
+          COUNT(*) FILTER (WHERE status = 'Paid') as paid_invoices_count,
+          COUNT(*) FILTER (WHERE status IN ('Submitted', 'Reinvoicing', 'Pending', 'Hold')) as pending_invoices_count
+        FROM invoices ${filterClause}
+      `, params).catch(() => ({ rows: [{}] })),
+
+      db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total_expenses FROM general_expenses ${filterClause}
+      `, params).catch(() => ({ rows: [{}] })),
+
+      db.query(`
+        SELECT i.*, 
+               COALESCE(bp.business_name, '') as business_name, 
+               COALESCE(c.business_name, '') as customer_name,
+               (i.total_amount - COALESCE(i.paid_amount, 0)) as outstanding_amount
+        FROM invoices i
+        LEFT JOIN business_profiles bp ON i.business_profile_id = bp.id
+        LEFT JOIN customers c ON i.customer_id = c.id
+        ${filterClause}
+        ORDER BY i.created_at DESC LIMIT 50
+      `, params).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT p.*, i.invoice_number, COALESCE(c.business_name, '') as customer_name
+        FROM payments p
+        LEFT JOIN invoices i ON p.invoice_id = i.id
+        LEFT JOIN customers c ON i.customer_id = c.id
+        ${filterClause.replace(/business_profile_id/g, 'p.business_profile_id').replace(/tenant_id/g, 'p.tenant_id')}
+        ORDER BY p.payment_date DESC LIMIT 50
+      `, params).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT * FROM general_expenses ${filterClause} ORDER BY expense_date DESC LIMIT 50
+      `, params).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT * FROM products_services ${filterClause} ORDER BY name ASC LIMIT 100
+      `, params).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT * FROM customers 
+        ${whereClauses.length > 0 ? `WHERE ${whereClauses[0]}` : ''}
+        ORDER BY business_name ASC LIMIT 100
+      `, params.slice(0, 1)).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT dc.*, COALESCE(c.business_name, '') as customer_name
+        FROM delivery_challans dc
+        LEFT JOIN customers c ON dc.customer_id = c.id
+        ${filterClause}
+        ORDER BY dc.created_at DESC LIMIT 50
+      `, params).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT po.*, COALESCE(c.business_name, '') as customer_name
+        FROM purchase_orders po
+        LEFT JOIN customers c ON po.customer_id = c.id
+        ${filterClause}
+        ORDER BY po.created_at DESC LIMIT 50
+      `, params).catch(() => ({ rows: [] })),
+
+      db.query(`
+        SELECT * FROM bid_securities ${filterClause} ORDER BY created_at DESC LIMIT 50
+      `, params).catch(() => ({ rows: [] }))
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        kpis: {
+          tenders: oppSummaryRes.rows[0] || {},
+          bidSecurities: secSummaryRes.rows[0] || {},
+          supply: dcSummaryRes.rows[0] || {},
+          financials: invSummaryRes.rows[0] || {},
+          expenses: expSummaryRes.rows[0] || {}
+        },
+        invoices: invoicesRes.rows || [],
+        payments: paymentsRes.rows || [],
+        expenses: expensesRes.rows || [],
+        products: productsRes.rows || [],
+        customers: customersRes.rows || [],
+        dcs: dcsRes.rows || [],
+        pos: posRes.rows || [],
+        securities: securitiesRes.rows || []
       }
     });
   } catch (err) {

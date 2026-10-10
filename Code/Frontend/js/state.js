@@ -1,14 +1,28 @@
-// Purge legacy persistent localStorage authentication tokens so browser does not auto-login
-try {
-  localStorage.removeItem('mashrue_token');
-  localStorage.removeItem('mashrue_user');
-} catch (e) {}
+// Strict Zero-Trust Auto-Login Protection:
+// When the user opens the browser, it must NEVER auto-login; it must ALWAYS show the login page.
+function checkBrowserSessionActive() {
+  try {
+    return document.cookie.split(';').some(c => c.trim() === 'mashrue_session_active=1');
+  } catch (e) {
+    return false;
+  }
+}
+
+// If browser was freshly opened or session cookie was cleared, immediately destroy any stored credentials
+if (!checkBrowserSessionActive()) {
+  try {
+    sessionStorage.removeItem('mashrue_token');
+    sessionStorage.removeItem('mashrue_user');
+    localStorage.removeItem('mashrue_token');
+    localStorage.removeItem('mashrue_user');
+  } catch (e) {}
+}
 
 const State = {
   currentBusinessProfileId: 'all', // 'all' or specific profile UUID
   businessProfiles: [],
-  token: sessionStorage.getItem('mashrue_token') || null,
-  currentUser: JSON.parse(sessionStorage.getItem('mashrue_user') || 'null'),
+  token: checkBrowserSessionActive() ? (sessionStorage.getItem('mashrue_token') || null) : null,
+  currentUser: checkBrowserSessionActive() ? JSON.parse(sessionStorage.getItem('mashrue_user') || 'null') : null,
   activeView: 'dashboard',
   dashboardPrivacy: sessionStorage.getItem('mashrue_dash_privacy') === 'true',
   dashboardDecimals: sessionStorage.getItem('mashrue_dash_decimals') !== 'false',
@@ -21,9 +35,12 @@ const State = {
     if (token) {
       sessionStorage.setItem('mashrue_token', token);
       sessionStorage.setItem('mashrue_user', JSON.stringify(user));
+      // Transient session cookie: deleted by browser automatically when browser exits
+      document.cookie = "mashrue_session_active=1; path=/; SameSite=Lax";
     } else {
       sessionStorage.removeItem('mashrue_token');
       sessionStorage.removeItem('mashrue_user');
+      document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
     // Also remove from localStorage to guarantee no auto-login
     try {
@@ -42,6 +59,7 @@ const State = {
       sessionStorage.clear();
       localStorage.removeItem('mashrue_token');
       localStorage.removeItem('mashrue_user');
+      document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user: null } }));
   },

@@ -872,6 +872,8 @@ function handleUserLogout() {
   if (appContainer) appContainer.style.display = 'none';
   window.location.reload();
 }
+window.handleUserLogout = handleUserLogout;
+window.logout = handleUserLogout;
 
 async function handleFirstPasswordChange() {
   const newPass = document.getElementById('force-new-password').value;
@@ -2382,27 +2384,43 @@ window.resetProductLineDateFilter = function(mode) {
 };
 
 async function renderDashboardHTML() {
-  // Parallel fetch: retrieve all operational & financial metrics concurrently
-  const [kpis, invoicesRaw, paymentsRaw, expensesRaw, productsRaw, customersRaw, dcsRaw, posRaw, securitiesRaw] = await Promise.all([
-    API.getDashboardKPIs(State.currentBusinessProfileId).catch(() => ({})),
-    API.getInvoices(State.currentBusinessProfileId).catch(() => []),
-    API.getPayments(State.currentBusinessProfileId).catch(() => []),
-    API.getExpenses(State.currentBusinessProfileId).catch(() => []),
-    API.getProducts(State.currentBusinessProfileId).catch(() => []),
-    API.getCustomers().catch(() => []),
-    API.getDeliveryChallans(State.currentBusinessProfileId).catch(() => []),
-    API.getPurchaseOrders(State.currentBusinessProfileId).catch(() => []),
-    API.getBidSecurities(State.currentBusinessProfileId).catch(() => [])
-  ]);
-
-  const invoices = Array.isArray(invoicesRaw) ? invoicesRaw : [];
-  const payments = Array.isArray(paymentsRaw) ? paymentsRaw : [];
-  const expenses = Array.isArray(expensesRaw) ? expensesRaw : [];
-  const products = Array.isArray(productsRaw) ? productsRaw : [];
-  const customers = Array.isArray(customersRaw) ? customersRaw : [];
-  const dcs = Array.isArray(dcsRaw) ? dcsRaw : [];
-  const pos = Array.isArray(posRaw) ? posRaw : [];
-  const securities = Array.isArray(securitiesRaw) ? securitiesRaw : [];
+  // Fast 1-Roundtrip Live Bundle (Zero Caching - Live Database Query)
+  let kpis = {}, invoices = [], payments = [], expenses = [], products = [], customers = [], dcs = [], pos = [], securities = [];
+  
+  const bundle = await API.getDashboardBundle(State.currentBusinessProfileId);
+  if (bundle && bundle.kpis) {
+    kpis = bundle.kpis || {};
+    invoices = Array.isArray(bundle.invoices) ? bundle.invoices : [];
+    payments = Array.isArray(bundle.payments) ? bundle.payments : [];
+    expenses = Array.isArray(bundle.expenses) ? bundle.expenses : [];
+    products = Array.isArray(bundle.products) ? bundle.products : [];
+    customers = Array.isArray(bundle.customers) ? bundle.customers : [];
+    dcs = Array.isArray(bundle.dcs) ? bundle.dcs : [];
+    pos = Array.isArray(bundle.pos) ? bundle.pos : [];
+    securities = Array.isArray(bundle.securities) ? bundle.securities : [];
+  } else {
+    // Robust parallel fallback
+    const [kpisRaw, invoicesRaw, paymentsRaw, expensesRaw, productsRaw, customersRaw, dcsRaw, posRaw, securitiesRaw] = await Promise.all([
+      API.getDashboardKPIs(State.currentBusinessProfileId).catch(() => ({})),
+      API.getInvoices(State.currentBusinessProfileId).catch(() => []),
+      API.getPayments(State.currentBusinessProfileId).catch(() => []),
+      API.getExpenses(State.currentBusinessProfileId).catch(() => []),
+      API.getProducts(State.currentBusinessProfileId).catch(() => []),
+      API.getCustomers().catch(() => []),
+      API.getDeliveryChallans(State.currentBusinessProfileId).catch(() => []),
+      API.getPurchaseOrders(State.currentBusinessProfileId).catch(() => []),
+      API.getBidSecurities(State.currentBusinessProfileId).catch(() => [])
+    ]);
+    kpis = kpisRaw || {};
+    invoices = Array.isArray(invoicesRaw) ? invoicesRaw : [];
+    payments = Array.isArray(paymentsRaw) ? paymentsRaw : [];
+    expenses = Array.isArray(expensesRaw) ? expensesRaw : [];
+    products = Array.isArray(productsRaw) ? productsRaw : [];
+    customers = Array.isArray(customersRaw) ? customersRaw : [];
+    dcs = Array.isArray(dcsRaw) ? dcsRaw : [];
+    pos = Array.isArray(posRaw) ? posRaw : [];
+    securities = Array.isArray(securitiesRaw) ? securitiesRaw : [];
+  }
 
   // Cache for interactive sub-graphs
   window._dashInvoices = invoices;
@@ -6819,6 +6837,553 @@ function buildExecutiveReportFooterHTML() {
 }
 
 // -----------------------------------------------------------------------------
+// DEDICATED EXECUTIVE REPORT PRINT ENGINE (C-SUITE & AUDIT DOSSIER)
+// -----------------------------------------------------------------------------
+function buildExecutiveReportPrintDocumentHTML(activeTab, reportData, currentProfile, filters) {
+  const bizName = currentProfile.business_name || currentProfile.legal_name || 'MASHRUE ENTERPRISE';
+  const logoUrl = currentProfile.logo_url || '';
+  const dateScope = (filters.startDate && filters.endDate)
+    ? `${filters.startDate} to ${filters.endDate}`
+    : (_reportDatePreset === 'all' ? 'All Time Historical' : 'Current Active Period');
+  const scopeBadge = filters.scope === 'tender' ? 'Tenders Only' : (filters.scope === 'quotation' ? 'Quotations Only' : 'Consolidated (All Scope)');
+  const printTimestamp = new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const currentUser = State.currentUser?.fullName || State.currentUser?.username || 'Executive Controller';
+
+  let reportTitle = 'EXECUTIVE AUDIT DOSSIER';
+  let kpis = [];
+  let tableHeaders = [];
+  let tableRows = [];
+  let totalInWords = '';
+
+  const rows = (Array.isArray(reportData) ? reportData : reportData?.data) || [];
+  const sum = reportData?.summary || {};
+
+  if (activeTab === 'securities') {
+    reportTitle = 'EXECUTIVE AUDIT DOSSIER — BID SECURITIES & PERFORMANCE GUARANTEES';
+    const totalPaid = parseFloat(sum.total_paid_blocked || 0);
+    const totalRecovered = parseFloat(sum.total_released_recovered || 0);
+    const totalExposure = parseFloat(sum.total_exposure || (totalPaid + totalRecovered));
+    const recoveryPct = sum.recovery_rate_pct || (totalExposure > 0 ? ((totalRecovered / totalExposure) * 100).toFixed(1) : '0.0');
+
+    kpis = [
+      { label: 'Active Blocked Funds (In Banks)', value: formatCurrency(totalPaid, 'PKR'), sub: `${rows.filter(r => r.status === 'Active' || r.status === 'Submitted').length} Active Instruments` },
+      { label: 'Recovered & Released Funds', value: formatCurrency(totalRecovered, 'PKR'), sub: `${rows.filter(r => r.status === 'Released' || r.status === 'Returned').length} Returned to Bank Account` },
+      { label: 'Fund Recovery Efficiency', value: `${recoveryPct}%`, sub: `Total Exposure: ${formatCurrency(totalExposure, 'PKR')}` },
+      { label: 'Expiring within 30 Days', value: `${sum.expiring_soon_count || 0} Instruments`, sub: 'Requires immediate retrieval' }
+    ];
+
+    tableHeaders = ['#', 'Instrument / CDR #', 'Type', 'Issuing Bank & Branch', 'Beneficiary / Department', 'Amount (PKR)', 'Expiry Date', 'Status'];
+    tableRows = rows.map((r, i) => [
+      i + 1,
+      r.instrument_number || 'CDR-AUTO',
+      r.instrument_type || 'CDR',
+      r.bank_name || 'Bank',
+      r.beneficiary_name || r.department_name || 'Government Department',
+      formatCurrency(r.amount, 'PKR'),
+      r.expiry_date || '-',
+      r.status === 'Released' || r.status === 'Returned' ? 'Released / Returned' : (r.status === 'Active' ? 'Active (Blocked)' : r.status)
+    ]);
+
+    totalInWords = typeof convertNumberToWordsPKR === 'function' ? convertNumberToWordsPKR(totalPaid) : '';
+  } else if (activeTab === 'expenses') {
+    reportTitle = 'EXECUTIVE COST ATTRIBUTION & EXPENSE AUDIT STATEMENT';
+    const totalExp = parseFloat(sum.total_expenses || 0);
+    const tier1 = parseFloat(sum.tier1_total || 0);
+    const tier2 = parseFloat(sum.tier2_total || 0);
+    const tier3 = parseFloat(sum.tier3_total || 0);
+
+    kpis = [
+      { label: 'Total Logged Expenses', value: formatCurrency(totalExp, 'PKR'), sub: `${rows.length} Audited Entries` },
+      { label: 'Tier 1: Pre-Bid Tender Direct', value: formatCurrency(tier1, 'PKR'), sub: 'Lab tests, samples, bidding docs' },
+      { label: 'Tier 2: PO Logistics Execution', value: formatCurrency(tier2, 'PKR'), sub: '3PL freight, customs, transport' },
+      { label: 'Tier 3: Admin & Overheads', value: formatCurrency(tier3, 'PKR'), sub: 'Office rent, staff, utilities' }
+    ];
+
+    tableHeaders = ['#', 'Date', 'Tier & Stage', 'Category', 'Expense Description', 'Paid To / Vendor', 'Attributed Project / PO', 'Amount (PKR)'];
+    tableRows = rows.map((e, i) => [
+      i + 1,
+      e.expense_date || '-',
+      e.expense_tier || 'Direct',
+      e.category || 'General',
+      e.expense_name || e.title || '-',
+      e.paid_to || 'Vendor',
+      e.opportunity_number || e.po_number || 'General Overhead',
+      formatCurrency(e.amount, 'PKR')
+    ]);
+
+    totalInWords = typeof convertNumberToWordsPKR === 'function' ? convertNumberToWordsPKR(totalExp) : '';
+  } else if (activeTab === 'receivables') {
+    reportTitle = 'EXECUTIVE RECEIVABLES & CASH REALIZATION AGING LEDGER';
+    const totalOutstanding = parseFloat(sum.total_outstanding || 0);
+    const current030 = parseFloat(sum.current_0_30 || 0);
+    const overdue3160 = parseFloat(sum.overdue_31_60 || 0);
+    const critical60 = parseFloat(sum.critical_60_plus || 0);
+
+    kpis = [
+      { label: 'Total Outstanding Receivables', value: formatCurrency(totalOutstanding, 'PKR'), sub: 'Pending Cash Realization' },
+      { label: 'Current Receivables (0-30 Days)', value: formatCurrency(current030, 'PKR'), sub: 'Normal credit cycle' },
+      { label: 'Overdue Receivables (31-60 Days)', value: formatCurrency(overdue3160, 'PKR'), sub: 'Requires commercial followup' },
+      { label: 'Critical Overdue (60+ Days)', value: formatCurrency(critical60, 'PKR'), sub: 'High risk exposure' }
+    ];
+
+    tableHeaders = ['#', 'Invoice #', 'Customer / Client Department', 'Project / Ref #', 'Invoice Date', 'Due Date', 'Total Amount', 'Received', 'Balance (PKR)', 'Aging'];
+    tableRows = rows.map((inv, i) => [
+      i + 1,
+      inv.invoice_number || 'INV-AUTO',
+      inv.customer_name || 'Client',
+      inv.opportunity_number || inv.po_number || 'Direct',
+      inv.invoice_date || '-',
+      inv.due_date || '-',
+      formatCurrency(inv.total_amount, 'PKR'),
+      formatCurrency(inv.paid_amount, 'PKR'),
+      formatCurrency(inv.outstanding_amount, 'PKR'),
+      inv.aging_bracket || (inv.days_overdue > 60 ? '60+ Days' : (inv.days_overdue > 30 ? '31-60 Days' : '0-30 Days'))
+    ]);
+
+    totalInWords = typeof convertNumberToWordsPKR === 'function' ? convertNumberToWordsPKR(totalOutstanding) : '';
+  } else if (activeTab === 'payables') {
+    reportTitle = 'EXECUTIVE ACCOUNTS PAYABLE & SUPPLIER SOURCING LEDGER';
+    const totalBill = rows.reduce((s, p) => s + (parseFloat(p.bill_amount) || 0), 0);
+    const totalBalance = rows.reduce((s, p) => s + (parseFloat(p.payable_balance) || 0), 0);
+
+    kpis = [
+      { label: 'Total Procurements Billed', value: formatCurrency(totalBill, 'PKR'), sub: `${rows.length} Supplier Orders` },
+      { label: 'Total Outstanding Payable', value: formatCurrency(totalBalance, 'PKR'), sub: 'Pending Supplier Remittances' },
+      { label: 'Paid Liabilities', value: formatCurrency(totalBill - totalBalance, 'PKR'), sub: 'Disbursed to date' },
+      { label: 'Active Suppliers', value: `${new Set(rows.map(r => r.supplier_name)).size} Vendors`, sub: 'Supply Partners' }
+    ];
+
+    tableHeaders = ['#', 'Procurement Ref #', 'Supplier Name & Origin', 'Bill Date', 'Due Date', 'Attributed PO / Project', 'Total Bill', 'Balance Payable (PKR)', 'Status'];
+    tableRows = rows.map((p, i) => [
+      i + 1,
+      p.procurement_number || 'PROC-AUTO',
+      p.supplier_name || 'Supplier',
+      p.bill_date ? String(p.bill_date).slice(0, 10) : '-',
+      p.due_date ? String(p.due_date).slice(0, 10) : '-',
+      p.po_number || 'Direct',
+      formatCurrency(p.bill_amount, 'PKR'),
+      formatCurrency(p.payable_balance, 'PKR'),
+      p.payment_status || 'Pending'
+    ]);
+
+    totalInWords = typeof convertNumberToWordsPKR === 'function' ? convertNumberToWordsPKR(totalBalance) : '';
+  } else if (activeTab === 'supply') {
+    reportTitle = 'SUPPLY CHAIN EXECUTION & FULFILLMENT STATUS AUDIT';
+    const totalPOs = rows.length;
+    const fullyDelivered = sum.fully_delivered_count || 0;
+    const inProgress = sum.in_progress_count || 0;
+    const fulfillmentPct = sum.overall_fulfillment_pct || '0.0';
+
+    kpis = [
+      { label: 'Total PO Supply Orders', value: `${totalPOs} Orders`, sub: 'Contracted scope' },
+      { label: 'Fully Delivered & Verified', value: `${fullyDelivered} Orders`, sub: '100% Challans signed' },
+      { label: 'Active In-Transit Dispatches', value: `${inProgress} Orders`, sub: 'Partial deliveries' },
+      { label: 'Overall Fulfillment Rate', value: `${fulfillmentPct}%`, sub: 'Delivery reliability' }
+    ];
+
+    tableHeaders = ['#', 'Purchase Order #', 'Customer Organization', 'PO Date', 'Delivery Due Date', 'Fulfillment %', 'Status'];
+    tableRows = rows.map((po, i) => [
+      i + 1,
+      po.po_number || 'PO-AUTO',
+      po.customer_name || 'Client',
+      po.po_date ? String(po.po_date).slice(0, 10) : '-',
+      po.delivery_due_date ? String(po.delivery_due_date).slice(0, 10) : '-',
+      `${po.fulfillment_pct || 0}%`,
+      po.delivery_status || 'In Progress'
+    ]);
+  } else if (activeTab === 'profitability') {
+    reportTitle = 'EXECUTIVE CONTRACT PROFITABILITY & NET MARGIN STATEMENT';
+    const totalVal = rows.reduce((s, p) => s + (parseFloat(p.contract_value) || 0), 0);
+    const totalProfit = rows.reduce((s, p) => s + (parseFloat(p.net_profit) || 0), 0);
+    const avgMargin = rows.length > 0 ? (rows.reduce((s, p) => s + parseFloat(p.profit_margin_pct || 0), 0) / rows.length).toFixed(1) : '0.0';
+
+    kpis = [
+      { label: 'Total Executed Contracts', value: formatCurrency(totalVal, 'PKR'), sub: `${rows.length} Commercial Projects` },
+      { label: 'Net Realized Profit', value: formatCurrency(totalProfit, 'PKR'), sub: 'Net retention after COGS' },
+      { label: 'Average Profit Margin', value: `${avgMargin}%`, sub: 'Realized contract margin' },
+      { label: 'Active Projects', value: `${rows.length} Projects`, sub: 'Executing in reporting period' }
+    ];
+
+    tableHeaders = ['#', 'Contract / Project #', 'Customer & Department', 'Contract Value', 'Invoiced Amount', 'Received Payment', 'Allocated Expenses', 'Net Profit (PKR)', 'Margin %'];
+    tableRows = rows.map((p, i) => [
+      i + 1,
+      p.contract_number || 'CTR-AUTO',
+      p.customer_name || 'Client',
+      formatCurrency(p.contract_value, 'PKR'),
+      formatCurrency(p.invoiced_amount, 'PKR'),
+      formatCurrency(p.received_payment, 'PKR'),
+      formatCurrency(p.allocated_expenses, 'PKR'),
+      formatCurrency(p.net_profit, 'PKR'),
+      `${p.profit_margin_pct || 0}%`
+    ]);
+
+    totalInWords = typeof convertNumberToWordsPKR === 'function' ? convertNumberToWordsPKR(totalProfit) : '';
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${reportTitle}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @page {
+      size: A4 landscape;
+      margin: 10mm 12mm 12mm 12mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', Arial, sans-serif;
+      font-size: 8.5pt;
+      line-height: 1.35;
+      color: #0f172a;
+      background: #fff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .no-print {
+      display: block;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0 !important; }
+    }
+    .print-bar {
+      position: sticky;
+      top: 0;
+      z-index: 9999;
+      background: #0f172a;
+      color: white;
+      padding: 10px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    .print-bar button {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 7px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }
+    .page-container {
+      padding: 18px 24px;
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .entity-brand h1 {
+      font-size: 14pt;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0 0 2px 0;
+      letter-spacing: -0.3px;
+    }
+    .entity-meta {
+      font-size: 7.5pt;
+      color: #475569;
+      line-height: 1.4;
+    }
+    .report-meta {
+      text-align: right;
+    }
+    .report-meta h2 {
+      font-size: 11pt;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0 0 4px 0;
+      letter-spacing: 0.5px;
+    }
+    .meta-line {
+      font-size: 7.5pt;
+      color: #334155;
+    }
+    .classification-tag {
+      display: inline-block;
+      font-size: 6.8pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      background: #fee2e2;
+      color: #991b1b;
+      margin-top: 3px;
+    }
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .kpi-box {
+      border: 1px solid #cbd5e1;
+      border-top: 3px solid #0f172a;
+      background: #f8fafc;
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+    .kpi-box .lbl {
+      font-size: 7pt;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 3px;
+    }
+    .kpi-box .val {
+      font-size: 11pt;
+      font-weight: 800;
+      color: #0f172a;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi-box .sub {
+      font-size: 6.8pt;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    table.audit-grid {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8pt;
+      margin-bottom: 14px;
+    }
+    table.audit-grid thead th {
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: 700;
+      text-align: left;
+      padding: 6px 8px;
+      border: 1px solid #0f172a;
+      font-size: 7.5pt;
+      letter-spacing: 0.3px;
+    }
+    table.audit-grid tbody td {
+      padding: 5.5px 8px;
+      border: 1px solid #cbd5e1;
+      vertical-align: top;
+      font-variant-numeric: tabular-nums;
+    }
+    table.audit-grid tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+    .in-words-box {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      font-size: 8pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 24px;
+    }
+    .audit-sign-block {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px;
+      margin-top: 35px;
+      page-break-inside: avoid;
+    }
+    .sign-col {
+      text-align: center;
+    }
+    .sign-line {
+      border-top: 1px dashed #64748b;
+      margin-bottom: 5px;
+      height: 35px;
+    }
+    .sign-title {
+      font-size: 8pt;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .sign-sub {
+      font-size: 7pt;
+      color: #64748b;
+    }
+    .legal-notice {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 6.8pt;
+      color: #94a3b8;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 6px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="print-bar no-print">
+    <span>📊 ${reportTitle}</span>
+    <span style="display:flex; gap:8px;">
+      <button style="background:#0284c7; color:#fff;" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      <button style="background:#475569; color:#fff;" onclick="window.close()">✕ Close</button>
+    </span>
+  </div>
+
+  <div class="page-container">
+    <div class="doc-header">
+      <div style="display:flex; gap:12px; align-items:center;">
+        ${logoUrl ? `
+          <img src="${logoUrl}" style="max-height:48px; max-width:80px; object-fit:contain;">
+        ` : ''}
+        <div class="entity-brand">
+          <h1>${bizName}</h1>
+          <div class="entity-meta">
+            ${currentProfile.ntn && currentProfile.ntn !== 'Consolidated View' ? `<strong>NTN:</strong> ${currentProfile.ntn} ` : ''}
+            ${currentProfile.strn && currentProfile.strn !== 'N/A' ? `| <strong>STRN:</strong> ${currentProfile.strn} ` : ''}
+            ${currentProfile.address ? `| ${currentProfile.address}` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="report-meta">
+        <h2>${reportTitle}</h2>
+        <div class="meta-line"><strong>Audited Period:</strong> ${dateScope} &bull; <strong>Scope:</strong> ${scopeBadge}</div>
+        <div class="meta-line"><strong>Generated:</strong> ${printTimestamp} by ${currentUser}</div>
+        <div><span class="classification-tag">Strictly Confidential &bull; Board Audit</span></div>
+      </div>
+    </div>
+
+    ${kpis.length > 0 ? `
+      <div class="kpi-row">
+        ${kpis.map(k => `
+          <div class="kpi-box">
+            <div class="lbl">${k.label}</div>
+            <div class="val">${k.value}</div>
+            <div class="sub">${k.sub}</div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    <table class="audit-grid">
+      <thead>
+        <tr>
+          ${tableHeaders.map((th, idx) => `
+            <th style="${idx === 0 ? 'text-align:center; width:4%;' : (th.includes('Amount') || th.includes('Total') || th.includes('Profit') || th.includes('Balance') ? 'text-align:right;' : '')}">${th}</th>
+          `).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows.length === 0 ? `
+          <tr><td colspan="${tableHeaders.length}" style="text-align:center; padding:20px; color:#64748b;">No ledger records found for this auditing period.</td></tr>
+        ` : tableRows.map(row => `
+          <tr>
+            ${row.map((cell, idx) => `
+              <td style="${idx === 0 ? 'text-align:center;' : (tableHeaders[idx] && (tableHeaders[idx].includes('Amount') || tableHeaders[idx].includes('Total') || tableHeaders[idx].includes('Profit') || tableHeaders[idx].includes('Balance')) ? 'text-align:right; font-weight:600;' : '')}">${cell}</td>
+            `).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    ${totalInWords ? `
+      <div class="in-words-box">
+        <strong>Audited Financial Value in Words (PKR):</strong> ${totalInWords}
+      </div>
+    ` : ''}
+
+    <div class="audit-sign-block">
+      <div class="sign-col">
+        <div class="sign-line"></div>
+        <div class="sign-title">Prepared by</div>
+        <div class="sign-sub">${currentUser} (Accounts / Ops)</div>
+      </div>
+      <div class="sign-col">
+        <div class="sign-line"></div>
+        <div class="sign-title">Audited & Verified by</div>
+        <div class="sign-sub">Finance Controller / Manager</div>
+      </div>
+      <div class="sign-col">
+        <div class="sign-line"></div>
+        <div class="sign-title">Approved by</div>
+        <div class="sign-sub">Managing Director / CEO</div>
+      </div>
+    </div>
+
+    <div class="legal-notice">
+      <span>🔒 STRICTLY CONFIDENTIAL &bull; FOR INTERNAL GOVERNANCE & STATUTORY AUDIT PURPOSES ONLY</span>
+      <span>Mashrue Enterprise System Generated Audit Ledger &bull; No Physical Alteration Permitted</span>
+    </div>
+  </div>
+
+</body>
+</html>`;
+}
+
+async function printExecutiveReport(tab = null) {
+  const activeTab = tab || _activeReportTab || 'securities';
+  const activeCompId = State.currentBusinessProfileId || 'all';
+  const currentProfile = State.getPrintableBusinessProfile();
+
+  const filters = {
+    startDate: _reportStartDate,
+    endDate: _reportEndDate,
+    scope: _reportScope
+  };
+
+  let reportData = null;
+  try {
+    if (activeTab === 'securities') {
+      reportData = await API.getBidSecuritiesAndGuaranteesReport(activeCompId, filters);
+    } else if (activeTab === 'expenses') {
+      reportData = await API.getExpensesReport(activeCompId, filters);
+    } else if (activeTab === 'receivables') {
+      reportData = await API.getReceivablesReport(activeCompId, filters);
+    } else if (activeTab === 'payables') {
+      reportData = await API.getAccountsPayableReport(activeCompId, filters);
+    } else if (activeTab === 'supply') {
+      reportData = await API.getSupplyStatusReport(activeCompId, filters);
+    } else if (activeTab === 'profitability') {
+      reportData = await API.getContractProfitability();
+    }
+  } catch (e) {
+    console.error('Failed to load report data for printing:', e);
+  }
+
+  const html = buildExecutiveReportPrintDocumentHTML(activeTab, reportData, currentProfile, filters);
+  const printWin = window.open('', '_blank', 'width=1150,height=800');
+  if (printWin) {
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => {
+      printWin.print();
+    }, 600);
+  } else {
+    // Popup fallback
+    let printFrame = document.getElementById('executive-report-print-frame');
+    if (!printFrame) {
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'executive-report-print-frame';
+      printFrame.style.display = 'none';
+      document.body.appendChild(printFrame);
+    }
+    printFrame.contentDocument.open();
+    printFrame.contentDocument.write(html);
+    printFrame.contentDocument.close();
+    setTimeout(() => {
+      printFrame.contentWindow.focus();
+      printFrame.contentWindow.print();
+    }, 600);
+  }
+}
+window.printExecutiveReport = printExecutiveReport;
+
+// -----------------------------------------------------------------------------
 // MAIN CONTROLLER: RENDER EXECUTIVE REPORTS
 // -----------------------------------------------------------------------------
 async function renderReportsHTML() {
@@ -6879,7 +7444,7 @@ async function renderReportsHTML() {
             <button class="secondary-btn" style="padding:6px 12px; font-size:0.82rem; display:flex; align-items:center; gap:5px;" onclick="exportReportTableToCSV('${_activeReportTab}_Report.csv')">
               <span>📥</span> Export CSV
             </button>
-            <button class="primary-btn" style="padding:6px 14px; font-size:0.82rem; background:#0284c7; display:flex; align-items:center; gap:5px;" onclick="window.print()">
+            <button class="primary-btn" style="padding:6px 14px; font-size:0.82rem; background:#0284c7; display:flex; align-items:center; gap:5px;" onclick="printExecutiveReport()">
               <span>🖨️</span> Print / Export PDF
             </button>
           </div>
@@ -17619,7 +18184,7 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
 
     updateEmailRequirement(safeRole);
     roleSelect.onchange = (e) => {
-      handleUserRoleChange(e.target.value);
+      handleUserRoleSelection(e.target.value);
       updateEmailRequirement(e.target.value);
     };
   }
@@ -17772,6 +18337,8 @@ function handleUserRoleSelection(role) {
     matrixContainer.style.display = 'block'; // Employees have granular configurable access
   }
 }
+window.handleUserRoleSelection = handleUserRoleSelection;
+window.handleUserRoleChange = handleUserRoleSelection;
 
 async function submitCreateUserForm() {
   const userId = document.getElementById('newuser-id')?.value?.trim();

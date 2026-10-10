@@ -10,7 +10,12 @@ const API_BASE = (typeof window !== 'undefined' && (window.location.hostname ===
 
 const API = {
   getHeaders(extra = {}) {
-    const headers = { 'Content-Type': 'application/json', ...extra };
+    const headers = {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      ...extra
+    };
     if (typeof State !== 'undefined') {
       if (State.token) {
         headers['Authorization'] = `Bearer ${State.token}`;
@@ -2269,6 +2274,20 @@ const API = {
   },
 
   // 16. Reports & Executive KPIs (FAST DIRECT BACKEND QUERY OR PARALLEL FALLBACK)
+  // Consolidated 1-Roundtrip Real-Time Dashboard (Zero Data Caching)
+  async getDashboardBundle(businessProfileId = 'all') {
+    try {
+      const res = await fetch(`${API_BASE}/reports/dashboard-bundle?business_profile_id=${encodeURIComponent(businessProfileId)}`, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && json.success && json.data) {
+        return json.data;
+      }
+    } catch (e) {
+      console.warn('API getDashboardBundle fallback:', e.message);
+    }
+    return null;
+  },
+
   async getDashboardKPIs(businessProfileId = 'all') {
     try {
       const res = await fetch(`${API_BASE}/reports/dashboard-kpis?business_profile_id=${encodeURIComponent(businessProfileId)}`, { headers: this.getHeaders() });

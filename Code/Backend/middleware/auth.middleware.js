@@ -46,39 +46,53 @@ async function authenticate(req, res, next) {
       }
     }
 
-    // Fetch user from DB to ensure user is active and fetch latest permissions
+    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
+    // Fetch live user permissions from DB (Strict zero data caching - direct indexed DB lookup)
     let userRes = { rows: [] };
     try {
-      userRes = await db.query(
-        `SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
-                u.must_change_password, u.can_see_bidding_prices, u.permissions,
-                t.company_name as tenant_name, t.subdomain, t.subscription_plan,
-                t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
-                t.pending_paid_company_payment, t.pending_paid_company_amount, t.status as tenant_status,
-                t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price,
-                COALESCE(
-                  json_agg(uba.business_profile_id) FILTER (WHERE uba.business_profile_id IS NOT NULL),
-                  '[]'
-                ) as assigned_business_profiles
-         FROM users u
-         LEFT JOIN tenants t ON u.tenant_id = t.id
-         LEFT JOIN user_business_access uba ON u.id = uba.user_id
-         WHERE (u.id::text = $1) 
-            OR (u.username IS NOT NULL AND LOWER(u.username) = LOWER($2)) 
-            OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER($2)) 
-         GROUP BY u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
+      if (isUuid(decoded.userId)) {
+        userRes = await db.query(
+          `SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
                   u.must_change_password, u.can_see_bidding_prices, u.permissions,
-                  t.company_name, t.subdomain, t.subscription_plan,
+                  t.company_name as tenant_name, t.subdomain, t.subscription_plan,
                   t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
-                  t.pending_paid_company_payment, t.pending_paid_company_amount, t.status,
-                  t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price`,
-        [String(decoded.userId || ''), String(decoded.username || '')]
-      );
+                  t.pending_paid_company_payment, t.pending_paid_company_amount, t.status as tenant_status,
+                  t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price,
+                  COALESCE(
+                    json_agg(uba.business_profile_id) FILTER (WHERE uba.business_profile_id IS NOT NULL),
+                    '[]'
+                  ) as assigned_business_profiles
+           FROM users u
+           LEFT JOIN tenants t ON u.tenant_id = t.id
+           LEFT JOIN user_business_access uba ON u.id = uba.user_id
+           WHERE u.id = $1::uuid
+           GROUP BY u.id, t.id`,
+          [decoded.userId]
+        );
+      } else {
+        userRes = await db.query(
+          `SELECT u.id, u.tenant_id, u.username, u.full_name, u.email, u.role, u.status,
+                  u.must_change_password, u.can_see_bidding_prices, u.permissions,
+                  t.company_name as tenant_name, t.subdomain, t.subscription_plan,
+                  t.free_business_profile_limit, t.free_employee_limit, t.trial_period, t.trial_ends_at,
+                  t.pending_paid_company_payment, t.pending_paid_company_amount, t.status as tenant_status,
+                  t.tender_limit, t.bid_security_limit, t.active_modules, t.billing_cycle, t.custom_base_price,
+                  COALESCE(
+                    json_agg(uba.business_profile_id) FILTER (WHERE uba.business_profile_id IS NOT NULL),
+                    '[]'
+                  ) as assigned_business_profiles
+           FROM users u
+           LEFT JOIN tenants t ON u.tenant_id = t.id
+           LEFT JOIN user_business_access uba ON u.id = uba.user_id
+           WHERE (u.username IS NOT NULL AND LOWER(u.username) = LOWER($1))
+              OR (u.email IS NOT NULL AND LOWER(u.email) = LOWER($1))
+           GROUP BY u.id, t.id`,
+          [String(decoded.username || decoded.email || '')]
+        );
+      }
     } catch (dbErr) {
       console.warn('User auth DB query fallback:', dbErr.message);
     }
-
-    const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
 
     if (userRes.rows.length === 0) {
       if (decoded.role === 'SuperAdmin') {
