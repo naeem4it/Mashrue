@@ -418,8 +418,60 @@ app.listen(PORT, '0.0.0.0', async () => {
       CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant ON purchase_orders (tenant_id);
       CREATE INDEX IF NOT EXISTS idx_delivery_challans_tenant ON delivery_challans (tenant_id);
       CREATE INDEX IF NOT EXISTS idx_users_tenant_role ON users (tenant_id, role);
+
+      -- Universal Inventory & UOM Masters
+      CREATE TABLE IF NOT EXISTS uom_masters (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        uom_code VARCHAR(30) NOT NULL,
+        uom_name VARCHAR(100) NOT NULL,
+        uom_type VARCHAR(50) DEFAULT 'Quantity',
+        allow_decimal BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, uom_code)
+      );
+
+      CREATE TABLE IF NOT EXISTS item_categories (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        category_code VARCHAR(50) NOT NULL,
+        category_name VARCHAR(150) NOT NULL,
+        industry_type VARCHAR(100) DEFAULT 'General Goods',
+        description TEXT,
+        requires_batch_tracking BOOLEAN DEFAULT FALSE,
+        requires_expiry_tracking BOOLEAN DEFAULT FALSE,
+        requires_serial_tracking BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, category_name)
+      );
+
+      CREATE TABLE IF NOT EXISTS item_sub_categories (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        category_id UUID NOT NULL REFERENCES item_categories(id) ON DELETE CASCADE,
+        sub_category_code VARCHAR(50) NOT NULL,
+        sub_category_name VARCHAR(150) NOT NULL,
+        description TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, category_id, sub_category_name)
+      );
+
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES item_categories(id) ON DELETE SET NULL;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS sub_category_id UUID REFERENCES item_sub_categories(id) ON DELETE SET NULL;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS uom_id UUID REFERENCES uom_masters(id) ON DELETE SET NULL;
+      ALTER TABLE products_services ADD COLUMN IF NOT EXISTS tracking_type VARCHAR(50) DEFAULT 'Standard';
+
+      ALTER TABLE inventory_transactions ALTER COLUMN warehouse_id DROP NOT NULL;
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS delivery_challan_id UUID REFERENCES delivery_challans(id) ON DELETE SET NULL;
+      ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS customer_id UUID REFERENCES customers(id) ON DELETE SET NULL;
+      ALTER TABLE delivery_challans ADD COLUMN IF NOT EXISTS origin_supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES item_categories(id) ON DELETE SET NULL;
+      ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS sub_category_id UUID REFERENCES item_sub_categories(id) ON DELETE SET NULL;
     `);
-    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, warehouses, warehouse_stock, tenants, subscription_payments, indexes).');
+    console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, uom_masters, item_categories, warehouses, warehouse_stock, tenants, subscription_payments, indexes).');
   } catch (schemaErr) {
     console.warn('Schema auto-migration warning:', schemaErr.message);
   }

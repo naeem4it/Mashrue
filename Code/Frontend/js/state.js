@@ -1,31 +1,32 @@
 // Strict Zero-Trust Auto-Login Protection:
-// When the user opens the browser, it must NEVER auto-login; it must ALWAYS show the login page.
-function checkBrowserSessionActive() {
-  try {
-    return document.cookie.split(';').some(c => c.trim() === 'mashrue_session_active=1');
-  } catch (e) {
-    return false;
-  }
-}
+// When the user opens the browser or refreshes, it must NEVER auto-login; it must ALWAYS show the login page.
+try {
+  sessionStorage.removeItem('mashrue_token');
+  sessionStorage.removeItem('mashrue_user');
+  localStorage.removeItem('mashrue_token');
+  localStorage.removeItem('mashrue_user');
+  document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+} catch (e) {}
 
-// If browser was freshly opened or session cookie was cleared, immediately destroy any stored credentials
-if (!checkBrowserSessionActive()) {
-  try {
-    sessionStorage.removeItem('mashrue_token');
-    sessionStorage.removeItem('mashrue_user');
-    localStorage.removeItem('mashrue_token');
-    localStorage.removeItem('mashrue_user');
-  } catch (e) {}
-}
+// Auto-redirect to login on refresh: clear session on beforeunload
+try {
+  window.addEventListener('beforeunload', () => {
+    try {
+      sessionStorage.removeItem('mashrue_token');
+      sessionStorage.removeItem('mashrue_user');
+      document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    } catch (e) {}
+  });
+} catch (e) {}
 
 const State = {
   currentBusinessProfileId: 'all', // 'all' or specific profile UUID
   businessProfiles: [],
-  token: checkBrowserSessionActive() ? (sessionStorage.getItem('mashrue_token') || null) : null,
-  currentUser: checkBrowserSessionActive() ? JSON.parse(sessionStorage.getItem('mashrue_user') || 'null') : null,
+  token: null,
+  currentUser: null,
   activeView: 'dashboard',
-  dashboardPrivacy: sessionStorage.getItem('mashrue_dash_privacy') === 'true',
-  dashboardDecimals: sessionStorage.getItem('mashrue_dash_decimals') !== 'false',
+  dashboardPrivacy: false,
+  dashboardDecimals: true,
   dashboardAutoReload: false,
 
   // Session-scoped persistence: Automatically destroyed when browser or tab is closed
@@ -762,11 +763,36 @@ const State = {
     return sub.status === 'Suspended';
   },
 
+  isTrialExpired(tenantId) {
+    if (this.isSuperAdmin()) return false;
+    const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id;
+    if (!tid) return false;
+    const sub = this.getTenantSubscription(tid);
+    if (!sub) return false;
+    // Active subscribed tenant is NOT expired
+    if (!sub.is_trial && sub.status === 'Active') return false;
+    // Explicit expired or suspended status
+    if (sub.status === 'Expired' || sub.status === 'Suspended') return true;
+    // Check trial end date
+    if (sub.is_trial || sub.status === 'Trial') {
+      const trialEndDate = sub.trial_end_date || sub.current_period_end || this.currentUser?.tenant?.trialEndsAt;
+      if (trialEndDate) {
+        const end = new Date(trialEndDate);
+        const now = new Date();
+        end.setHours(23, 59, 59, 999);
+        return now > end;
+      }
+    }
+    return false;
+  },
+
   getTrialDaysRemaining(tenantId) {
     const sub = this.getTenantSubscription(tenantId);
     if (!sub.is_trial || sub.status !== 'Trial') return 0;
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const end = new Date(sub.trial_end_date);
+    end.setHours(23, 59, 59, 999);
     const diffTime = end.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return Math.max(0, diffDays);

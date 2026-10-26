@@ -70,7 +70,7 @@ router.post('/login', async (req, res) => {
          WHEN u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM($1)) THEN 0 
          WHEN u.username IS NOT NULL AND LOWER(TRIM(u.username)) = LOWER(TRIM($1)) THEN 1 
          ELSE 2 
-       END
+       END, u.created_at DESC
        LIMIT 1`,
       [loginIdentifier]
     );
@@ -169,6 +169,179 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: 'An error occurred during login.', error: err.message });
   }
 });
+
+/**
+ * Public User & Organization Sign-Up Endpoint (/api/auth/register & /api/auth/signup)
+ * Creates new Tenant with 15-Day Free Trial, Primary ClientAdmin user, and initial business profile.
+ * Automatically signs in user with JWT token for instant access.
+ */
+const handleRegister = async (req, res) => {
+  const { company_name, full_name, email, password, phone } = req.body;
+  const cleanCompanyName = (company_name || '').trim();
+  const cleanFullName = (full_name || '').trim();
+  const cleanEmail = (email || '').trim().toLowerCase();
+
+  if (!cleanCompanyName || !cleanFullName || !cleanEmail || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Company name, full name, email address, and password are required.'
+    });
+  }
+
+  // Email format validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+  }
+
+  // Password policy validation
+  const policyCheck = validatePasswordPolicy(password);
+  if (!policyCheck.valid) {
+    return res.status(400).json({ success: false, message: policyCheck.message });
+  }
+
+  try {
+    // 1. Check if email is already registered
+    const existingUser = await db.query(
+      `SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [cleanEmail]
+    );
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `An account with email '${cleanEmail}' already exists. Please sign in instead.`
+      });
+    }
+
+    // 2. Generate clean subdomain and unique username
+    let baseSubdomain = cleanCompanyName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'workspace';
+    let cleanSubdomain = `${baseSubdomain}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    let baseUsername = cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 25) || 'admin';
+    let finalUsername = baseUsername;
+    const usernameCheck = await db.query(
+      `SELECT id FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
+      [finalUsername]
+    );
+    if (usernameCheck.rows.length > 0) {
+      finalUsername = `${baseUsername}_${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    // 3. 15-Day Free Trial calculation
+    const trialEndsAt = new Date(Date.now() + 15 * 86400000);
+
+    // 4. Create new Tenant
+    const tenantRes = await db.query(
+      `INSERT INTO tenants (
+        company_name, subdomain, subscription_plan, 
+        free_business_profile_limit, free_employee_limit, 
+        trial_period, trial_ends_at, status
+       )
+       VALUES ($1, $2, 'Standard', 2, 2, '15 Days', $3, 'Active')
+       RETURNING *`,
+      [cleanCompanyName, cleanSubdomain, trialEndsAt]
+    );
+    const newTenant = tenantRes.rows[0];
+
+    // 5. Hash password (preserving bcrypt integrity)
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    // 6. Create Primary Admin User
+    const userRes = await db.query(
+      `INSERT INTO users (
+        tenant_id, username, full_name, email, password_hash, 
+        role, status, must_change_password, can_see_bidding_prices, 
+        permissions, is_primary_admin
+       )
+       VALUES ($1, $2, $3, $4, $5, 'ClientAdmin', 'Active', FALSE, TRUE, '{}'::jsonb, TRUE)
+       RETURNING id, username, full_name, email, role, status, is_primary_admin`,
+      [newTenant.id, finalUsername, cleanFullName, cleanEmail, passwordHash]
+    );
+    const newUser = userRes.rows[0];
+
+    // 7. Auto-create initial default business profile for instant workflow
+    let createdProfile = null;
+    try {
+      const bpRes = await db.query(
+        `INSERT INTO business_profiles (
+          tenant_id, business_name, legal_name, email, phone, city, is_active
+         )
+         VALUES ($1, $2, $2, $3, $4, 'Pakistan', TRUE)
+         RETURNING id, business_name`,
+        [newTenant.id, cleanCompanyName, cleanEmail, phone || null]
+      );
+      createdProfile = bpRes.rows[0];
+      if (createdProfile) {
+        await db.query(
+          `INSERT INTO user_business_access (user_id, business_profile_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [newUser.id, createdProfile.id]
+        );
+      }
+    } catch (bpErr) {
+      console.warn('Initial business profile seed warning:', bpErr.message);
+    }
+
+    // 8. Generate JWT token for instant access
+    const tokenPayload = {
+      userId: newUser.id,
+      username: newUser.username,
+      role: newUser.role,
+      tenantId: newTenant.id
+    };
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully! Your 15-day free trial is now active.',
+      data: {
+        token,
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          fullName: newUser.full_name,
+          email: newUser.email,
+          role: newUser.role,
+          status: newUser.status,
+          isPrimaryAdmin: true,
+          isCreatedBySuperAdmin: true,
+          mustChangePassword: false,
+          canSeeBiddingPrices: true,
+          permissions: {},
+          assignedBusinessProfiles: createdProfile ? [createdProfile.id] : [],
+          tenant: {
+            id: newTenant.id,
+            name: newTenant.company_name,
+            subdomain: newTenant.subdomain,
+            status: newTenant.status || 'Active',
+            subscriptionPlan: newTenant.subscription_plan || 'Standard',
+            trialPeriod: '15 Days',
+            trialEndsAt: trialEndsAt,
+            isTrialActive: true,
+            daysRemaining: 15,
+            freeCompanyLimit: 2,
+            freeEmployeeLimit: 2,
+            companyCount: 1,
+            employeeCount: 0,
+            tenderCount: 0,
+            cdrCount: 0
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Sign-Up Error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create account. Please try again.',
+      error: err.message
+    });
+  }
+};
+
+router.post('/register', handleRegister);
+router.post('/signup', handleRegister);
 
 /**
  * GET current authenticated user profile (/api/auth/me)
@@ -412,6 +585,51 @@ router.get('/test-email', async (req, res) => {
       targetEmail,
       error: err.message
     });
+  }
+});
+
+/**
+ * POST /api/auth/support-request
+ * Handles trial expiration subscription activation & general support requests
+ */
+router.post('/support-request', async (req, res) => {
+  const { subject, message, companyName, senderEmail, phone } = req.body;
+  const { sendEmail } = require('../services/emailService');
+
+  try {
+    const notifyEmail = process.env.SUPER_ADMIN_EMAIL || 'naeem@mashrue.com';
+    const fallbackEmail = process.env.SMTP_USER || 'mashruebms@gmail.com';
+    const subTitle = subject || `[Mashrue Subscription Request] ${companyName || 'Trial Tenant'}`;
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; padding: 24px; color: #0f172a; max-width: 600px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+        <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 16px;">
+          <h2 style="color: #2563eb; margin: 0 0 6px;">Enterprise Subscription Request</h2>
+          <span style="font-size: 13px; color: #64748b;">Source: Free Trial Expiry / Commercial Portal</span>
+        </div>
+        <p style="margin: 8px 0;"><strong>Company / Tenant:</strong> ${companyName || 'Not specified'}</p>
+        <p style="margin: 8px 0;"><strong>User Contact:</strong> ${senderEmail || 'N/A'}</p>
+        <p style="margin: 8px 0;"><strong>Phone:</strong> ${phone || 'N/A'}</p>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 16px; border-radius: 8px; margin: 16px 0; font-size: 14px; line-height: 1.6;">
+          ${message || 'The user has requested subscription activation following the completion of their 15-day free trial.'}
+        </div>
+        <p style="font-size: 12px; color: #94a3b8; margin-top: 20px;">
+          Mashrue Enterprise BMS • Automated Dispatch System
+        </p>
+      </div>
+    `;
+
+    await sendEmail({
+      to: [notifyEmail, fallbackEmail],
+      subject: subTitle,
+      html: htmlContent,
+      text: `Subscription Request\nCompany: ${companyName}\nUser: ${senderEmail}\nMessage:\n${message}`
+    }).catch(e => console.warn('Support email notification dispatch error:', e.message));
+
+    res.json({ success: true, message: 'Your subscription activation request has been dispatched to support@mashrue.com.' });
+  } catch (err) {
+    console.error('Support request error:', err);
+    res.json({ success: true, message: 'Request recorded.' });
   }
 });
 

@@ -55,6 +55,9 @@ window.TemplatesEngine = {
   activePreviewDocType: 'quotation',
 
   async init() {
+    if (typeof State !== 'undefined' && typeof State.isLoggedIn === 'function' && !State.isLoggedIn()) {
+      return; // Do NOT fetch templates or customer mappings when user is on the guest/login screen
+    }
     await this.loadTemplates();
     await this.loadCustomerMappings();
   },
@@ -2432,6 +2435,9 @@ if (typeof window !== 'undefined') {
   window.openTemplateEditorModal = (t) => TemplatesEngine.openTemplateEditorModal(t);
   window.previewTemplate = (id) => TemplatesEngine.previewTemplate(id);
   window.addEventListener('DOMContentLoaded', () => {
+    if (typeof State !== 'undefined' && typeof State.isLoggedIn === 'function' && !State.isLoggedIn()) {
+      return;
+    }
     if (window.TemplatesEngine && typeof window.TemplatesEngine.init === 'function') {
       window.TemplatesEngine.init();
     }

@@ -276,14 +276,16 @@ router.get('/delivery-challans', authenticate, requirePermission('delivery_chall
       SELECT dc.*, 
              po.po_number, po.net_amount as po_amount,
              c.business_name as customer_name,
-             w.warehouse_name,
+             COALESCE(w.warehouse_name, 'Direct Drop-Shipment') as warehouse_name,
+             sup.supplier_name,
              bp.business_name,
              (SELECT COUNT(*) FROM delivery_challan_items dci WHERE dci.delivery_challan_id = dc.id) as item_count,
              (SELECT COUNT(*) FROM invoices inv WHERE inv.delivery_challan_id = dc.id) as invoice_count
       FROM delivery_challans dc
       JOIN purchase_orders po ON dc.purchase_order_id = po.id
       JOIN customers c ON dc.customer_id = c.id
-      JOIN warehouses w ON dc.warehouse_id = w.id
+      LEFT JOIN warehouses w ON dc.warehouse_id = w.id
+      LEFT JOIN suppliers sup ON dc.supplier_id = sup.id
       JOIN business_profiles bp ON dc.business_profile_id = bp.id
       WHERE 1=1
     `;
@@ -343,6 +345,91 @@ function parseSafeDate(d) {
   const dt = new Date(s);
   return isNaN(dt.getTime()) ? null : dt.toISOString().split('T')[0];
 }
+
+/**
+ * FIFO Active Batch Synchronization:
+ * Keeps the oldest unexhausted batch (where quantity_on_hand > 0) as the active batch on products_services.
+ * Only switches when the current active batch's quantity reaches 0.
+ */
+async function syncActiveBatchForProduct(dbOrClient, productId) {
+  if (!productId) return;
+  try {
+    const activeRes = await dbOrClient.query(
+      `SELECT batch_number, manufacturing_date, expiry_date, quantity_on_hand
+       FROM warehouse_stock
+       WHERE product_id = $1 AND quantity_on_hand > 0
+       ORDER BY expiry_date ASC NULLS LAST, created_at ASC
+       LIMIT 1`,
+      [productId]
+    );
+
+    if (activeRes.rows.length > 0) {
+      const active = activeRes.rows[0];
+      await dbOrClient.query(
+        `UPDATE products_services
+         SET batch_number = $1,
+             manufacturing_date = $2,
+             expiry_date = $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $4`,
+        [active.batch_number, active.manufacturing_date, active.expiry_date, productId]
+      );
+    } else {
+      // If all batches have 0 quantity on hand, retain the latest batch
+      const latestRes = await dbOrClient.query(
+        `SELECT batch_number, manufacturing_date, expiry_date
+         FROM warehouse_stock
+         WHERE product_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [productId]
+      );
+      if (latestRes.rows.length > 0) {
+        const latest = latestRes.rows[0];
+        await dbOrClient.query(
+          `UPDATE products_services
+           SET batch_number = $1,
+               manufacturing_date = $2,
+               expiry_date = $3,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $4`,
+          [latest.batch_number, latest.manufacturing_date, latest.expiry_date, productId]
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error in syncActiveBatchForProduct:', err.message);
+  }
+}
+
+// Background initialization: backfill any catalog products missing from warehouse_stock
+(async function initWarehouseStockSync() {
+  try {
+    await db.query(`
+      INSERT INTO warehouses (tenant_id, warehouse_name, location, city)
+      SELECT id, 'Central Distribution Warehouse', 'Main Facility', 'Lahore'
+      FROM tenants t
+      WHERE NOT EXISTS (SELECT 1 FROM warehouses WHERE tenant_id = t.id)
+      ON CONFLICT DO NOTHING;
+    `);
+
+    await db.query(`
+      INSERT INTO warehouse_stock (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved, brand_name, manufacturing_date, expiry_date)
+      SELECT p.tenant_id, w.id, p.id, COALESCE(NULLIF(p.batch_number, ''), 'LOT-PRIMARY'), COALESCE(p.current_stock, 0), 0, p.brand_name, p.manufacturing_date, p.expiry_date
+      FROM products_services p
+      CROSS JOIN LATERAL (
+        SELECT id FROM warehouses WHERE tenant_id = p.tenant_id ORDER BY created_at ASC LIMIT 1
+      ) w
+      WHERE NOT EXISTS (
+        SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = p.id
+      )
+      ON CONFLICT (warehouse_id, product_id, batch_number) DO NOTHING;
+    `);
+  } catch (e) {
+    // non-blocking
+  }
+})();
+
 
 router.post('/delivery-challans', authenticate, requirePermission('delivery_challans', 'add'), async (req, res) => {
   const {
@@ -495,40 +582,74 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
           ]
         );
 
-        if (cleanProdId && cleanWarehouseId) {
+        if (cleanProdId) {
           const prodCheck = await db.query(`SELECT id FROM products_services WHERE id = $1`, [cleanProdId]);
           if (prodCheck.rows.length > 0) {
-            await db.query(
-              `INSERT INTO inventory_transactions 
-               (tenant_id, product_id, warehouse_id, transaction_type, quantity, batch_number, serial_number, reference_type, reference_id, remarks)
-               VALUES ($1, $2, $3, 'DELIVERY', $4, $5, $6, 'DC', $7, 'Dispatched against Delivery Challan')`,
-              [tenantId, cleanProdId, cleanWarehouseId, finalQty, itm.batch_number || null, itm.serial_number || null, createdDC.id]
-            );
+            const itemBatch = (itm.batch_number || 'LOT-PRIMARY').trim();
 
-            await db.query(
-              `UPDATE products_services SET current_stock = GREATEST(0, current_stock - $1) WHERE id = $2`,
-              [finalQty, cleanProdId]
-            );
-
-            // Deduct stock balance from warehouse_stock table
-            await db.query(
-              `UPDATE warehouse_stock 
-               SET quantity_on_hand = GREATEST(0, quantity_on_hand - $1),
-                   quantity_reserved = GREATEST(0, quantity_reserved - $1),
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE warehouse_id = $2 AND product_id = $3`,
-              [finalQty, cleanWarehouseId, cleanProdId]
-            );
-
-            // Fulfill active reservations for this opportunity and product if linked to PO
-            const linkedOppId = po?.opportunity_id;
-            if (linkedOppId) {
+            if (finalDeliveryMode === 'Direct Drop-Shipment') {
+              // Direct Drop-Shipment: Record audit ledger WITHOUT reducing physical warehouse stock
               await db.query(
-                `UPDATE stock_reservations 
-                 SET status = 'Fulfilled', updated_at = CURRENT_TIMESTAMP
-                 WHERE opportunity_id = $1 AND product_id = $2 AND status = 'Active'`,
-                [linkedOppId, cleanProdId]
+                `INSERT INTO inventory_transactions 
+                 (tenant_id, product_id, warehouse_id, supplier_id, customer_id, delivery_challan_id, transaction_type, quantity, batch_number, serial_number, reference_type, reference_id, remarks)
+                 VALUES ($1, $2, NULL, $3, $4, $5, 'DIRECT_DISPATCH', $6, $7, $8, 'DC', $5, 'Direct Drop-Shipment Dispatched from Supplier to Customer')`,
+                [tenantId, cleanProdId, cleanSupplierId, cleanCustId, createdDC.id, finalQty, itemBatch, itm.serial_number || null]
               );
+            } else if (cleanWarehouseId) {
+              // Own Warehouse: Deduct physical stock from specific batch in warehouse
+              await db.query(
+                `INSERT INTO inventory_transactions 
+                 (tenant_id, product_id, warehouse_id, customer_id, delivery_challan_id, transaction_type, quantity, batch_number, serial_number, reference_type, reference_id, remarks)
+                 VALUES ($1, $2, $3, $4, $5, 'DELIVERY', $6, $7, $8, 'DC', $5, 'Dispatched from Warehouse against Delivery Challan')`,
+                [tenantId, cleanProdId, cleanWarehouseId, cleanCustId, createdDC.id, finalQty, itemBatch, itm.serial_number || null]
+              );
+
+              await db.query(
+                `UPDATE products_services SET current_stock = GREATEST(0, current_stock - $1) WHERE id = $2`,
+                [finalQty, cleanProdId]
+              );
+
+              // Precise multi-batch deduction: deduct from specific batch row
+              const batchUpdRes = await db.query(
+                `UPDATE warehouse_stock 
+                 SET quantity_on_hand = GREATEST(0, quantity_on_hand - $1),
+                     quantity_reserved = GREATEST(0, quantity_reserved - $1),
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE warehouse_id = $2 AND product_id = $3 AND batch_number = $4
+                 RETURNING id`,
+                [finalQty, cleanWarehouseId, cleanProdId, itemBatch]
+              );
+
+              // If exact batch was not found, fallback to LOT-PRIMARY or the oldest batch for this item in this warehouse
+              if (batchUpdRes.rows.length === 0) {
+                await db.query(
+                  `UPDATE warehouse_stock 
+                   SET quantity_on_hand = GREATEST(0, quantity_on_hand - $1),
+                       quantity_reserved = GREATEST(0, quantity_reserved - $1),
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = (
+                     SELECT id FROM warehouse_stock 
+                     WHERE warehouse_id = $2 AND product_id = $3 
+                     ORDER BY CASE WHEN batch_number = 'LOT-PRIMARY' THEN 1 ELSE 2 END, created_at ASC 
+                     LIMIT 1
+                   )`,
+                  [finalQty, cleanWarehouseId, cleanProdId]
+                );
+              }
+
+              // Fulfill active reservations for this opportunity and product if linked to PO
+              const linkedOppId = po?.opportunity_id;
+              if (linkedOppId) {
+                await db.query(
+                  `UPDATE stock_reservations 
+                   SET status = 'Fulfilled', updated_at = CURRENT_TIMESTAMP
+                   WHERE opportunity_id = $1 AND product_id = $2 AND status = 'Active'`,
+                  [linkedOppId, cleanProdId]
+                );
+              }
+
+              // Sync active batch for item in case depleted batch rolled over to next lot
+              await syncActiveBatchForProduct(db, cleanProdId);
             }
           }
         }
@@ -758,14 +879,14 @@ router.post('/inventory/receive-stock', authenticate, requirePermission('invento
                             ELSE cost_price 
                           END,
              current_stock = current_stock + $2::numeric,
-             batch_number = COALESCE($3, batch_number),
-             expiry_date = COALESCE($4::date, expiry_date),
-             brand_name = COALESCE($5, brand_name),
-             manufacturing_date = COALESCE($6::date, manufacturing_date),
+             brand_name = COALESCE($3, brand_name),
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $7`,
-        [unitCost, qty, batchNo, expDate, itemBrand, mfgDate, prodId]
+         WHERE id = $4`,
+        [unitCost, qty, itemBrand, prodId]
       );
+
+      // 4. FIFO Active Batch Sync: Old batch stays active until its quantity reaches zero
+      await syncActiveBatchForProduct(client, prodId);
     }
 
     await client.query('COMMIT');
@@ -1091,4 +1212,271 @@ router.put('/grn/:id/dtl-clearance', optionalAuth, async (req, res) => {
   }
 });
 
+// ============================================================================
+// 5. STOCK ADJUSTMENT WORKFLOW (SCENARIO 2: ITEM IN STOCK)
+// ============================================================================
+
+// GET Item Details & Active Batch for Stock Adjustment Form
+router.get('/inventory/stock-adjustment/item-details', optionalAuth, async (req, res) => {
+  const { product_id, warehouse_id } = req.query;
+  if (!product_id) {
+    return res.status(400).json({ success: false, message: 'product_id is required' });
+  }
+
+  try {
+    let tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
+      tenantId = tenantRes.rows[0]?.id;
+    }
+
+    // 1. Fetch Product master details with category and UOM
+    const prodRes = await db.query(
+      `SELECT p.*,
+              c.category_name,
+              sc.sub_category_name,
+              u.uom_code, u.uom_name
+       FROM products_services p
+       LEFT JOIN item_categories c ON p.category_id = c.id
+       LEFT JOIN item_sub_categories sc ON p.sub_category_id = sc.id
+       LEFT JOIN uom_masters u ON p.uom_id = u.id
+       WHERE p.id = $1`,
+      [product_id]
+    );
+
+    if (prodRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+    const product = prodRes.rows[0];
+
+    // 2. Resolve warehouse
+    let targetWhId = warehouse_id;
+    if (!targetWhId || targetWhId === 'all') {
+      const whRes = await db.query(
+        `SELECT id FROM warehouses WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`,
+        [tenantId]
+      );
+      targetWhId = whRes.rows[0]?.id;
+    }
+
+    // 3. Fetch active batch (FIFO: earliest expiry with qty > 0)
+    let activeBatch = null;
+    if (targetWhId) {
+      const activeRes = await db.query(
+        `SELECT ws.*, w.warehouse_name, w.city as warehouse_city
+         FROM warehouse_stock ws
+         JOIN warehouses w ON ws.warehouse_id = w.id
+         WHERE ws.product_id = $1 AND ws.warehouse_id = $2 AND ws.quantity_on_hand > 0
+         ORDER BY ws.expiry_date ASC NULLS LAST, ws.created_at ASC
+         LIMIT 1`,
+        [product_id, targetWhId]
+      );
+      if (activeRes.rows.length > 0) {
+        activeBatch = activeRes.rows[0];
+      } else {
+        // Fallback to most recent batch if all 0
+        const recentRes = await db.query(
+          `SELECT ws.*, w.warehouse_name, w.city as warehouse_city
+           FROM warehouse_stock ws
+           JOIN warehouses w ON ws.warehouse_id = w.id
+           WHERE ws.product_id = $1 AND ws.warehouse_id = $2
+           ORDER BY ws.created_at DESC
+           LIMIT 1`,
+          [product_id, targetWhId]
+        );
+        activeBatch = recentRes.rows[0] || null;
+      }
+    }
+
+    // 4. Fetch all batch records for this product
+    const allBatchesRes = await db.query(
+      `SELECT ws.*, w.warehouse_name
+       FROM warehouse_stock ws
+       JOIN warehouses w ON ws.warehouse_id = w.id
+       WHERE ws.product_id = $1 ${targetWhId ? 'AND ws.warehouse_id = $2' : ''}
+       ORDER BY ws.quantity_on_hand DESC, ws.expiry_date ASC`,
+      targetWhId ? [product_id, targetWhId] : [product_id]
+    );
+
+    // 5. Fetch active POs and Tenders for optional linking
+    let openPOs = [];
+    let openTenders = [];
+    try {
+      const poRes = await db.query(
+        `SELECT po.id, po.po_number, po.net_amount, c.business_name as customer_name
+         FROM purchase_orders po
+         LEFT JOIN customers c ON po.customer_id = c.id
+         WHERE po.tenant_id = $1 AND po.status NOT IN ('Cancelled', 'Delivered')
+         ORDER BY po.created_at DESC LIMIT 20`,
+        [tenantId]
+      );
+      openPOs = poRes.rows;
+
+      const oppRes = await db.query(
+        `SELECT o.id, o.opportunity_number, o.title, o.organization
+         FROM opportunities o
+         WHERE o.tenant_id = $1 AND o.stage NOT IN ('Lost', 'Disqualified')
+         ORDER BY o.created_at DESC LIMIT 20`,
+        [tenantId]
+      );
+      openTenders = oppRes.rows;
+    } catch (e) {}
+
+    res.json({
+      success: true,
+      data: {
+        product,
+        active_batch: activeBatch,
+        all_batches: allBatchesRes.rows,
+        open_pos: openPOs,
+        open_tenders: openTenders
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Record Stock Adjustment & Append New Batch
+router.post('/inventory/stock-adjustment', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const {
+    product_id,
+    warehouse_id,
+    batch_number,
+    quantity,
+    unit_cost,
+    manufacturing_date,
+    expiry_date,
+    storage_location,
+    purchase_order_id,
+    opportunity_id,
+    remarks
+  } = req.body;
+
+  if (!product_id || !warehouse_id || !batch_number || !quantity) {
+    return res.status(400).json({
+      success: false,
+      message: 'Product, Warehouse, Batch Number, and Quantity are mandatory.'
+    });
+  }
+
+  const addQty = parseFloat(quantity);
+  if (isNaN(addQty) || addQty <= 0) {
+    return res.status(400).json({ success: false, message: 'Adjustment quantity must be a positive number.' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    let tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      const tenantRes = await client.query(`SELECT id FROM tenants LIMIT 1`);
+      tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
+    }
+
+    const prodRes = await client.query(`SELECT * FROM products_services WHERE id = $1`, [product_id]);
+    if (prodRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Selected product not found.' });
+    }
+    const product = prodRes.rows[0];
+
+    const cleanBatchNo = String(batch_number).trim();
+    const cleanUnitCost = parseFloat(unit_cost || product.cost_price || 0);
+    const mfgDate = parseSafeDate(manufacturing_date);
+    const expDate = parseSafeDate(expiry_date);
+    const rack = storage_location ? String(storage_location).trim() : null;
+
+    // 1. Upsert into warehouse_stock for this specific batch
+    const wsRes = await client.query(
+      `INSERT INTO warehouse_stock 
+       (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved, brand_name, manufacturing_date, expiry_date, storage_location)
+       VALUES ($1, $2, $3, $4, $5, 0, $6, $7::date, $8::date, $9)
+       ON CONFLICT (warehouse_id, product_id, batch_number)
+       DO UPDATE SET 
+         quantity_on_hand = warehouse_stock.quantity_on_hand + $5,
+         manufacturing_date = COALESCE($7::date, warehouse_stock.manufacturing_date),
+         expiry_date = COALESCE($8::date, warehouse_stock.expiry_date),
+         storage_location = COALESCE($9, warehouse_stock.storage_location),
+         brand_name = COALESCE($6, warehouse_stock.brand_name),
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [tenantId, warehouse_id, product_id, cleanBatchNo, addQty, product.brand_name, mfgDate, expDate, rack]
+    );
+
+    // 2. Update products_services total stock & weighted cost
+    await client.query(
+      `UPDATE products_services
+       SET current_stock = current_stock + $1,
+           cost_price = CASE 
+                          WHEN $2::numeric > 0 AND current_stock > 0 THEN ((cost_price * current_stock) + ($2::numeric * $1::numeric)) / (current_stock + $1::numeric)
+                          WHEN $2::numeric > 0 THEN $2::numeric
+                          ELSE cost_price 
+                        END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [addQty, cleanUnitCost, product_id]
+    );
+
+    // 3. FIFO Active Batch Sync:
+    // If the existing active batch on this item still has quantity > 0, it stays as the active batch!
+    // It only switches to this new batch if the previous batch reached 0 or was empty.
+    await syncActiveBatchForProduct(client, product_id);
+
+    // 4. Record audited inventory movement
+    let refType = 'STOCK_ADJUSTMENT';
+    let refNumber = `ADJ-${Date.now().toString().slice(-6)}`;
+    if (purchase_order_id) {
+      refType = 'PURCHASE_ORDER';
+      const poRow = await client.query(`SELECT po_number FROM purchase_orders WHERE id = $1`, [purchase_order_id]);
+      if (poRow.rows.length > 0) refNumber = poRow.rows[0].po_number;
+    } else if (opportunity_id) {
+      refType = 'TENDER';
+      const oppRow = await client.query(`SELECT opportunity_number FROM opportunities WHERE id = $1`, [opportunity_id]);
+      if (oppRow.rows.length > 0) refNumber = oppRow.rows[0].opportunity_number;
+    }
+
+    const txRes = await client.query(
+      `INSERT INTO inventory_transactions 
+       (tenant_id, product_id, warehouse_id, transaction_type, quantity, unit_cost, batch_number, expiry_date, manufacturing_date, reference_type, reference_number, storage_location, remarks, created_by)
+       VALUES ($1, $2, $3, 'STOCK_IN', $4, $5, $6, $7::date, $8::date, $9, $10, $11, $12, $13)
+       RETURNING *`,
+      [
+        tenantId,
+        product_id,
+        warehouse_id,
+        addQty,
+        cleanUnitCost,
+        cleanBatchNo,
+        expDate,
+        mfgDate,
+        refType,
+        refNumber,
+        rack,
+        remarks || `Stock Adjustment: Added ${addQty} units under Batch ${cleanBatchNo} (Ref: ${refNumber})`,
+        req.user?.id || null
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully adjusted stock. Added ${addQty} unit(s) under Batch "${cleanBatchNo}".`,
+      data: {
+        warehouse_stock: wsRes.rows[0],
+        transaction: txRes.rows[0]
+      }
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message, message: 'Failed to adjust stock: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.syncActiveBatchForProduct = syncActiveBatchForProduct;
 module.exports = router;
+

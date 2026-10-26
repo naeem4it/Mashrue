@@ -316,13 +316,20 @@ function parseSafeDate(d) {
 
 router.get('/products', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   try {
+    const { category_id, sub_category_id, industry_type } = req.query;
     let queryText = `
       SELECT p.*, s.supplier_name, s.origin as supplier_origin,
              COALESCE(t.company_name, 'Default Org') as tenant_name,
              u.full_name as client_admin_name,
-             u.username as client_admin_username
+             u.username as client_admin_username,
+             c.category_name, c.category_code, c.industry_type,
+             sc.sub_category_name, sc.sub_category_code,
+             uom.uom_code, uom.uom_name, uom.allow_decimal
       FROM products_services p
       LEFT JOIN suppliers s ON p.default_supplier_id = s.id
+      LEFT JOIN item_categories c ON p.category_id = c.id
+      LEFT JOIN item_sub_categories sc ON p.sub_category_id = sc.id
+      LEFT JOIN uom_masters uom ON p.uom_id = uom.id
       LEFT JOIN tenants t ON p.tenant_id = t.id
       LEFT JOIN LATERAL (
         SELECT full_name, username FROM users 
@@ -344,6 +351,21 @@ router.get('/products', authenticate, requirePermission('inventory', 'view'), as
       }
     } else {
       return res.json({ success: true, data: [] });
+    }
+
+    if (category_id && isUuid(category_id)) {
+      params.push(category_id);
+      queryText += ` AND p.category_id::text = $${params.length}`;
+    }
+
+    if (sub_category_id && isUuid(sub_category_id)) {
+      params.push(sub_category_id);
+      queryText += ` AND p.sub_category_id::text = $${params.length}`;
+    }
+
+    if (industry_type && industry_type !== 'all') {
+      params.push(industry_type);
+      queryText += ` AND c.industry_type = $${params.length}`;
     }
 
     queryText += ` ORDER BY p.name ASC`;
@@ -426,6 +448,15 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       ? JSON.stringify(variants) 
       : (typeof variants === 'string' && variants.trim().startsWith('[') ? variants : JSON.stringify(variants ? [variants] : []));
 
+    let resolvedUomId = null;
+    if (isUuid(req.body.uom_id)) {
+      resolvedUomId = req.body.uom_id;
+    } else if (req.body.uom_id || unit) {
+      const uCode = (req.body.uom_id || unit || 'PCS').toUpperCase().trim();
+      const uRow = await db.query(`SELECT id FROM uom_masters WHERE uom_code = $1 LIMIT 1`, [uCode]);
+      resolvedUomId = uRow.rows[0]?.id || null;
+    }
+
     const candidateFields = {
       tenant_id: resolvedTenantId,
       item_type: item_type || 'Product',
@@ -444,6 +475,10 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       current_stock: parseFloat(current_stock || 0),
       reorder_level: parseFloat(reorder_level || 5),
       default_supplier_id: isUuid(default_supplier_id) ? default_supplier_id : null,
+      category_id: isUuid(req.body.category_id) ? req.body.category_id : null,
+      sub_category_id: isUuid(req.body.sub_category_id) ? req.body.sub_category_id : null,
+      uom_id: resolvedUomId,
+      tracking_type: req.body.tracking_type || 'Standard',
       sizes: parsedSizes,
       variants: parsedVariants
     };
@@ -463,7 +498,76 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
 
     const insertSql = `INSERT INTO products_services (${insertCols.join(', ')}) VALUES (${insertPlaceholders.join(', ')}) RETURNING *`;
     const result = await db.query(insertSql, insertVals);
-    res.status(201).json({ success: true, data: result.rows[0], message: 'Item added to Product Catalog successfully' });
+    const createdProduct = result.rows[0];
+
+    // Automatically initialize item in Warehouse Stock so it immediately shows in the warehouse!
+    try {
+      let targetWhId = isUuid(req.body.warehouse_id) ? req.body.warehouse_id : null;
+      if (!targetWhId) {
+        const whRes = await db.query(
+          `SELECT id FROM warehouses WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`,
+          [resolvedTenantId]
+        );
+        if (whRes.rows.length > 0) {
+          targetWhId = whRes.rows[0].id;
+        }
+      }
+
+      if (targetWhId) {
+        const initialQty = parseFloat(candidateFields.current_stock || 0);
+        const initBatch = (candidateFields.batch_number || 'LOT-PRIMARY').trim();
+        const initCost = parseFloat(candidateFields.cost_price || 0);
+
+        await db.query(
+          `INSERT INTO warehouse_stock 
+           (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved, brand_name, manufacturing_date, expiry_date, storage_location)
+           VALUES ($1, $2, $3, $4, $5, 0, $6, $7::date, $8::date, $9)
+           ON CONFLICT (warehouse_id, product_id, batch_number)
+           DO UPDATE SET 
+             quantity_on_hand = warehouse_stock.quantity_on_hand + $5,
+             brand_name = COALESCE($6, warehouse_stock.brand_name),
+             manufacturing_date = COALESCE($7::date, warehouse_stock.manufacturing_date),
+             expiry_date = COALESCE($8::date, warehouse_stock.expiry_date),
+             updated_at = CURRENT_TIMESTAMP`,
+          [
+            resolvedTenantId,
+            targetWhId,
+            createdProduct.id,
+            initBatch,
+            initialQty,
+            candidateFields.brand_name || null,
+            candidateFields.manufacturing_date || null,
+            candidateFields.expiry_date || null,
+            req.body.storage_location || null
+          ]
+        );
+
+        if (initialQty > 0) {
+          await db.query(
+            `INSERT INTO inventory_transactions
+             (tenant_id, product_id, warehouse_id, transaction_type, quantity, unit_cost, batch_number, expiry_date, manufacturing_date, reference_type, reference_number, storage_location, remarks, created_by)
+             VALUES ($1, $2, $3, 'STOCK_IN', $4, $5, $6, $7::date, $8::date, 'OPENING_STOCK', $9, $10, 'Opening Stock Balance on Item Registration', $11)`,
+            [
+              resolvedTenantId,
+              createdProduct.id,
+              targetWhId,
+              initialQty,
+              initCost,
+              initBatch,
+              candidateFields.expiry_date || null,
+              candidateFields.manufacturing_date || null,
+              `OPN-${Date.now().toString().slice(-6)}`,
+              req.body.storage_location || null,
+              req.user?.id || null
+            ]
+          );
+        }
+      }
+    } catch (whErr) {
+      console.warn('Auto warehouse_stock init non-critical error:', whErr.message);
+    }
+
+    res.status(201).json({ success: true, data: createdProduct, message: 'Item added to Product Catalog and Warehouse Stock successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -519,6 +623,10 @@ router.put('/products/:id', authenticate, requirePermission('inventory', 'edit')
       current_stock: current_stock !== undefined ? parseFloat(current_stock) : null,
       reorder_level: reorder_level !== undefined ? parseFloat(reorder_level) : null,
       default_supplier_id: default_supplier_id || null,
+      category_id: req.body.category_id !== undefined ? (isUuid(req.body.category_id) ? req.body.category_id : null) : null,
+      sub_category_id: req.body.sub_category_id !== undefined ? (isUuid(req.body.sub_category_id) ? req.body.sub_category_id : null) : null,
+      uom_id: req.body.uom_id !== undefined ? (isUuid(req.body.uom_id) ? req.body.uom_id : null) : null,
+      tracking_type: req.body.tracking_type !== undefined ? req.body.tracking_type : null,
       sizes: sizes !== undefined ? (Array.isArray(sizes) ? JSON.stringify(sizes) : sizes) : null,
       variants: variants !== undefined ? (Array.isArray(variants) ? JSON.stringify(variants) : variants) : null
     };
@@ -574,6 +682,274 @@ router.delete('/products/:id', authenticate, requirePermission('inventory', 'del
       }
     }
     res.json({ success: true, message: 'Item deleted from catalog successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================================================
+// UNITS OF MEASURE (UOM) MASTER
+// ============================================================================
+
+router.get('/uoms', authenticate, async (req, res) => {
+  try {
+    const tid = resolveTenantId(req) || req.user?.tenantId;
+    let result;
+    if (tid && isUuid(tid)) {
+      result = await db.query(
+        `SELECT DISTINCT ON (uom_code) * FROM uom_masters 
+         WHERE (tenant_id = $1 OR tenant_id IS NULL) AND is_active = TRUE 
+         ORDER BY uom_code ASC, (tenant_id IS NOT NULL) DESC`,
+        [tid]
+      );
+    } else {
+      result = await db.query(
+        `SELECT DISTINCT ON (uom_code) * FROM uom_masters 
+         WHERE is_active = TRUE 
+         ORDER BY uom_code ASC, (tenant_id IS NOT NULL) DESC`
+      );
+    }
+    if (!result.rows || result.rows.length === 0) {
+      result = await db.query(`SELECT * FROM uom_masters WHERE is_active = TRUE ORDER BY uom_code ASC`);
+    }
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/uoms', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const { uom_code, uom_name, uom_type, allow_decimal } = req.body;
+  if (!uom_code || !uom_name) {
+    return res.status(400).json({ success: false, message: 'UOM Code and UOM Name are required.' });
+  }
+  try {
+    const tid = resolveTenantId(req) || req.user?.tenantId;
+    const cleanTid = isUuid(tid) ? tid : null;
+    const cleanCode = String(uom_code).toUpperCase().trim();
+    const cleanName = String(uom_name).trim();
+
+    let result;
+    if (cleanTid) {
+      result = await db.query(
+        `INSERT INTO uom_masters (tenant_id, uom_code, uom_name, uom_type, allow_decimal)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id, uom_code) DO UPDATE
+         SET uom_name = EXCLUDED.uom_name, uom_type = EXCLUDED.uom_type, allow_decimal = EXCLUDED.allow_decimal, is_active = TRUE
+         RETURNING *`,
+        [cleanTid, cleanCode, cleanName, uom_type || 'Quantity', !!allow_decimal]
+      );
+    } else {
+      result = await db.query(
+        `INSERT INTO uom_masters (tenant_id, uom_code, uom_name, uom_type, allow_decimal)
+         VALUES (NULL, $1, $2, $3, $4)
+         ON CONFLICT (uom_code) WHERE tenant_id IS NULL DO UPDATE
+         SET uom_name = EXCLUDED.uom_name, uom_type = EXCLUDED.uom_type, allow_decimal = EXCLUDED.allow_decimal, is_active = TRUE
+         RETURNING *`,
+        [cleanCode, cleanName, uom_type || 'Quantity', !!allow_decimal]
+      );
+    }
+    res.status(201).json({ success: true, data: result.rows[0], message: 'Unit of Measure created successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/uoms/:id', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  const { id } = req.params;
+  const { uom_name, uom_type, allow_decimal, is_active } = req.body;
+  try {
+    const result = await db.query(
+      `UPDATE uom_masters
+       SET uom_name = COALESCE($1, uom_name),
+           uom_type = COALESCE($2, uom_type),
+           allow_decimal = COALESCE($3, allow_decimal),
+           is_active = COALESCE($4, is_active)
+       WHERE id = $5 RETURNING *`,
+      [uom_name || null, uom_type || null, allow_decimal !== undefined ? !!allow_decimal : null, is_active !== undefined ? !!is_active : null, id]
+    );
+    res.json({ success: true, data: result.rows[0], message: 'Unit of Measure updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================================================
+// ITEM CATEGORIES & SUB-CATEGORIES
+// ============================================================================
+
+router.get('/categories', authenticate, async (req, res) => {
+  try {
+    const tid = resolveTenantId(req) || req.user?.tenantId;
+    let result;
+    if (tid && isUuid(tid)) {
+      result = await db.query(
+        `SELECT DISTINCT ON (c.category_name) c.*, 
+                (SELECT COUNT(*) FROM item_sub_categories sc WHERE sc.category_id = c.id AND sc.is_active = TRUE) as sub_category_count,
+                (SELECT COUNT(*) FROM products_services p WHERE p.category_id = c.id) as product_count
+         FROM item_categories c
+         WHERE (c.tenant_id = $1 OR c.tenant_id IS NULL) AND c.is_active = TRUE
+         ORDER BY c.category_name ASC, (c.tenant_id IS NOT NULL) DESC`,
+        [tid]
+      );
+    } else {
+      result = await db.query(
+        `SELECT DISTINCT ON (c.category_name) c.*, 
+                (SELECT COUNT(*) FROM item_sub_categories sc WHERE sc.category_id = c.id AND sc.is_active = TRUE) as sub_category_count,
+                (SELECT COUNT(*) FROM products_services p WHERE p.category_id = c.id) as product_count
+         FROM item_categories c
+         WHERE c.is_active = TRUE
+         ORDER BY c.category_name ASC, (c.tenant_id IS NOT NULL) DESC`
+      );
+    }
+    if (!result.rows || result.rows.length === 0) {
+      result = await db.query(`SELECT * FROM item_categories WHERE is_active = TRUE ORDER BY category_name ASC`);
+    }
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/categories', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const { category_code, category_name, industry_type, description, requires_batch_tracking, requires_expiry_tracking, requires_serial_tracking } = req.body;
+  if (!category_name) {
+    return res.status(400).json({ success: false, message: 'Category Name is required.' });
+  }
+  try {
+    const tid = resolveTenantId(req) || req.user?.tenantId;
+    const cleanTid = isUuid(tid) ? tid : null;
+    const cCode = (category_code || ('CAT-' + Date.now().toString().slice(-4))).toUpperCase().trim();
+    let result;
+    if (cleanTid) {
+      result = await db.query(
+        `INSERT INTO item_categories 
+         (tenant_id, category_code, category_name, industry_type, description, requires_batch_tracking, requires_expiry_tracking, requires_serial_tracking)
+         VALUES ($1, $2, TRIM($3), $4, $5, $6, $7, $8)
+         ON CONFLICT (tenant_id, category_name) DO UPDATE
+         SET category_code = EXCLUDED.category_code,
+             industry_type = EXCLUDED.industry_type,
+             description = EXCLUDED.description,
+             requires_batch_tracking = EXCLUDED.requires_batch_tracking,
+             requires_expiry_tracking = EXCLUDED.requires_expiry_tracking,
+             requires_serial_tracking = EXCLUDED.requires_serial_tracking,
+             is_active = TRUE
+         RETURNING *`,
+        [cleanTid, cCode, category_name, industry_type || 'General Goods', description || null, !!requires_batch_tracking, !!requires_expiry_tracking, !!requires_serial_tracking]
+      );
+    } else {
+      result = await db.query(
+        `INSERT INTO item_categories 
+         (tenant_id, category_code, category_name, industry_type, description, requires_batch_tracking, requires_expiry_tracking, requires_serial_tracking)
+         VALUES (NULL, $1, TRIM($2), $3, $4, $5, $6, $7)
+         ON CONFLICT (category_name) WHERE tenant_id IS NULL DO UPDATE
+         SET category_code = EXCLUDED.category_code,
+             industry_type = EXCLUDED.industry_type,
+             description = EXCLUDED.description,
+             requires_batch_tracking = EXCLUDED.requires_batch_tracking,
+             requires_expiry_tracking = EXCLUDED.requires_expiry_tracking,
+             requires_serial_tracking = EXCLUDED.requires_serial_tracking,
+             is_active = TRUE
+         RETURNING *`,
+        [cCode, category_name, industry_type || 'General Goods', description || null, !!requires_batch_tracking, !!requires_expiry_tracking, !!requires_serial_tracking]
+      );
+    }
+    res.status(201).json({ success: true, data: result.rows[0], message: 'Item Category created successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/categories/:id', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  const { id } = req.params;
+  const { category_name, industry_type, description, requires_batch_tracking, requires_expiry_tracking, requires_serial_tracking, is_active } = req.body;
+  try {
+    const result = await db.query(
+      `UPDATE item_categories
+       SET category_name = COALESCE($1, category_name),
+           industry_type = COALESCE($2, industry_type),
+           description = COALESCE($3, description),
+           requires_batch_tracking = COALESCE($4, requires_batch_tracking),
+           requires_expiry_tracking = COALESCE($5, requires_expiry_tracking),
+           requires_serial_tracking = COALESCE($6, requires_serial_tracking),
+           is_active = COALESCE($7, is_active)
+       WHERE id = $8 RETURNING *`,
+      [
+        category_name || null,
+        industry_type || null,
+        description !== undefined ? description : null,
+        requires_batch_tracking !== undefined ? !!requires_batch_tracking : null,
+        requires_expiry_tracking !== undefined ? !!requires_expiry_tracking : null,
+        requires_serial_tracking !== undefined ? !!requires_serial_tracking : null,
+        is_active !== undefined ? !!is_active : null,
+        id
+      ]
+    );
+    res.json({ success: true, data: result.rows[0], message: 'Item Category updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/sub-categories', authenticate, async (req, res) => {
+  const { category_id } = req.query;
+  try {
+    const tid = resolveTenantId(req) || req.user?.tenantId;
+    let queryText = `
+      SELECT sc.*, c.category_name, c.industry_type,
+             (SELECT COUNT(*) FROM products_services p WHERE p.sub_category_id = sc.id) as product_count
+      FROM item_sub_categories sc
+      JOIN item_categories c ON sc.category_id = c.id
+      WHERE (sc.tenant_id = $1 OR sc.tenant_id IS NULL) AND sc.is_active = TRUE
+    `;
+    const params = [tid];
+    if (category_id && isUuid(category_id)) {
+      params.push(category_id);
+      queryText += ` AND sc.category_id = $${params.length}`;
+    }
+    queryText += ` ORDER BY sc.sub_category_name ASC`;
+    const result = await db.query(queryText, params);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/sub-categories', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const { category_id, sub_category_code, sub_category_name, description } = req.body;
+  if (!category_id || !sub_category_name) {
+    return res.status(400).json({ success: false, message: 'Category ID and Sub-Category Name are required.' });
+  }
+  try {
+    const tid = resolveTenantId(req) || req.user?.tenantId;
+    const sCode = (sub_category_code || ('SUB-' + Date.now().toString().slice(-4))).toUpperCase().trim();
+    const result = await db.query(
+      `INSERT INTO item_sub_categories (tenant_id, category_id, sub_category_code, sub_category_name, description)
+       VALUES ($1, $2, $3, TRIM($4), $5)
+       ON CONFLICT (tenant_id, category_id, sub_category_name) DO UPDATE
+       SET sub_category_code = EXCLUDED.sub_category_code, description = EXCLUDED.description, is_active = TRUE
+       RETURNING *`,
+      [tid, category_id, sCode, sub_category_name, description || null]
+    );
+    res.status(201).json({ success: true, data: result.rows[0], message: 'Item Sub-Category created successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/sub-categories/:id', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  const { id } = req.params;
+  const { sub_category_name, description, is_active } = req.body;
+  try {
+    const result = await db.query(
+      `UPDATE item_sub_categories
+       SET sub_category_name = COALESCE($1, sub_category_name),
+           description = COALESCE($2, description),
+           is_active = COALESCE($3, is_active)
+       WHERE id = $4 RETURNING *`,
+      [sub_category_name || null, description !== undefined ? description : null, is_active !== undefined ? !!is_active : null, id]
+    );
+    res.json({ success: true, data: result.rows[0], message: 'Item Sub-Category updated successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

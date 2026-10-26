@@ -554,7 +554,7 @@ router.get('/bid-securities-and-guarantees', authenticate, requirePermission('re
 // 2. EXECUTIVE REPORT: EXPENSES LEDGER & 3-TIER BREAKDOWN
 // -----------------------------------------------------------------------------
 router.get('/expenses-ledger', authenticate, requirePermission('reports', 'view'), async (req, res) => {
-  const { business_profile_id, start_date, end_date, scope, tier, category } = req.query;
+  const { business_profile_id, start_date, end_date, scope, tier, category, customer_id, tender_id, quotation_id, opportunity_id } = req.query;
 
   try {
     let where = [];
@@ -599,6 +599,46 @@ router.get('/expenses-ledger', authenticate, requirePermission('reports', 'view'
       where.push(`ge.category = $${params.length}`);
     }
 
+    // Customer filter: match direct expense customer, or customer on linked opportunity/PO/contract
+    if (customer_id && customer_id !== 'all') {
+      params.push(customer_id);
+      const cIdx = params.length;
+      where.push(`(
+        ge.customer_id::text = $${cIdx} OR 
+        o.customer_id::text = $${cIdx} OR 
+        po.customer_id::text = $${cIdx} OR 
+        po_o.customer_id::text = $${cIdx} OR 
+        cnt.customer_id::text = $${cIdx}
+      )`);
+    }
+
+    // Tender / Quotation / Opportunity filters
+    const targetTender = tender_id && tender_id !== 'all' ? tender_id : null;
+    const targetQuote = quotation_id && quotation_id !== 'all' ? quotation_id : null;
+    const targetOpp = opportunity_id && opportunity_id !== 'all' ? opportunity_id : null;
+
+    if (targetTender && targetQuote) {
+      params.push(targetTender, targetQuote);
+      const tIdx = params.length - 1;
+      const qIdx = params.length;
+      where.push(`(
+        ge.opportunity_id::text IN ($${tIdx}, $${qIdx}) OR 
+        po.opportunity_id::text IN ($${tIdx}, $${qIdx}) OR 
+        cnt.opportunity_id::text IN ($${tIdx}, $${qIdx})
+      )`);
+    } else {
+      const singleTarget = targetTender || targetQuote || targetOpp;
+      if (singleTarget) {
+        params.push(singleTarget);
+        const idx = params.length;
+        where.push(`(
+          ge.opportunity_id::text = $${idx} OR 
+          po.opportunity_id::text = $${idx} OR 
+          cnt.opportunity_id::text = $${idx}
+        )`);
+      }
+    }
+
     const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
     const query = `
@@ -610,13 +650,20 @@ router.get('/expenses-ledger', authenticate, requirePermission('reports', 'view'
         o.is_quotation,
         po.po_number,
         cnt.contract_number,
-        dc.dc_number
+        dc.dc_number,
+        COALESCE(c_direct.business_name, c_opp.business_name, c_po.business_name, c_cnt.business_name) as customer_name,
+        COALESCE(ge.customer_id, o.customer_id, po.customer_id, cnt.customer_id) as effective_customer_id
       FROM general_expenses ge
       LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
       LEFT JOIN opportunities o ON ge.opportunity_id = o.id
       LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+      LEFT JOIN opportunities po_o ON po.opportunity_id = po_o.id
       LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
       LEFT JOIN delivery_challans dc ON ge.delivery_challan_id = dc.id
+      LEFT JOIN customers c_direct ON ge.customer_id = c_direct.id
+      LEFT JOIN customers c_opp ON o.customer_id = c_opp.id
+      LEFT JOIN customers c_po ON po.customer_id = c_po.id
+      LEFT JOIN customers c_cnt ON cnt.customer_id = c_cnt.id
       ${whereClause}
       ORDER BY ge.expense_date DESC NULLS LAST, ge.created_at DESC
     `;

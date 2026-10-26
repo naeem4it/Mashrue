@@ -55,7 +55,17 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   { tier: 'Tier 3 - General Overheads', name: 'Legal & Tax Advisory Fees', description: 'Corporate tax consultant retainer, SECP compliance advocate, legal opinion fees' },
   { tier: 'Tier 3 - General Overheads', name: 'Software & ERP Subscriptions', description: 'Cloud hosting, accounting software, domain renewals, productivity licenses' },
   { tier: 'Tier 3 - General Overheads', name: 'Office Refreshments & Hospitality', description: 'Kitchen supplies, staff tea/coffee, guest hospitality, water dispenser bottles' },
-  { tier: 'Tier 3 - General Overheads', name: 'Miscellaneous General Expense', description: 'General sundry expenses, office cleaning supplies, small repair and maintenance' }
+  { tier: 'Tier 3 - General Overheads', name: 'Miscellaneous General Expense', description: 'General sundry expenses, office cleaning supplies, small repair and maintenance' },
+
+  // Tier 4: Direct Customer / Client Attribution Expenses
+  { tier: 'Tier 4 - Customer Direct', name: 'Client Entertainment & Hospitality', description: 'Business dinners, client meetings, hospitality, refreshments for customer delegates' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Client Relationship & Corporate Gifts', description: 'Annual diaries, corporate giveaways, executive gift hampers, festival greetings' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Customer Site Visit & Travel', description: 'Traveling, lodging, and transport for customer head office or regional site meetings' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Client Pitching & Presentation Costs', description: 'Marketing collaterals, mockups, bespoke demonstration units, customer pitch decks' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Customer Specific Testing & Samples', description: 'Laboratory tests, inspection certificates, or bespoke samples requested by customer' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Dedicated Client Account Management', description: 'Direct coordination, liaison officer expenses, dedicated customer support costs' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Warranty & Client After-Sales Support', description: 'Free warranty repair visits, customer replacement parts, after-sales service' },
+  { tier: 'Tier 4 - Customer Direct', name: 'Other Direct Customer Expense', description: 'Miscellaneous direct out-of-pocket costs attributed specifically to this customer' }
 ];
 
 const EXPENSE_CATEGORIES = DEFAULT_EXPENSE_CATEGORIES.map(c => c.name);
@@ -64,6 +74,7 @@ const EXPENSE_CATEGORIES = DEFAULT_EXPENSE_CATEGORIES.map(c => c.name);
 (async () => {
   try {
     await db.query(`
+      ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS customer_id UUID REFERENCES customers(id) ON DELETE SET NULL;
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_type VARCHAR(50) DEFAULT 'General Expense';
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_name VARCHAR(255);
       ALTER TABLE general_expenses ADD COLUMN IF NOT EXISTS expense_tier VARCHAR(50) DEFAULT 'Tier 1 - Tender Direct';
@@ -84,17 +95,15 @@ const EXPENSE_CATEGORIES = DEFAULT_EXPENSE_CATEGORIES.map(c => c.name);
         ON expense_categories (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), tier, name);
     `);
 
-    // Check count and seed default categories if empty
-    const countRes = await db.query(`SELECT COUNT(*) FROM expense_categories`);
-    if (parseInt(countRes.rows[0].count, 10) === 0) {
-      for (const cat of DEFAULT_EXPENSE_CATEGORIES) {
-        await db.query(`
-          INSERT INTO expense_categories (tier, name, description, is_active)
-          VALUES ($1, $2, $3, TRUE)
-          ON CONFLICT DO NOTHING
-        `, [cat.tier, cat.name, cat.description]);
-      }
+    // Ensure all default categories (including Tier 4 - Customer Direct) are present in expense_categories
+    for (const cat of DEFAULT_EXPENSE_CATEGORIES) {
+      await db.query(`
+        INSERT INTO expense_categories (tier, name, description, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT DO NOTHING
+      `, [cat.tier, cat.name, cat.description]);
     }
+
   } catch (err) {
     console.warn('Expense schema init note:', err.message);
   }
@@ -214,10 +223,11 @@ router.delete('/categories/:id', authenticate, requirePermission('expenses', 'de
   }
 });
 
-// GET all expenses with comprehensive filters (Tender wise, General Expense, Date Range)
+// GET all expenses with comprehensive filters (Tender wise, Customer wise, General Expense, Date Range)
 router.get('/', authenticate, requirePermission('expenses', 'view'), async (req, res) => {
   const { 
     opportunity_id, 
+    customer_id,
     contract_id, 
     category, 
     business_profile_id, 
@@ -238,15 +248,19 @@ router.get('/', authenticate, requirePermission('expenses', 'view'), async (req,
              COALESCE(o.title, po_opp.title) as opportunity_title,
              COALESCE(o.tender_type, po_opp.tender_type) as tender_type,
              COALESCE(o.tender_source, po_opp.tender_source) as tender_source,
+             COALESCE(c.business_name, po_c.business_name, o_c.business_name) as customer_name,
              cnt.contract_number,
              po.po_number,
              bp.business_name
       FROM general_expenses ge
       LEFT JOIN opportunities o ON ge.opportunity_id = o.id
+      LEFT JOIN customers o_c ON o.customer_id = o_c.id
       LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+      LEFT JOIN customers po_c ON po.customer_id = po_c.id
       LEFT JOIN opportunities po_opp ON po.opportunity_id = po_opp.id
       LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
       LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
+      LEFT JOIN customers c ON ge.customer_id = c.id
       WHERE 1=1
     `;
     const params = [];
@@ -267,14 +281,22 @@ router.get('/', authenticate, requirePermission('expenses', 'view'), async (req,
       return res.json({ success: true, data: [], expense_names: [], categories: EXPENSE_CATEGORIES });
     }
 
-    // 1. Filter Scope: 'tender' vs 'general'
+    // 1. Filter Scope: 'tender' vs 'customer' vs 'general'
     if (filter_scope === 'tender' || filter_scope === 'tender_wise') {
       queryText += ` AND (ge.opportunity_id IS NOT NULL OR ge.purchase_order_id IS NOT NULL OR ge.expense_tier IN ('Tier 1 - Tender Direct', 'Tier 2 - PO Execution') OR ge.expense_type IN ('Tender Expense', 'Quotation Expense'))`;
+    } else if (filter_scope === 'customer' || filter_scope === 'customer_direct') {
+      queryText += ` AND (ge.customer_id IS NOT NULL OR ge.expense_tier = 'Tier 4 - Customer Direct' OR ge.expense_type = 'Customer Expense')`;
     } else if (filter_scope === 'general' || filter_scope === 'general_expense') {
-      queryText += ` AND (ge.opportunity_id IS NULL AND ge.purchase_order_id IS NULL AND (ge.expense_tier = 'Tier 3 - General Overheads' OR ge.expense_tier IS NULL OR ge.expense_type = 'General Expense'))`;
+      queryText += ` AND (ge.opportunity_id IS NULL AND ge.purchase_order_id IS NULL AND ge.customer_id IS NULL AND (ge.expense_tier = 'Tier 3 - General Overheads' OR ge.expense_tier IS NULL OR ge.expense_type = 'General Expense'))`;
     }
 
-    // 2. Specific Opportunity / Tender
+    // 2. Specific Customer Filter
+    if (customer_id && customer_id !== 'all') {
+      params.push(customer_id);
+      queryText += ` AND (ge.customer_id = $${params.length} OR o.customer_id = $${params.length} OR po.customer_id = $${params.length})`;
+    }
+
+    // 3. Specific Opportunity / Tender
     if (opportunity_id && opportunity_id !== 'all') {
       params.push(opportunity_id);
       queryText += ` AND (ge.opportunity_id = $${params.length} OR po.opportunity_id = $${params.length})`;
@@ -348,7 +370,7 @@ router.get('/', authenticate, requirePermission('expenses', 'view'), async (req,
   }
 });
 
-// POST record new Expense (General / Tender / Quotation / Contract)
+// POST record new Expense (General / Customer Direct / Tender / Quotation / Contract)
 router.post('/', authenticate, requirePermission('expenses', 'add'), async (req, res) => {
   const {
     business_profile_id,
@@ -363,6 +385,7 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
     opportunity_id,
     contract_id,
     purchase_order_id,
+    customer_id,
     department,
     receipt_url,
     remarks
@@ -382,6 +405,7 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
     const cleanOppId = cleanUUID(opportunity_id);
     const cleanContractId = cleanUUID(contract_id);
     const cleanPOId = cleanUUID(purchase_order_id);
+    const cleanCustomerId = cleanUUID(customer_id);
     let cleanBizId = cleanUUID(business_profile_id);
 
     if (!cleanBizId) {
@@ -411,14 +435,15 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
 
     const result = await db.query(
       `INSERT INTO general_expenses 
-       (tenant_id, business_profile_id, expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, opportunity_id, contract_id, purchase_order_id, department, receipt_url, remarks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       (tenant_id, business_profile_id, customer_id, expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, opportunity_id, contract_id, purchase_order_id, department, receipt_url, remarks)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
         tenantId,
         cleanBizId || null,
-        expense_tier || 'Tier 3 - General Overheads',
-        expense_type || 'General Expense',
+        cleanCustomerId || null,
+        expense_tier || (cleanCustomerId ? 'Tier 4 - Customer Direct' : 'Tier 3 - General Overheads'),
+        expense_type || (cleanCustomerId ? 'Customer Expense' : 'General Expense'),
         expense_name || null,
         category,
         parseFloat(amount),
@@ -451,15 +476,19 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
               COALESCE(o.title, po_opp.title) as opportunity_title,
               COALESCE(o.tender_type, po_opp.tender_type) as tender_type,
               COALESCE(o.tender_source, po_opp.tender_source) as tender_source,
+              COALESCE(c.business_name, po_c.business_name, o_c.business_name) as customer_name,
               cnt.contract_number,
               po.po_number,
               bp.business_name
        FROM general_expenses ge
        LEFT JOIN opportunities o ON ge.opportunity_id = o.id
+       LEFT JOIN customers o_c ON o.customer_id = o_c.id
        LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+       LEFT JOIN customers po_c ON po.customer_id = po_c.id
        LEFT JOIN opportunities po_opp ON po.opportunity_id = po_opp.id
        LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
        LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
+       LEFT JOIN customers c ON ge.customer_id = c.id
        WHERE ge.id = $1`,
       [result.rows[0].id]
     );
@@ -477,11 +506,12 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
 
 // PUT update Expense details
 router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (req, res) => {
-  const { expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, remarks, opportunity_id, purchase_order_id } = req.body;
+  const { expense_tier, expense_type, expense_name, category, amount, expense_date, paid_to, payment_mode, remarks, opportunity_id, purchase_order_id, customer_id } = req.body;
   try {
     const safeDate = parseSafeDate(expense_date);
     const cleanOpp = opportunity_id !== undefined ? cleanUUID(opportunity_id) : undefined;
     const cleanPO = purchase_order_id !== undefined ? cleanUUID(purchase_order_id) : undefined;
+    const cleanCust = customer_id !== undefined ? cleanUUID(customer_id) : undefined;
 
     const result = await db.query(
       `UPDATE general_expenses
@@ -495,8 +525,9 @@ router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (r
            payment_mode = COALESCE($8, payment_mode),
            remarks = COALESCE($9, remarks),
            opportunity_id = CASE WHEN $10::boolean THEN $11::uuid ELSE opportunity_id END,
-           purchase_order_id = CASE WHEN $12::boolean THEN $13::uuid ELSE purchase_order_id END
-       WHERE id = $14
+           purchase_order_id = CASE WHEN $12::boolean THEN $13::uuid ELSE purchase_order_id END,
+           customer_id = CASE WHEN $14::boolean THEN $15::uuid ELSE customer_id END
+       WHERE id = $16
        RETURNING *`,
       [
         expense_tier || null,
@@ -512,6 +543,8 @@ router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (r
         cleanOpp || null,
         purchase_order_id !== undefined,
         cleanPO || null,
+        customer_id !== undefined,
+        cleanCust || null,
         req.params.id
       ]
     );
@@ -521,17 +554,19 @@ router.put('/:id', authenticate, requirePermission('expenses', 'edit'), async (r
               COALESCE(o.opportunity_number, po_opp.opportunity_number) as opportunity_number,
               COALESCE(o.tender_name, po_opp.tender_name) as tender_name,
               COALESCE(o.title, po_opp.title) as opportunity_title,
-              COALESCE(o.tender_type, po_opp.tender_type) as tender_type,
-              COALESCE(o.tender_source, po_opp.tender_source) as tender_source,
+              COALESCE(c.business_name, po_c.business_name, o_c.business_name) as customer_name,
               cnt.contract_number,
               po.po_number,
               bp.business_name
        FROM general_expenses ge
        LEFT JOIN opportunities o ON ge.opportunity_id = o.id
+       LEFT JOIN customers o_c ON o.customer_id = o_c.id
        LEFT JOIN purchase_orders po ON ge.purchase_order_id = po.id
+       LEFT JOIN customers po_c ON po.customer_id = po_c.id
        LEFT JOIN opportunities po_opp ON po.opportunity_id = po_opp.id
        LEFT JOIN contracts cnt ON ge.contract_id = cnt.id
        LEFT JOIN business_profiles bp ON ge.business_profile_id = bp.id
+       LEFT JOIN customers c ON ge.customer_id = c.id
        WHERE ge.id = $1`,
       [req.params.id]
     );

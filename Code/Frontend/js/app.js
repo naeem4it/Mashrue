@@ -476,8 +476,14 @@ async function checkAndHandleSetPasswordUrl() {
   if (token) {
     const loginView = document.getElementById('login-view');
     const appContainer = document.getElementById('app-container');
-    if (loginView) loginView.style.display = 'none';
-    if (appContainer) appContainer.style.display = 'none';
+    if (loginView) {
+      loginView.classList.add('hidden');
+      loginView.style.setProperty('display', 'none', 'important');
+    }
+    if (appContainer) {
+      appContainer.classList.add('hidden');
+      appContainer.style.setProperty('display', 'none', 'important');
+    }
 
     const tokenInput = document.getElementById('set-password-token-input');
     if (tokenInput) tokenInput.value = token;
@@ -702,17 +708,32 @@ async function initApp() {
 
   // Check Authentication Status
   if (!State.isLoggedIn()) {
-    if (loginView) loginView.style.display = 'flex';
-    if (appContainer) appContainer.style.display = 'none';
+    if (loginView) {
+      loginView.classList.remove('hidden');
+      loginView.style.setProperty('display', 'flex', 'important');
+    }
+    if (appContainer) {
+      appContainer.classList.add('hidden');
+      appContainer.style.setProperty('display', 'none', 'important');
+    }
     window.hideMashrueLoader();
+    if (typeof switchAuthTab === 'function') {
+      switchAuthTab('signin');
+    }
     return;
   }
 
   // User is logged in - display preloader with Mashrue branding while loading data
   window.showMashrueLoader('Initializing enterprise workspace & business telemetry...');
 
-  if (loginView) loginView.style.display = 'none';
-  if (appContainer) appContainer.style.display = 'flex';
+  if (loginView) {
+    loginView.classList.add('hidden');
+    loginView.style.setProperty('display', 'none', 'important');
+  }
+  if (appContainer) {
+    appContainer.classList.remove('hidden');
+    appContainer.style.setProperty('display', 'flex', 'important');
+  }
 
   // 1. Parallel Fetch: User Profile & Business Profiles concurrently (cuts load time in half)
   try {
@@ -754,6 +775,13 @@ async function initApp() {
   } catch (e) {
     console.warn('renderDynamicSidebarNavigation failed:', e.message);
   }
+  try {
+    if (window.TemplatesEngine && typeof window.TemplatesEngine.init === 'function') {
+      window.TemplatesEngine.init();
+    }
+  } catch (e) {
+    console.warn('TemplatesEngine.init failed:', e.message);
+  }
 
   // 4. Client Admin Onboarding Interceptor (If 0 companies configured and not changing password)
   try {
@@ -794,6 +822,11 @@ async function handleUserLogin() {
   const username = usernameInput ? usernameInput.value.trim() : '';
   const password = passwordInput ? passwordInput.value : '';
 
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.innerText = '';
+  }
+
   if (!username || !password) {
     if (errorBox) {
       errorBox.innerText = 'Please enter your username/email and password.';
@@ -802,11 +835,11 @@ async function handleUserLogin() {
     return;
   }
 
+  const originalBtnHTML = submitBtn ? submitBtn.innerHTML : '<span>🚀 Sign In to Enterprise Workspace</span>';
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span>⏳ Signing In...</span>';
   }
-  if (errorBox) errorBox.style.display = 'none';
 
   try {
     const res = await API.login(username, password);
@@ -815,14 +848,26 @@ async function handleUserLogin() {
       State.setSession(res.data.token, res.data.user);
       if (usernameInput) usernameInput.value = '';
       if (passwordInput) passwordInput.value = '';
+      document.documentElement.classList.remove('guest-mode');
+      const loginView = document.getElementById('login-view');
+      const appContainer = document.getElementById('app-container');
+      if (loginView) {
+        loginView.classList.add('hidden');
+        loginView.style.setProperty('display', 'none', 'important');
+      }
+      if (appContainer) {
+        appContainer.classList.remove('hidden');
+        appContainer.style.setProperty('display', 'flex', 'important');
+      }
       await initApp();
     } else {
       if (errorBox) {
-        errorBox.innerText = res.message || 'Invalid username or password.';
+        errorBox.innerText = res?.message || 'Invalid username or password.';
         errorBox.style.display = 'block';
       }
     }
   } catch (err) {
+    console.error('Sign in error:', err);
     if (errorBox) {
       errorBox.innerText = 'Unable to connect to server. Please check your connection.';
       errorBox.style.display = 'block';
@@ -830,7 +875,7 @@ async function handleUserLogin() {
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = '<span>🚀 Sign In</span>';
+      submitBtn.innerHTML = originalBtnHTML;
     }
   }
 }
@@ -868,8 +913,14 @@ function handleUserLogout() {
   if (passwordInput) passwordInput.value = '';
   const loginView = document.getElementById('login-view');
   const appContainer = document.getElementById('app-container');
-  if (loginView) loginView.style.display = 'flex';
-  if (appContainer) appContainer.style.display = 'none';
+  if (loginView) {
+    loginView.classList.remove('hidden');
+    loginView.style.setProperty('display', 'flex', 'important');
+  }
+  if (appContainer) {
+    appContainer.classList.add('hidden');
+    appContainer.style.setProperty('display', 'none', 'important');
+  }
   window.location.reload();
 }
 window.handleUserLogout = handleUserLogout;
@@ -939,7 +990,6 @@ function updateHeaderUserProfile() {
   const dropdownEmail = document.getElementById('dropdown-user-email');
   const dropdownRole = document.getElementById('dropdown-user-role');
 
-
   const initials = (u.fullName || u.username || 'User')
     .split(' ')
     .map(w => w[0])
@@ -951,18 +1001,40 @@ function updateHeaderUserProfile() {
   if (u.role === 'SuperAdmin') displayRole = 'Super Admin (System Owner)';
   else if (u.role === 'LimitedSuperAdmin') displayRole = 'Super Admin (Limited)';
   else if (u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') displayRole = `Tenant Admin (${u.tenant?.name || 'Primary'})`;
+  else if (u.role) displayRole = u.role;
 
-  if (headerName) headerName.innerText = u.fullName || u.username;
+  if (headerName) headerName.innerText = u.fullName || u.username || 'User';
   if (headerRole) headerRole.innerText = displayRole;
   if (headerAvatar) headerAvatar.innerText = initials;
 
-  if (dropdownName) dropdownName.innerText = u.fullName || u.username;
-  if (dropdownEmail) dropdownEmail.innerText = u.email || `${u.username}@company.pk`;
-  if (dropdownRole) dropdownRole.innerText = displayRole;
+  if (dropdownName) dropdownName.innerText = u.fullName || u.username || 'User Account';
+  if (dropdownEmail) dropdownEmail.innerText = u.email || `${u.username || 'user'}@mashrue.com`;
+  if (dropdownRole) dropdownRole.innerText = displayRole.toUpperCase();
 
-  if (sidebarName) sidebarName.innerText = u.fullName || u.username;
+  if (sidebarName) sidebarName.innerText = u.fullName || u.username || 'User Account';
   if (sidebarRole) sidebarRole.innerText = displayRole;
   if (sidebarAvatar) sidebarAvatar.innerText = initials;
+
+  // 15-Day Free Trial Banner & Purchase button
+  const trialBanner = document.getElementById('header-trial-banner');
+  const trialDaysLabel = document.getElementById('trial-days-label');
+  if (trialBanner) {
+    const tenant = u.tenant;
+    const trialEnds = tenant?.trialEndsAt ? new Date(tenant.trialEndsAt) : (u.trialEndsAt ? new Date(u.trialEndsAt) : null);
+    const now = new Date();
+    
+    if (trialEnds && trialEnds > now) {
+      const msLeft = trialEnds.getTime() - now.getTime();
+      const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+      if (trialDaysLabel) trialDaysLabel.textContent = `⏳ Free Trial: ${daysLeft} ${daysLeft === 1 ? 'Day' : 'Days'} Left`;
+      trialBanner.style.display = 'inline-flex';
+    } else if (tenant?.trialPeriod === '15 Days' || u.trialPeriod === '15 Days') {
+      if (trialDaysLabel) trialDaysLabel.textContent = `⏳ Free Trial: 15 Days Left`;
+      trialBanner.style.display = 'inline-flex';
+    } else {
+      trialBanner.style.display = 'none';
+    }
+  }
 
   // Render role-gated items in user dropdown menu
   renderUserDropdownMenu();
@@ -971,23 +1043,32 @@ function updateHeaderUserProfile() {
   renderHeaderSubStatusPill();
   syncDynamicTrialCounters();
 }
+window.updateHeaderUserProfile = updateHeaderUserProfile;
 
 function renderHeaderSubStatusPill(overrideTenders, overrideCdrs) {
   const headerActions = document.querySelector('.header-actions');
+  const planStack = document.getElementById('header-plan-stack');
   const existingPill = document.getElementById('header-sub-status-pill');
   if (State.isSuperAdmin()) {
-    if (existingPill) existingPill.remove();
+    if (planStack) planStack.style.display = 'none';
+    else if (existingPill) existingPill.remove();
     return;
   }
+  if (planStack) planStack.style.display = 'flex';
   if (!headerActions) return;
 
   let subStatusPill = existingPill;
   if (!subStatusPill) {
     subStatusPill = document.createElement('div');
     subStatusPill.id = 'header-sub-status-pill';
-    subStatusPill.style.display = 'flex';
-    subStatusPill.style.alignItems = 'center';
-    headerActions.insertBefore(subStatusPill, headerActions.firstChild);
+    subStatusPill.className = 'header-sub-status-container';
+    if (planStack) {
+      planStack.appendChild(subStatusPill);
+    } else {
+      headerActions.insertBefore(subStatusPill, headerActions.firstChild);
+    }
+  } else if (!subStatusPill.classList.contains('header-sub-status-container')) {
+    subStatusPill.classList.add('header-sub-status-container');
   }
 
   const tid = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
@@ -1016,25 +1097,25 @@ function renderHeaderSubStatusPill(overrideTenders, overrideCdrs) {
   const liveCdrs = (overrideCdrs !== undefined) ? overrideCdrs : (State.liveCdrsCount !== undefined ? State.liveCdrsCount : (quota?.bid_securities_created || 0));
 
   const tendersText = isUnlimitedTenders 
-    ? `<span>📑 <strong>${liveTenders}</strong> Tenders (Unlimited)</span>` 
-    : `<span>📑 <strong>${liveTenders}/${sub.tender_limit || sub.trial_tender_limit || 5}</strong> Tenders</span>`;
+    ? `<span>📑 <strong>${liveTenders}</strong> Tenders</span>` 
+    : `<span>📑 <strong>${liveTenders}/${sub.tender_limit || sub.trial_tender_limit || 5}</strong></span>`;
 
   const cdrsText = isUnlimitedCdrs 
-    ? `<span>🏦 <strong>${liveCdrs}</strong> CDRs (Unlimited)</span>` 
-    : `<span>🏦 <strong>${liveCdrs}/${sub.bid_security_limit || sub.trial_bid_security_limit || 10}</strong> CDRs</span>`;
+    ? `<span>🏦 <strong>${liveCdrs}</strong> CDRs</span>` 
+    : `<span>🏦 <strong>${liveCdrs}/${sub.bid_security_limit || sub.trial_bid_security_limit || 10}</strong></span>`;
 
-  const entitySeatsText = `🏢 ${sub.free_companies_limit || 1} Cos &bull; 👥 ${sub.free_users_limit || 1} Seats`;
+  const entitySeatsText = `${sub.free_companies_limit || 1} Cos &bull; ${sub.free_users_limit || 1} Seats`;
 
   if (sub.is_trial && sub.status === 'Trial') {
     subStatusPill.innerHTML = `
-      <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700; padding:6px 12px; cursor:pointer; display:flex; align-items:center; gap:8px;" onclick="switchView('my-subscription')" title="${sub.plan_type} (${daysLeft}d Trial) | ${entitySeatsText}">
+      <span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700; padding:2px 8px; cursor:pointer; display:flex; align-items:center; gap:6px; font-size:0.72rem; height:24px; box-sizing:border-box;" onclick="switchView('my-subscription')" title="${sub.plan_type} (${daysLeft}d Trial) | ${entitySeatsText}">
         <span>⏳ <strong>${daysLeft}d</strong> Trial</span>
         <span style="font-weight:400; color:#3b82f6;">|</span>
         ${tendersText}
         <span style="font-weight:400; color:#3b82f6;">|</span>
         ${cdrsText}
         <span style="font-weight:400; color:#3b82f6;">|</span>
-        <span style="font-size: 0.74rem; background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: 700;">${entitySeatsText}</span>
+        <span style="font-size: 0.7rem; background: #dbeafe; color: #1e40af; padding: 1px 5px; border-radius: 4px; font-weight: 700;">${entitySeatsText}</span>
       </span>
     `;
   } else {
@@ -1047,15 +1128,15 @@ function renderHeaderSubStatusPill(overrideTenders, overrideCdrs) {
     const tagColor = isPro ? '#064e3b' : '#14532d';
 
     subStatusPill.innerHTML = `
-      <span class="badge" style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${borderColor}; font-weight: 700; padding: 6px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 1px 3px rgba(16,185,129,0.12);" onclick="switchView('my-subscription')" title="${sub.plan_type} Plan (${cycleText}) | ${entitySeatsText}">
-        <span style="font-size: 0.95rem;">${isPro ? '⚡' : '✓'}</span>
-        <span><strong>${sub.plan_type} Plan</strong></span>
+      <span class="badge" style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${borderColor}; font-weight: 700; padding: 2px 8px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(16,185,129,0.12); font-size: 0.72rem; height: 24px; box-sizing: border-box;" onclick="switchView('my-subscription')" title="${sub.plan_type} Plan (${cycleText}) | ${entitySeatsText}">
+        <span style="font-size: 0.85rem;">${isPro ? '⚡' : '✓'}</span>
+        <span><strong>${sub.plan_type}</strong></span>
         <span style="font-weight: 400; opacity: 0.6;">|</span>
         ${tendersText}
         <span style="font-weight: 400; opacity: 0.6;">|</span>
         ${cdrsText}
         <span style="font-weight: 400; opacity: 0.6;">|</span>
-        <span style="font-size: 0.76rem; background: ${tagBg}; color: ${tagColor}; padding: 2px 7px; border-radius: 4px; font-weight: 700;">${entitySeatsText}</span>
+        <span style="font-size: 0.7rem; background: ${tagBg}; color: ${tagColor}; padding: 1px 5px; border-radius: 4px; font-weight: 700;">${entitySeatsText}</span>
       </span>
     `;
   }
@@ -1482,27 +1563,72 @@ function renderDynamicSidebarNavigation() {
   const visibleTemplates = filterLinks(templateLinks);
   const visibleAdmin = filterLinks(adminLinks);
 
-  const renderNavSection = (label, items) => {
+  let _openNavSectionId = null;
+
+  function toggleNavSection(sectionId) {
+    if (_openNavSectionId === sectionId) {
+      _openNavSectionId = null; // Toggle closed
+    } else {
+      _openNavSectionId = sectionId; // Open this menu, automatically collapsing all others!
+    }
+    updateNavSectionAccordionDOM();
+  }
+  window.toggleNavSection = toggleNavSection;
+
+  function updateNavSectionAccordionDOM() {
+    const sections = document.querySelectorAll('.nav-accordion-section');
+    sections.forEach(sec => {
+      const secId = sec.dataset.sectionId;
+      if (secId === _openNavSectionId) {
+        sec.classList.add('open');
+        sec.classList.remove('collapsed');
+      } else {
+        sec.classList.remove('open');
+        sec.classList.add('collapsed');
+      }
+    });
+  }
+  window.updateNavSectionAccordionDOM = updateNavSectionAccordionDOM;
+
+  // Auto-expand section matching current active view
+  const sectionHasActive = (items) => items.some(i => i.view === State.activeView);
+  if (!_openNavSectionId) {
+    if (sectionHasActive(visibleCore)) _openNavSectionId = 'sec-core';
+    else if (sectionHasActive(visibleSupply)) _openNavSectionId = 'sec-supply';
+    else if (sectionHasActive(visibleTemplates)) _openNavSectionId = 'sec-templates';
+    else if (sectionHasActive(visibleAdmin)) _openNavSectionId = 'sec-admin';
+    else _openNavSectionId = 'sec-core';
+  }
+
+  const renderNavSection = (sectionId, label, items) => {
     if (items.length === 0) return '';
+    const isOpen = (_openNavSectionId === sectionId);
     return `
-      <div class="nav-section-label" style="padding-top: 8px;">${label}</div>
-      <nav class="sidebar-nav">
-        ${items.map(item => `
-          <a class="nav-item ${State.activeView === item.view ? 'active' : ''}" data-view="${item.view}" onclick="switchView('${item.view}')">
-            <span class="icon">${item.icon}</span>
-            <span>${item.label}</span>
-            ${item.badge ? `<span class="badge-count" style="${item.badgeBg ? 'background:' + item.badgeBg + '; color:#fff;' : ''}">${item.badge}</span>` : ''}
-          </a>
-        `).join('')}
-      </nav>
+      <div class="nav-accordion-section ${isOpen ? 'open' : 'collapsed'}" data-section-id="${sectionId}">
+        <div class="nav-section-header" onclick="toggleNavSection('${sectionId}')" title="Click to expand/collapse section">
+          <span class="nav-section-title">${label}</span>
+          <span class="nav-section-chevron">▶</span>
+        </div>
+        <div class="nav-section-body">
+          <nav class="sidebar-nav">
+            ${items.map(item => `
+              <a class="nav-item ${State.activeView === item.view ? 'active' : ''}" data-view="${item.view}" onclick="switchView('${item.view}')">
+                <span class="icon">${item.icon}</span>
+                <span>${item.label}</span>
+                ${item.badge ? `<span class="badge-count" style="${item.badgeBg ? 'background:' + item.badgeBg + '; color:#fff;' : ''}">${item.badge}</span>` : ''}
+              </a>
+            `).join('')}
+          </nav>
+        </div>
+      </div>
     `;
   };
 
   container.innerHTML = `
-    ${renderNavSection('Core Business Workflow', visibleCore)}
-    ${renderNavSection('Supply Chain & Financials', visibleSupply)}
-    ${renderNavSection('🖨️ Template Engine', visibleTemplates)}
-    ${renderNavSection(isSuper ? 'Global System Administration' : 'Registries & Administration', visibleAdmin)}
+    ${renderNavSection('sec-core', 'Core Business Workflow', visibleCore)}
+    ${renderNavSection('sec-supply', 'Supply Chain & Financials', visibleSupply)}
+    ${renderNavSection('sec-templates', '🖨️ Template Engine', visibleTemplates)}
+    ${renderNavSection('sec-admin', isSuper ? 'Global System Administration' : 'Registries & Administration', visibleAdmin)}
   `;
 }
 
@@ -1533,12 +1659,192 @@ function switchView(viewName) {
   navItems.forEach(item => {
     if (item.dataset.view === viewName) {
       item.classList.add('active');
+      // Automatically open this accordion menu and collapse all others
+      const parentSec = item.closest('.nav-accordion-section');
+      if (parentSec && parentSec.dataset.sectionId) {
+        if (typeof toggleNavSection === 'function') {
+          _openNavSectionId = parentSec.dataset.sectionId;
+          updateNavSectionAccordionDOM();
+        }
+      }
     } else {
       item.classList.remove('active');
     }
   });
   renderActiveView();
 }
+
+function openSubscriptionPurchaseModal() {
+  window.open('plans.html', '_blank');
+}
+window.openSubscriptionPurchaseModal = openSubscriptionPurchaseModal;
+
+function switchAuthTab(mode) {
+  const btnSignin = document.getElementById('btn-tab-signin');
+  const btnSignup = document.getElementById('btn-tab-signup');
+  const panelSignin = document.getElementById('auth-panel-signin');
+  const panelSignup = document.getElementById('auth-panel-signup');
+  const loginErr = document.getElementById('login-error-msg');
+  const signupErr = document.getElementById('signup-error-msg');
+
+  if (loginErr) { loginErr.style.display = 'none'; loginErr.textContent = ''; }
+  if (signupErr) { signupErr.style.display = 'none'; signupErr.textContent = ''; }
+
+  const signinInputs = panelSignin ? panelSignin.querySelectorAll('input, button') : [];
+  const signupInputs = panelSignup ? panelSignup.querySelectorAll('input, button') : [];
+
+  if (mode === 'signup') {
+    if (btnSignin) btnSignin.classList.remove('active');
+    if (btnSignup) btnSignup.classList.add('active');
+    if (panelSignin) panelSignin.style.display = 'none';
+    if (panelSignup) panelSignup.style.display = 'block';
+
+    signinInputs.forEach(el => el.disabled = true);
+    signupInputs.forEach(el => el.disabled = false);
+
+    const compInput = document.getElementById('signup-company-name');
+    if (compInput) setTimeout(() => compInput.focus(), 60);
+  } else {
+    if (btnSignin) btnSignin.classList.add('active');
+    if (btnSignup) btnSignup.classList.remove('active');
+    if (panelSignin) panelSignin.style.display = 'block';
+    if (panelSignup) panelSignup.style.display = 'none';
+
+    signinInputs.forEach(el => el.disabled = false);
+    signupInputs.forEach(el => el.disabled = true);
+
+    const userInput = document.getElementById('login-username');
+    if (userInput) setTimeout(() => userInput.focus(), 60);
+  }
+}
+window.switchAuthTab = switchAuthTab;
+
+async function handleUserSignUp() {
+  const company_name = (document.getElementById('signup-company-name')?.value || '').trim();
+  const full_name = (document.getElementById('signup-full-name')?.value || '').trim();
+  const email = (document.getElementById('signup-email')?.value || '').trim();
+  const password = document.getElementById('signup-password')?.value || '';
+  const phone = (document.getElementById('signup-phone')?.value || '').trim();
+  const errBox = document.getElementById('signup-error-msg');
+  const submitBtn = document.getElementById('signup-submit-btn');
+
+  if (errBox) {
+    errBox.style.display = 'none';
+    errBox.textContent = '';
+  }
+
+  if (!company_name || !full_name || !email || !password) {
+    if (errBox) {
+      errBox.textContent = 'Please fill out all required fields.';
+      errBox.style.display = 'block';
+    }
+    return;
+  }
+
+  if (password.length < 8) {
+    if (errBox) {
+      errBox.textContent = 'Password must be at least 8 characters long.';
+      errBox.style.display = 'block';
+    }
+    return;
+  }
+
+  const originalBtnText = submitBtn ? submitBtn.innerHTML : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Activating 15-Day Free Trial...</span>';
+  }
+
+  try {
+    const res = await API.register({ company_name, full_name, email, password, phone });
+    if (!res || !res.success) {
+      throw new Error(res?.message || 'Failed to activate free trial.');
+    }
+
+    showToast('✨ Welcome to Mashrue! Your 15-Day Free Trial is now active.', 'success');
+    document.documentElement.classList.remove('guest-mode');
+    const loginView = document.getElementById('login-view');
+    const appContainer = document.getElementById('app-container');
+    if (loginView) {
+      loginView.classList.add('hidden');
+      loginView.style.setProperty('display', 'none', 'important');
+    }
+    if (appContainer) {
+      appContainer.classList.remove('hidden');
+      appContainer.style.setProperty('display', 'flex', 'important');
+    }
+    await initApp();
+  } catch (err) {
+    console.error('Sign up error:', err);
+    if (errBox) {
+      errBox.textContent = err.message || 'Registration failed. Please try again.';
+      errBox.style.display = 'block';
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnText;
+    }
+  }
+}
+window.handleUserSignUp = handleUserSignUp;
+
+function openTrialExpiredOverlay() {
+  const compNameEl = document.getElementById('trial-expired-company-name');
+  const mailBtn = document.getElementById('trial-expired-email-btn');
+  const tenantName = State.currentUser?.tenant?.name || State.currentUser?.tenant?.company_name || 'Your Organization';
+  const tenantId = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || '';
+  const userEmail = State.currentUser?.email || '';
+
+  if (compNameEl) compNameEl.innerText = tenantName;
+
+  if (mailBtn) {
+    const subject = encodeURIComponent(`[Mashrue Subscription Activation] ${tenantName} (ID: ${tenantId})`);
+    const body = encodeURIComponent(
+      `Hello Mashrue Support Desk,\n\nOur 15-day free trial for ${tenantName} has expired.\nWe would like to activate our enterprise subscription.\n\nOrganization: ${tenantName}\nTenant ID: ${tenantId}\nContact Email: ${userEmail}\n\nPlease contact us with subscription onboarding details.\n\nRegards,\n${State.currentUser?.fullName || 'Client Admin'}`
+    );
+    mailBtn.href = `mailto:support@mashrue.com?subject=${subject}&body=${body}`;
+  }
+
+  openModal('modal-trial-expired');
+}
+window.openTrialExpiredOverlay = openTrialExpiredOverlay;
+
+async function submitTrialActivationRequest() {
+  const btn = document.getElementById('btn-request-trial-activation');
+  const successBox = document.getElementById('trial-request-success-box');
+  const tenantName = State.currentUser?.tenant?.name || State.currentUser?.tenant?.company_name || 'Organization';
+  const tenantId = State.currentUser?.tenant?.id || State.currentUser?.tenant_id || '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳ Dispatching Request to Commercial Desk...</span>';
+  }
+
+  try {
+    if (typeof API.sendContactSupportMessage === 'function') {
+      await API.sendContactSupportMessage({
+        subject: `15-Day Free Trial Expired - Subscription Activation Request (${tenantName})`,
+        companyName: tenantName,
+        senderEmail: State.currentUser?.email || State.currentUser?.username,
+        message: `Tenant ${tenantName} (ID: ${tenantId}) 15-day free trial has concluded and requested immediate subscription activation. User: ${State.currentUser?.fullName} (${State.currentUser?.email || State.currentUser?.username})`
+      });
+    }
+  } catch (e) {
+    console.warn('API support dispatch fallback:', e.message);
+  }
+
+  if (successBox) {
+    successBox.style.display = 'block';
+  }
+  showToast('✅ Subscription request successfully sent to support@mashrue.com', 'success');
+
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '<span>✓ Request Dispatched to support@mashrue.com</span>';
+  }
+}
+window.submitTrialActivationRequest = submitTrialActivationRequest;
 
 function populateBusinessSwitcher() {
   const switcher = document.getElementById('business-select');
@@ -1594,6 +1900,30 @@ async function renderActiveView() {
     'users': 'users',
     'settings': 'settings'
   };
+
+  if (State.isTrialExpired && State.isTrialExpired()) {
+    openTrialExpiredOverlay();
+    viewTitle.innerText = '⏳ Free Trial Expired';
+    viewSubtitle.innerText = 'Subscription Activation Required';
+    contentArea.innerHTML = `
+      <div class="card" style="text-align:center; padding:50px 24px; max-width:620px; margin:40px auto; border-top:5px solid #f59e0b; border-radius:12px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.08);">
+        <div style="font-size:3.5rem; margin-bottom:12px;">⏳</div>
+        <h3 style="font-size:1.4rem; font-weight:800; color:#0f172a; margin-bottom:8px;">15-Day Free Trial Expired</h3>
+        <p style="font-size:0.92rem; color:#475569; line-height:1.6; margin-bottom:20px;">
+          Your 15-day free trial has completed. All your enterprise data (tenders, quotations, inventory items, and PRAL digital invoices) is securely preserved. Please contact the Mashrue Commercial Desk at <a href="mailto:support@mashrue.com" style="color:#0284c7; font-weight:700;">support@mashrue.com</a> to activate your subscription.
+        </p>
+        <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap;">
+          <button class="primary-btn" onclick="openTrialExpiredOverlay()" style="padding:12px 24px; font-weight:700; background:linear-gradient(135deg, #2563eb, #1d4ed8);">
+            🚀 View Subscription & Contact Options
+          </button>
+          <button class="secondary-btn" onclick="logout()" style="padding:12px 20px; font-weight:700;">
+            Sign Out
+          </button>
+        </div>
+      </div>
+    `;
+    return;
+  }
 
   if (State.isApplicationStopped()) {
     openModal('modal-trial-paid-company-stop');
@@ -5285,15 +5615,278 @@ let _receiveStockLineItems = [];
 
 function switchInventoryTab(tab) {
   _activeInventoryTab = tab;
-  renderActiveView();
+  renderActiveView().then(() => {
+    if (tab === 'add_item') {
+      initSubTabAddItemForm();
+    }
+  });
 }
 window.switchInventoryTab = switchInventoryTab;
+
+function openStockAdjustmentForItem(productId, warehouseId = null) {
+  _activeInventoryTab = 'stock_adjustment';
+  renderActiveView().then(() => {
+    const prodSelect = document.getElementById('adj-product-select');
+    const whSelect = document.getElementById('adj-warehouse-select');
+    if (whSelect && warehouseId) whSelect.value = warehouseId;
+    if (prodSelect && productId) {
+      prodSelect.value = productId;
+      onStockAdjustmentItemSelect(productId, warehouseId);
+    }
+  });
+}
+window.openStockAdjustmentForItem = openStockAdjustmentForItem;
+
+async function initSubTabAddItemForm() {
+  const catSelect = document.getElementById('subtab-item-category');
+  if (!catSelect) return;
+  try {
+    const cats = await API.getCategories();
+    if (Array.isArray(cats) && cats.length > 0) {
+      catSelect.innerHTML = `<option value="" disabled selected>-- Select Category --</option>` +
+        cats.map(c => `<option value="${c.id}">${c.category_name}</option>`).join('');
+    }
+  } catch (e) {
+    console.warn('initSubTabAddItemForm error:', e);
+  }
+}
+window.initSubTabAddItemForm = initSubTabAddItemForm;
+
+async function onSubTabCategoryChange(catId) {
+  const subSelect = document.getElementById('subtab-item-subcategory');
+  if (!subSelect) return;
+  if (!catId) {
+    subSelect.innerHTML = `<option value="">-- General / None --</option>`;
+    return;
+  }
+  try {
+    const subs = await API.getSubCategories(catId);
+    if (Array.isArray(subs) && subs.length > 0) {
+      subSelect.innerHTML = `<option value="">-- Select Sub-Category --</option>` +
+        subs.map(s => `<option value="${s.id}">${s.sub_category_name}</option>`).join('');
+    } else {
+      subSelect.innerHTML = `<option value="">-- General / None --</option>`;
+    }
+  } catch (e) {
+    subSelect.innerHTML = `<option value="">-- General / None --</option>`;
+  }
+}
+window.onSubTabCategoryChange = onSubTabCategoryChange;
+
+async function submitSubTabNewItemForm() {
+  const btn = document.getElementById('btn-save-subtab-item');
+  const sku = document.getElementById('subtab-item-sku')?.value?.trim();
+  const name = document.getElementById('subtab-item-name')?.value?.trim();
+  const categoryId = document.getElementById('subtab-item-category')?.value || null;
+  const subCategoryId = document.getElementById('subtab-item-subcategory')?.value || null;
+  const uom = document.getElementById('subtab-item-uom')?.value || 'PCS';
+  const brand = document.getElementById('subtab-item-brand')?.value?.trim() || null;
+  const itemType = document.getElementById('subtab-item-type')?.value || 'Product';
+  const warehouseId = document.getElementById('subtab-item-warehouse')?.value;
+  const batchNo = document.getElementById('subtab-item-batch')?.value?.trim() || 'LOT-PRIMARY';
+  const qty = parseFloat(document.getElementById('subtab-item-qty')?.value || 0);
+  const domDate = document.getElementById('subtab-item-dom')?.value || null;
+  const doeDate = document.getElementById('subtab-item-doe')?.value || null;
+  const cost = parseCurrency(document.getElementById('subtab-item-cost')?.value || 0);
+  const rack = document.getElementById('subtab-item-rack')?.value?.trim() || null;
+
+  if (!sku || !name || !warehouseId || isNaN(qty) || qty <= 0) {
+    showToast('Please fill in Item Code, Name, Destination Warehouse, and Opening Quantity (> 0).', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳ Saving Item & Stock...</span>';
+  }
+
+  try {
+    const payload = {
+      sku: sku,
+      name: name,
+      category_id: categoryId,
+      sub_category_id: subCategoryId,
+      unit: uom,
+      uom_id: uom,
+      brand_name: brand,
+      item_type: itemType,
+      warehouse_id: warehouseId,
+      batch_number: batchNo,
+      batch_no: batchNo,
+      current_stock: qty,
+      manufacturing_date: domDate,
+      expiry_date: doeDate,
+      cost_price: cost,
+      selling_price: cost,
+      storage_location: rack,
+      description: `Registered via Warehouse Sub-Tab 1 with opening batch ${batchNo}`
+    };
+
+    const res = await API.createProduct(payload);
+    if (res && res.success) {
+      showToast('✓ New item and opening batch successfully added to warehouse stock!', 'success');
+      _activeInventoryTab = 'stock';
+      await renderActiveView();
+    } else {
+      showToast(`⚠️ ${res?.message || 'Failed to add new item.'}`, 'danger');
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '💾 Save Item in Stock';
+    }
+  }
+}
+window.submitSubTabNewItemForm = submitSubTabNewItemForm;
+
+async function onStockAdjustmentItemSelect(productId, warehouseId = null) {
+  if (!productId) return;
+  const whSelect = document.getElementById('adj-warehouse-select');
+  const targetWhId = warehouseId || whSelect?.value || null;
+
+  try {
+    const res = await API.getStockAdjustmentDetails(productId, targetWhId);
+    if (!res || !res.success || !res.data) {
+      return;
+    }
+    const { product, active_batch, all_batches, open_pos, open_tenders } = res.data;
+
+    // 1. Populate locked fields
+    const skuEl = document.getElementById('adj-locked-sku');
+    if (skuEl) skuEl.value = product.sku || 'SKU';
+
+    const catEl = document.getElementById('adj-locked-category');
+    if (catEl) catEl.value = `${product.category_name || 'General Goods'}${product.sub_category_name ? ' / ' + product.sub_category_name : ''}`;
+
+    const stockEl = document.getElementById('adj-locked-stock');
+    if (stockEl) stockEl.value = `${product.current_stock || 0} ${product.uom_code || product.unit || 'PCS'}`;
+
+    const batchEl = document.getElementById('adj-locked-batch');
+    if (batchEl) {
+      batchEl.value = active_batch?.batch_number || product.batch_number || 'LOT-PRIMARY';
+    }
+
+    const domEl = document.getElementById('adj-locked-dom');
+    if (domEl) {
+      domEl.value = active_batch?.manufacturing_date ? String(active_batch.manufacturing_date).slice(0, 10) : (product.manufacturing_date ? String(product.manufacturing_date).slice(0, 10) : '—');
+    }
+
+    const doeEl = document.getElementById('adj-locked-doe');
+    if (doeEl) {
+      doeEl.value = active_batch?.expiry_date ? String(active_batch.expiry_date).slice(0, 10) : (product.expiry_date ? String(product.expiry_date).slice(0, 10) : '—');
+    }
+
+    // 2. Pre-fill new batch fields with clean defaults
+    const costEl = document.getElementById('adj-new-cost');
+    if (costEl && product.cost_price) {
+      costEl.value = Number(product.cost_price).toLocaleString();
+      formatCurrencyInput(costEl);
+    }
+
+    const newBatchEl = document.getElementById('adj-new-batch');
+    if (newBatchEl && !newBatchEl.value) {
+      newBatchEl.value = `LOT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-B${(all_batches || []).length + 1}`;
+    }
+
+    // 3. Populate Link to PO / Tender optional dropdown
+    const refSelect = document.getElementById('adj-link-ref');
+    if (refSelect) {
+      let optHtml = `<option value="">— Optional: General Stock Adjustment (No PO / Tender Link) —</option>`;
+      if (Array.isArray(open_pos) && open_pos.length > 0) {
+        optHtml += `<optgroup label="Active Purchase Orders (POs)">`;
+        open_pos.forEach(po => {
+          optHtml += `<option value="PO:${po.id}">📦 PO: ${po.po_number} (${po.customer_name || 'Customer'} - ${formatCurrency(po.net_amount, 'PKR')})</option>`;
+        });
+        optHtml += `</optgroup>`;
+      }
+      if (Array.isArray(open_tenders) && open_tenders.length > 0) {
+        optHtml += `<optgroup label="Active Tenders / Opportunities">`;
+        open_tenders.forEach(t => {
+          optHtml += `<option value="OPP:${t.id}">📑 Tender: ${t.opportunity_number || ''} - ${t.title || 'Tender'} (${t.organization || ''})</option>`;
+        });
+        optHtml += `</optgroup>`;
+      }
+      refSelect.innerHTML = optHtml;
+    }
+  } catch (err) {
+    console.error('Error fetching adjustment details:', err);
+  }
+}
+window.onStockAdjustmentItemSelect = onStockAdjustmentItemSelect;
+
+async function submitStockAdjustmentForm() {
+  const btn = document.getElementById('btn-save-stock-adj');
+  const productId = document.getElementById('adj-product-select')?.value;
+  const warehouseId = document.getElementById('adj-warehouse-select')?.value;
+  const batchNo = document.getElementById('adj-new-batch')?.value?.trim();
+  const domDate = document.getElementById('adj-new-dom')?.value || null;
+  const doeDate = document.getElementById('adj-new-doe')?.value || null;
+  const qty = parseFloat(document.getElementById('adj-new-qty')?.value || 0);
+  const cost = parseCurrency(document.getElementById('adj-new-cost')?.value || 0);
+  const rack = document.getElementById('adj-new-rack')?.value?.trim() || null;
+  const linkRef = document.getElementById('adj-link-ref')?.value || '';
+  const remarks = document.getElementById('adj-remarks')?.value?.trim() || '';
+
+  if (!productId || !warehouseId || !batchNo || isNaN(qty) || qty <= 0) {
+    showToast('Please select Product, Warehouse, New Batch No, and Quantity (> 0).', 'warning');
+    return;
+  }
+
+  let poId = null;
+  let oppId = null;
+  if (linkRef.startsWith('PO:')) {
+    poId = linkRef.replace('PO:', '');
+  } else if (linkRef.startsWith('OPP:')) {
+    oppId = linkRef.replace('OPP:', '');
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳ Saving New Stock...</span>';
+  }
+
+  try {
+    const payload = {
+      product_id: productId,
+      warehouse_id: warehouseId,
+      batch_number: batchNo,
+      quantity: qty,
+      unit_cost: cost,
+      manufacturing_date: domDate,
+      expiry_date: doeDate,
+      storage_location: rack,
+      purchase_order_id: poId,
+      opportunity_id: oppId,
+      remarks: remarks
+    };
+
+    const res = await API.submitStockAdjustment(payload);
+    if (res && res.success) {
+      showToast(`✓ ${res.message || 'New batch successfully added to item!'}`, 'success');
+      _activeInventoryTab = 'stock';
+      await renderActiveView();
+    } else {
+      showToast(`⚠️ ${res?.message || 'Failed to record stock adjustment.'}`, 'danger');
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '💾 Save New Stock';
+    }
+  }
+}
+window.submitStockAdjustmentForm = submitStockAdjustmentForm;
 
 function filterWarehouseStockByLocation(whId) {
   _activeInventoryWarehouseFilter = whId;
   renderActiveView();
 }
 window.filterWarehouseStockByLocation = filterWarehouseStockByLocation;
+
 
 async function renderInventoryHTML() {
   const [warehouses, stockItems, transactions, procurements, products] = await Promise.all([
@@ -5360,26 +5953,38 @@ async function renderInventoryHTML() {
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
       <div style="display:inline-flex; background:#e2e8f0; padding:4px; border-radius:8px; gap:4px; flex-wrap:wrap;">
         <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'stock' ? 'active' : ''}" onclick="switchInventoryTab('stock')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'stock' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          📦 Warehouse Stock Balances (${stockItems.length})
+          📦 Stock Balances (${stockItems.length})
+        </button>
+        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'add_item' ? 'active' : ''}" onclick="switchInventoryTab('add_item')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'add_item' ? 'background:#059669; color:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#059669;'}">
+          ➕ Sub tab 1: Add New Item
+        </button>
+        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'stock_adjustment' ? 'active' : ''}" onclick="switchInventoryTab('stock_adjustment')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'stock_adjustment' ? 'background:#d97706; color:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#d97706;'}">
+          ⚖️ Sub tab 2: Stock Adjustment
         </button>
         <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'transactions' ? 'active' : ''}" onclick="switchInventoryTab('transactions')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'transactions' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
           📜 Stock Movements & Audit (${transactions.length})
         </button>
         <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'warehouses' ? 'active' : ''}" onclick="switchInventoryTab('warehouses')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'warehouses' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          🏬 Facilities & Warehouses (${warehouses.length})
+          🏬 Facilities (${warehouses.length})
         </button>
         <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'procurements' ? 'active' : ''}" onclick="switchInventoryTab('procurements')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'procurements' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          🚢 Procurements & Landed Costs (${procurements.length})
+          🚢 Procurements (${procurements.length})
         </button>
       </div>
 
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
-          <button class="primary-btn" onclick="openReceiveStockModal()" style="font-size:0.85rem; font-weight:700; background:#059669; display:flex; align-items:center; gap:6px;">
-            <span>📥</span> + Inward Stock Receipt (GRN)
+          <button class="primary-btn" onclick="switchInventoryTab('add_item')" style="font-size:0.85rem; font-weight:700; background:#059669; display:flex; align-items:center; gap:6px;">
+            <span>➕</span> + Add New Item
+          </button>
+          <button class="primary-btn" onclick="switchInventoryTab('stock_adjustment')" style="font-size:0.85rem; font-weight:700; background:#d97706; display:flex; align-items:center; gap:6px;">
+            <span>⚖️</span> Stock Adjustment
+          </button>
+          <button class="secondary-btn" onclick="openReceiveStockModal()" style="font-size:0.85rem; font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>📥</span> Bulk Inward (GRN)
           </button>
           <button class="secondary-btn" onclick="openNewWarehouseModal()" style="font-size:0.85rem; font-weight:600;">
-            🏬 + Add Warehouse
+            🏬 + Add Facility
           </button>
         ` : ''}
       </div>
@@ -5443,7 +6048,7 @@ async function renderInventoryHTML() {
                       <strong>${s.product_name}</strong><br>
                       <code style="font-size:0.75rem; color:#475569;">${s.sku || 'SKU'}</code>
                       ${s.brand_name ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700; font-size:0.7rem; margin-left:4px;">🏷️ ${s.brand_name}</span>` : ''}
-                      ${s.item_type === 'Medicine' ? `<span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700; font-size:0.7rem; margin-left:4px;">💊 Medicine</span>` : ''}
+                      ${s.item_type && s.item_type !== 'Product' ? `<span class="badge" style="background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-weight:700; font-size:0.7rem; margin-left:4px;">📦 ${s.item_type}</span>` : ''}
                       ${s.specifications ? `<span style="font-size:0.72rem; color:#0369a1; display:block;">${s.specifications}</span>` : ''}
                     </td>
                     <td>
@@ -5452,7 +6057,8 @@ async function renderInventoryHTML() {
                       ${s.storage_location ? `<span class="badge" style="font-size:0.7rem; background:#f1f5f9; color:#475569;">📍 ${s.storage_location}</span>` : ''}
                     </td>
                     <td>
-                      <span style="font-size:0.8rem; font-weight:600; color:#334155;">${s.batch_number || 'LOT-PRIMARY'}</span>
+                      <span style="font-size:0.82rem; font-weight:700; color:#0f172a;">${s.batch_number || 'LOT-PRIMARY'}</span>
+                      ${onHand > 0 ? `<span class="badge badge-won" style="font-size:0.68rem; margin-left:4px; font-weight:700;">Active</span>` : `<span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.68rem; margin-left:4px; font-weight:700;">Exhausted (0)</span>`}
                       ${s.manufacturing_date ? `<br><span style="font-size:0.72rem; color:#475569;">DOM: ${formatDateDDMMYYYY(s.manufacturing_date)}</span>` : ''}
                       ${s.expiry_date ? `<br><span style="font-size:0.72rem; color:#dc2626;">DOE: ${formatDateDDMMYYYY(s.expiry_date)}</span>` : ''}
                     </td>
@@ -5485,8 +6091,11 @@ async function renderInventoryHTML() {
                     </td>
                     <td class="sticky-action-col" style="text-align:center;">
                       ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
-                        <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669;" onclick="openReceiveStockModal('${s.product_id}', '${s.warehouse_id}')" title="Receive more stock of this item into warehouse">
-                          📥 + Inward
+                        <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#d97706;" onclick="openStockAdjustmentForItem('${s.product_id}', '${s.warehouse_id}')" title="Adjust stock / add new batch for this item">
+                          ⚖️ Adjust
+                        </button>
+                        <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; margin-left:4px;" onclick="openReceiveStockModal('${s.product_id}', '${s.warehouse_id}')" title="Receive inward shipment (GRN)">
+                          📥 Inward
                         </button>
                       ` : ''}
                     </td>
@@ -5495,6 +6104,279 @@ async function renderInventoryHTML() {
               }).join('')}
             </tbody>
           </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'add_item' ? `
+      <!-- SUB TAB 1: ADD NEW ITEM (SCENARIO 1: ITEM NOT IN STOCK) -->
+      <div class="card" style="max-width: 980px; margin: 0 auto 24px auto; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-radius: 10px;">
+        <div class="card-header" style="background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border-bottom: 1px solid #bae6fd; padding: 16px 20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size: 1.3rem;">📦</span>
+                <span class="card-title" style="font-size:1.15rem; font-weight:800; color:#0f172a;">Sub Tab 1: Add New Item to Stock</span>
+                <span class="badge" style="background:#059669; color:#fff; font-weight:700; font-size:0.75rem;">Scenario 1: Item Not In Stock</span>
+              </div>
+              <p style="margin:4px 0 0 0; font-size:0.83rem; color:#475569;">Register a brand-new catalog item and immediately initialize its opening batch and quantity in your warehouse facility.</p>
+            </div>
+            <button type="button" class="secondary-btn" onclick="switchInventoryTab('stock')" style="font-size:0.8rem; background:#fff;">← Back to Stock Balances</button>
+          </div>
+        </div>
+        <div style="padding: 24px;">
+          <form id="form-subtab-add-item" onsubmit="event.preventDefault(); submitSubTabNewItemForm();">
+            <div style="font-weight:700; font-size:0.92rem; color:#1e293b; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+              <span>🏷️</span> Step 1: Item Identification & Classification
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:20px;">
+              <div>
+                <label class="form-label" style="font-size:0.82rem; font-weight:700;">Item Code / SKU *</label>
+                <div style="display:flex; gap:6px;">
+                  <input type="text" class="form-input" id="subtab-item-sku" required placeholder="e.g. MED-5001" style="font-weight:700; font-size:0.85rem;">
+                  <button type="button" class="secondary-btn" style="padding:4px 10px; font-size:0.75rem;" onclick="document.getElementById('subtab-item-sku').value = 'SKU-' + Date.now().toString().slice(-6);" title="Auto-generate clean SKU">Auto</button>
+                </div>
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem; font-weight:700;">Item Name *</label>
+                <input type="text" class="form-input" id="subtab-item-name" required placeholder="e.g. Paracetamol 500mg Tablets" style="font-weight:600; font-size:0.85rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem; font-weight:700;">Item Category *</label>
+                <select class="form-select" id="subtab-item-category" required onchange="onSubTabCategoryChange(this.value)" style="font-size:0.85rem;">
+                  <option value="" disabled selected>-- Select Category --</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px;">
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Sub-Category</label>
+                <select class="form-select" id="subtab-item-subcategory" style="font-size:0.85rem;">
+                  <option value="">-- General / None --</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Unit of Measure (UOM) *</label>
+                <select class="form-select" id="subtab-item-uom" required style="font-size:0.85rem;">
+                  <option value="PCS" selected>PCS (Pieces / Nos)</option>
+                  <option value="BOX">BOX (Box Pack)</option>
+                  <option value="SET">SET (Complete Set)</option>
+                  <option value="KG">KG (Kilograms)</option>
+                  <option value="LTR">LTR (Litres)</option>
+                  <option value="MTR">MTR (Meters)</option>
+                  <option value="CARTON">CARTON (Master Carton)</option>
+                  <option value="PKT">PKT (Packet)</option>
+                  <option value="ROLL">ROLL (Roll / Coil)</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Brand / Manufacturer</label>
+                <input type="text" class="form-input" id="subtab-item-brand" placeholder="e.g. GSK / Abbott" style="font-size:0.85rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Item Type</label>
+                <select class="form-select" id="subtab-item-type" style="font-size:0.85rem;">
+                  <option value="Product" selected>General Product</option>
+                  <option value="Medicine">Pharmaceutical / Medicine</option>
+                  <option value="Consumable">Consumable Goods</option>
+                  <option value="Asset">Equipment / Asset</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="font-weight:700; font-size:0.92rem; color:#1e293b; margin-bottom:12px; display:flex; align-items:center; gap:6px; border-top:1px dashed #cbd5e1; padding-top:16px;">
+              <span>🏬</span> Step 2: Warehouse Facility & Opening Batch
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:16px;">
+              <div>
+                <label class="form-label" style="font-size:0.82rem; font-weight:700;">Destination Warehouse *</label>
+                <select class="form-select" id="subtab-item-warehouse" required style="font-size:0.85rem;">
+                  ${warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city || 'Central'})</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem; font-weight:700;">Opening Batch / Lot Number *</label>
+                <input type="text" class="form-input" id="subtab-item-batch" required value="LOT-${new Date().toISOString().slice(0,10).replace(/-/g,'')}" style="font-weight:700; font-size:0.85rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem; font-weight:700;">Opening Quantity on Hand *</label>
+                <input type="number" class="form-input" id="subtab-item-qty" min="1" step="1" value="100" required style="font-weight:700; text-align:center; font-size:0.9rem;">
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px;">
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Date of Manufacturing [DOM]</label>
+                <input type="date" class="form-input" id="subtab-item-dom" style="font-size:0.85rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Date of Expiry [DOE]</label>
+                <input type="date" class="form-input" id="subtab-item-doe" style="font-size:0.85rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Landed Unit Cost (PKR)</label>
+                <input type="text" class="form-input" id="subtab-item-cost" value="0" placeholder="0" oninput="formatCurrencyInput(this)" style="font-size:0.85rem; text-align:right;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.82rem;">Rack / Shelf Location</label>
+                <input type="text" class="form-input" id="subtab-item-rack" placeholder="e.g. Rack A-02" style="font-size:0.85rem;">
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:12px; border-top:1px solid #e2e8f0; padding-top:16px;">
+              <button type="button" class="secondary-btn" onclick="switchInventoryTab('stock')">Cancel</button>
+              <button type="submit" class="primary-btn" id="btn-save-subtab-item" style="background:#059669; font-weight:700; padding:8px 24px; font-size:0.9rem;">
+                💾 Save Item in Stock
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'stock_adjustment' ? `
+      <!-- SUB TAB 2: STOCK ADJUSTMENT (SCENARIO 2: ITEM IN STOCK) -->
+      <div class="card" style="max-width: 980px; margin: 0 auto 24px auto; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-radius: 10px;">
+        <div class="card-header" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-bottom: 1px solid #fde68a; padding: 16px 20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size: 1.3rem;">⚖️</span>
+                <span class="card-title" style="font-size:1.15rem; font-weight:800; color:#92400e;">Sub Tab 2: Stock Adjustment</span>
+                <span class="badge" style="background:#d97706; color:#fff; font-weight:700; font-size:0.75rem;">Scenario 2: Item In Stock</span>
+              </div>
+              <p style="margin:4px 0 0 0; font-size:0.83rem; color:#78350f;">Select an existing item to view locked master data and currently active FIFO lot, then enter a new batch or link to a Purchase Order / Tender.</p>
+            </div>
+            <button type="button" class="secondary-btn" onclick="switchInventoryTab('stock')" style="font-size:0.8rem; background:#fff;">← Back to Stock Balances</button>
+          </div>
+        </div>
+        <div style="padding: 24px;">
+          <form id="form-stock-adjustment" onsubmit="event.preventDefault(); submitStockAdjustmentForm();">
+            <!-- 1. SELECT EXISTING ITEM -->
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:20px;">
+              <div style="font-weight:700; font-size:0.9rem; color:#1e293b; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                <span>🔍</span> Select Existing Item (Search by Code or Name)
+              </div>
+              <div style="display:grid; grid-template-columns: 2fr 1fr; gap:16px;">
+                <div>
+                  <label class="form-label" style="font-size:0.82rem; font-weight:700;">Choose Product / Item *</label>
+                  <select class="form-select" id="adj-product-select" required onchange="onStockAdjustmentItemSelect(this.value)" style="font-size:0.88rem; font-weight:600;">
+                    <option value="" disabled selected>-- Select Item by SKU or Name --</option>
+                    ${products.map(p => `
+                      <option value="${p.id}">
+                        [${p.sku || 'SKU'}] ${p.name} ${p.brand_name ? `(${p.brand_name})` : ''} - Current Total: ${p.current_stock || 0} ${p.unit || 'PCS'}
+                      </option>
+                    `).join('')}
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.82rem; font-weight:700;">Warehouse Facility *</label>
+                  <select class="form-select" id="adj-warehouse-select" required onchange="const pId = document.getElementById('adj-product-select')?.value; if (pId) onStockAdjustmentItemSelect(pId, this.value);" style="font-size:0.88rem;">
+                    ${warehouses.map(w => `<option value="${w.id}">${w.warehouse_name} (${w.city || 'Central'})</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. AUTO-POPULATED & LOCKED FIELDS (SPECIAL RULE: LOCKED) -->
+            <div id="adj-locked-container" style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px; padding:16px; margin-bottom:24px; opacity:0.95;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="font-weight:700; font-size:0.88rem; color:#334155; display:flex; align-items:center; gap:6px;">
+                  <span>🔒</span> Master Item & Active Batch Details (Auto-Populated & Locked)
+                </div>
+                <span class="badge" style="background:#e2e8f0; color:#475569; font-size:0.72rem; font-weight:700;">🔒 Read-Only Fields</span>
+              </div>
+              <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; margin-bottom:12px;">
+                <div>
+                  <label class="form-label" style="font-size:0.78rem; color:#475569;">Item Code (SKU)</label>
+                  <input type="text" class="form-input" id="adj-locked-sku" disabled placeholder="Item Code" style="background:#e2e8f0; color:#1e293b; font-weight:700; font-size:0.82rem;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.78rem; color:#475569;">Category</label>
+                  <input type="text" class="form-input" id="adj-locked-category" disabled placeholder="Category" style="background:#e2e8f0; color:#1e293b; font-size:0.82rem;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.78rem; color:#475569;">Current Stock On-Hand</label>
+                  <input type="text" class="form-input" id="adj-locked-stock" disabled placeholder="0" style="background:#e2e8f0; color:#0f172a; font-weight:800; font-size:0.85rem; text-align:center;">
+                </div>
+              </div>
+              <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:14px;">
+                <div>
+                  <label class="form-label" style="font-size:0.78rem; color:#475569;">Active Batch Number (Qty > 0)</label>
+                  <input type="text" class="form-input" id="adj-locked-batch" disabled placeholder="Active Batch" style="background:#e2e8f0; color:#0369a1; font-weight:700; font-size:0.82rem;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.78rem; color:#475569;">Existing DOM (Mfg Date)</label>
+                  <input type="text" class="form-input" id="adj-locked-dom" disabled placeholder="DOM" style="background:#e2e8f0; color:#475569; font-size:0.82rem;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.78rem; color:#475569;">Existing DOE (Expiry Date)</label>
+                  <input type="text" class="form-input" id="adj-locked-doe" disabled placeholder="DOE" style="background:#e2e8f0; color:#b91c1c; font-size:0.82rem;">
+                </div>
+              </div>
+              <div style="margin-top:8px; font-size:0.75rem; color:#64748b; font-style:italic;">
+                ℹ️ Rule: The active batch number displayed above is the FIFO lot currently being issued. It will remain the active batch until its quantity becomes zero.
+              </div>
+            </div>
+
+            <!-- 3. CLICK ADD NEW STOCK: ENTER NEW BATCH DETAILS -->
+            <div style="border:2px solid #38bdf8; background:#f0f9ff; border-radius:8px; padding:18px; margin-bottom:20px;">
+              <div style="font-weight:800; font-size:0.92rem; color:#0369a1; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+                <span>➕</span> Enter New Batch & Stock Details (Locked fields stay uneditable)
+              </div>
+              <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:14px;">
+                <div>
+                  <label class="form-label" style="font-size:0.82rem; font-weight:700;">New Batch No *</label>
+                  <input type="text" class="form-input" id="adj-new-batch" required placeholder="e.g. LOT-2026-B2" style="font-weight:700; font-size:0.88rem; background:#fff;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.82rem;">New DOM (Date of Manufacturing)</label>
+                  <input type="date" class="form-input" id="adj-new-dom" style="font-size:0.85rem; background:#fff;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.82rem;">New DOE (Date of Expiry)</label>
+                  <input type="date" class="form-input" id="adj-new-doe" style="font-size:0.85rem; background:#fff;">
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:14px;">
+                <div>
+                  <label class="form-label" style="font-size:0.82rem; font-weight:700;">Additional Quantity to Add *</label>
+                  <input type="number" class="form-input" id="adj-new-qty" min="1" step="1" required placeholder="Quantity" style="font-weight:700; text-align:center; font-size:0.92rem; background:#fff;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.82rem;">Unit Landed Cost (PKR)</label>
+                  <input type="text" class="form-input" id="adj-new-cost" placeholder="0" oninput="formatCurrencyInput(this)" style="font-size:0.85rem; text-align:right; background:#fff;">
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.82rem;">Rack / Storage Location</label>
+                  <input type="text" class="form-input" id="adj-new-rack" placeholder="e.g. Bin C-01" style="font-size:0.85rem; background:#fff;">
+                </div>
+              </div>
+
+              <!-- LINK TO PO / TENDER (SPECIAL RULE: OPTIONAL) -->
+              <div style="background:#fff; border:1px dashed #7dd3fc; border-radius:6px; padding:12px; margin-top:8px;">
+                <label class="form-label" style="font-size:0.82rem; font-weight:700; color:#0369a1; display:flex; align-items:center; gap:6px;">
+                  <span>🔗</span> Link to PO / Tender <span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600; font-size:0.7rem;">Optional Field</span>
+                </label>
+                <select class="form-select" id="adj-link-ref" style="font-size:0.85rem;">
+                  <option value="">— Optional: General Stock Adjustment (No PO / Tender Link) —</option>
+                </select>
+                <div style="margin-top:8px;">
+                  <label class="form-label" style="font-size:0.78rem; color:#64748b;">Remarks / Adjustment Reason</label>
+                  <input type="text" class="form-input" id="adj-remarks" placeholder="e.g. Additional stock receipt against Tender supply order" style="font-size:0.82rem;">
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:12px; border-top:1px solid #e2e8f0; padding-top:16px;">
+              <button type="button" class="secondary-btn" onclick="switchInventoryTab('stock')">Cancel</button>
+              <button type="submit" class="primary-btn" id="btn-save-stock-adj" style="background:#0284c7; font-weight:700; padding:8px 24px; font-size:0.9rem;">
+                💾 Save New Stock
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     ` : ''}
@@ -5991,10 +6873,12 @@ window.submitReceiveStockForm = submitReceiveStockForm;
 
 let _activeExpenseTab = 'ledger';
 let _activeExpenseCatFilterTier = 'all';
-let _expenseFilterScope = 'all'; // 'all' | 'tender' | 'general'
+let _expenseFilterScope = 'all'; // 'all' | 'tender' | 'customer' | 'general'
 let _expenseFilterOppId = 'all';
+let _expenseFilterCustomerId = 'all';
 let _expenseFilterStartDate = '';
 let _expenseFilterEndDate = '';
+let _cachedExpenseCustomers = [];
 
 function switchExpenseTab(tab) {
   _activeExpenseTab = tab;
@@ -6011,6 +6895,9 @@ function setExpenseFilterScope(scope) {
   if (scope !== 'tender') {
     _expenseFilterOppId = 'all';
   }
+  if (scope !== 'customer') {
+    _expenseFilterCustomerId = 'all';
+  }
   renderActiveView();
 }
 
@@ -6018,8 +6905,14 @@ function setExpenseFilterOppId(oppId) {
   _expenseFilterOppId = oppId;
   renderActiveView();
 }
+
+function setExpenseFilterCustomerId(custId) {
+  _expenseFilterCustomerId = custId;
+  renderActiveView();
+}
 window.setExpenseFilterScope = setExpenseFilterScope;
 window.setExpenseFilterOppId = setExpenseFilterOppId;
+window.setExpenseFilterCustomerId = setExpenseFilterCustomerId;
 
 function applyExpenseDateRangeFilter() {
   const fromEl = document.getElementById('exp-filter-from-date');
@@ -6095,6 +6988,7 @@ window.setExpenseDatePreset = setExpenseDatePreset;
 function resetExpenseFilters() {
   _expenseFilterScope = 'all';
   _expenseFilterOppId = 'all';
+  _expenseFilterCustomerId = 'all';
   _expenseFilterStartDate = '';
   _expenseFilterEndDate = '';
   renderActiveView();
@@ -6105,33 +6999,39 @@ async function renderExpensesHTML() {
   const filterParams = {
     filter_scope: _expenseFilterScope,
     opportunity_id: _expenseFilterOppId,
+    customer_id: _expenseFilterCustomerId,
     start_date: _expenseFilterStartDate,
     end_date: _expenseFilterEndDate
   };
 
-  const [expenses, categories, opps] = await Promise.all([
+  const [expenses, categories, opps, customers] = await Promise.all([
     API.getExpenses(State.currentBusinessProfileId, filterParams),
     API.getExpenseCategories(),
-    API.getOpportunities(State.currentBusinessProfileId).catch(() => [])
+    API.getOpportunities(State.currentBusinessProfileId).catch(() => []),
+    API.getCustomers().catch(() => [])
   ]);
   _cachedExpenseCategories = categories;
   _cachedExpenseOpportunities = opps || [];
+  _cachedExpenseCustomers = customers || [];
 
-  const hasActiveFilters = (_expenseFilterScope !== 'all') || (_expenseFilterOppId !== 'all') || !!_expenseFilterStartDate || !!_expenseFilterEndDate;
+  const hasActiveFilters = (_expenseFilterScope !== 'all') || (_expenseFilterOppId !== 'all') || (_expenseFilterCustomerId !== 'all') || !!_expenseFilterStartDate || !!_expenseFilterEndDate;
 
-  // Segregate by 3 Tiers
+  // Segregate by 4 Tiers
   const tier1Expenses = expenses.filter(e => e.expense_tier === 'Tier 1 - Tender Direct' || e.expense_type === 'Tender Expense' || e.expense_type === 'Quotation Expense' || e.opportunity_id);
   const tier2Expenses = expenses.filter(e => e.expense_tier === 'Tier 2 - PO Execution' || e.purchase_order_id || e.delivery_challan_id);
-  const tier3Expenses = expenses.filter(e => !tier1Expenses.includes(e) && !tier2Expenses.includes(e));
+  const tier4Expenses = expenses.filter(e => !tier1Expenses.includes(e) && !tier2Expenses.includes(e) && (e.expense_tier === 'Tier 4 - Customer Direct' || e.customer_id || e.expense_type === 'Customer Expense'));
+  const tier3Expenses = expenses.filter(e => !tier1Expenses.includes(e) && !tier2Expenses.includes(e) && !tier4Expenses.includes(e));
 
   const totalAll = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const totalTier1 = tier1Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const totalTier2 = tier2Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+  const totalTier4 = tier4Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const totalTier3 = tier3Expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
   // Group categories by tier
   const tier1Cats = categories.filter(c => c.tier === 'Tier 1 - Tender Direct');
   const tier2Cats = categories.filter(c => c.tier === 'Tier 2 - PO Execution');
+  const tier4Cats = categories.filter(c => c.tier === 'Tier 4 - Customer Direct');
   const tier3Cats = categories.filter(c => c.tier === 'Tier 3 - General Overheads');
 
   const filteredCategories = _activeExpenseCatFilterTier === 'all' 
@@ -6139,8 +7039,8 @@ async function renderExpensesHTML() {
     : categories.filter(c => c.tier === _activeExpenseCatFilterTier);
 
   return `
-    <!-- Top 3-Tier KPI Summary Cards -->
-    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+    <!-- Top 4-Tier KPI Summary Cards -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin-bottom: 20px;">
       <div class="kpi-card" style="border-left: 4px solid var(--primary);">
         <div class="kpi-title">${hasActiveFilters ? 'Filtered Expenditures' : 'Total Expenditures'}</div>
         <div class="kpi-value">${formatCurrency(totalAll, 'PKR')}</div>
@@ -6149,17 +7049,22 @@ async function renderExpensesHTML() {
       <div class="kpi-card" style="border-left: 4px solid #0284c7;">
         <div class="kpi-title">🎯 Tier 1: Tender & Bidding Direct</div>
         <div class="kpi-value">${formatCurrency(totalTier1, 'PKR')}</div>
-        <div class="kpi-subtext">${tier1Cats.length} Master Categories (${tier1Expenses.length} Logged)</div>
+        <div class="kpi-subtext">${tier1Cats.length} Categories (${tier1Expenses.length} Logged)</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #f59e0b;">
         <div class="kpi-title">🚚 Tier 2: PO Logistics & Freight</div>
         <div class="kpi-value">${formatCurrency(totalTier2, 'PKR')}</div>
-        <div class="kpi-subtext">${tier2Cats.length} Master Categories (${tier2Expenses.length} Logged)</div>
+        <div class="kpi-subtext">${tier2Cats.length} Categories (${tier2Expenses.length} Logged)</div>
+      </div>
+      <div class="kpi-card" style="border-left: 4px solid #7c3aed;">
+        <div class="kpi-title">👥 Tier 4: Direct Customer Expense</div>
+        <div class="kpi-value">${formatCurrency(totalTier4, 'PKR')}</div>
+        <div class="kpi-subtext">${tier4Cats.length} Categories (${tier4Expenses.length} Logged)</div>
       </div>
       <div class="kpi-card" style="border-left: 4px solid #64748b;">
         <div class="kpi-title">🏢 Tier 3: General Overheads</div>
         <div class="kpi-value">${formatCurrency(totalTier3, 'PKR')}</div>
-        <div class="kpi-subtext">${tier3Cats.length} Master Categories (${tier3Expenses.length} Logged)</div>
+        <div class="kpi-subtext">${tier3Cats.length} Categories (${tier3Expenses.length} Logged)</div>
       </div>
     </div>
 
@@ -6167,7 +7072,7 @@ async function renderExpensesHTML() {
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
       <div style="display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 8px; gap: 4px;">
         <button type="button" class="btn-tab-toggle ${_activeExpenseTab === 'ledger' ? 'active' : ''}" onclick="switchExpenseTab('ledger')" style="padding: 7px 18px; font-size: 0.88rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_activeExpenseTab === 'ledger' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1);' : 'background: transparent; color: #475569;'}">
-          💳 3-Tier Expenditure Ledger (${expenses.length})
+          💳 4-Tier Expenditure Ledger (${expenses.length})
         </button>
         <button type="button" class="btn-tab-toggle ${_activeExpenseTab === 'categories' ? 'active' : ''}" onclick="switchExpenseTab('categories')" style="padding: 7px 18px; font-size: 0.88rem; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; ${_activeExpenseTab === 'categories' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1);' : 'background: transparent; color: #475569;'}">
           📁 Master Expense Categories (${categories.length} in DB)
@@ -6186,7 +7091,7 @@ async function renderExpensesHTML() {
       </div>
     </div>
 
-    <!-- DYNAMIC FILTER BAR: TENDER WISE, GENERAL EXPENSE & DATE RANGE (INDEPENDENT OR COMBINED) -->
+    <!-- DYNAMIC FILTER BAR: TENDER WISE, CUSTOMER WISE, GENERAL EXPENSE & DATE RANGE -->
     <div class="card" style="margin-bottom: 20px; padding: 16px 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -6206,28 +7111,32 @@ async function renderExpensesHTML() {
       </div>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; align-items: flex-end;">
-        <!-- 1. Classification Scope (Tender wise vs General Expense vs All) -->
+        <!-- 1. Classification Scope (Tender wise vs Customer Direct vs General Expense vs All) -->
         <div>
           <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 4px; display: block;">
             Classification Scope:
           </label>
-          <div style="display: flex; gap: 4px; background: #f1f5f9; padding: 3px; border-radius: 8px;">
+          <div style="display: flex; gap: 4px; background: #f1f5f9; padding: 3px; border-radius: 8px; flex-wrap: wrap;">
             <button type="button" onclick="setExpenseFilterScope('all')" 
-              style="flex: 1; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'all' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              style="flex: 1; min-width: 48px; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'all' ? 'background: #ffffff; color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-weight: 700;' : 'background: transparent; color: #64748b;'}">
               All
             </button>
             <button type="button" onclick="setExpenseFilterScope('tender')" 
-              style="flex: 1.2; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'tender' ? 'background: #0284c7; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
-              🎯 Tender wise
+              style="flex: 1.2; min-width: 80px; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'tender' ? 'background: #0284c7; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              🎯 Tender
+            </button>
+            <button type="button" onclick="setExpenseFilterScope('customer')" 
+              style="flex: 1.3; min-width: 90px; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'customer' ? 'background: #7c3aed; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              👥 Customer
             </button>
             <button type="button" onclick="setExpenseFilterScope('general')" 
-              style="flex: 1.3; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'general' ? 'background: #475569; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
-              🏢 General Expense
+              style="flex: 1.2; min-width: 75px; padding: 6px 8px; font-size: 0.78rem; font-weight: 600; border-radius: 6px; border: none; cursor: pointer; ${_expenseFilterScope === 'general' ? 'background: #475569; color: #ffffff; font-weight: 700;' : 'background: transparent; color: #64748b;'}">
+              🏢 Overhead
             </button>
           </div>
         </div>
 
-        <!-- 2. Specific Tender Selection (Only when Tender wise is selected) -->
+        <!-- 2A. Specific Tender Selection (Only when Tender wise is selected) -->
         ${_expenseFilterScope === 'tender' ? `
           <div>
             <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #0284c7; margin-bottom: 4px; display: block;">
@@ -6238,6 +7147,23 @@ async function renderExpensesHTML() {
               ${opps.map(o => `
                 <option value="${o.id}" ${_expenseFilterOppId === o.id ? 'selected' : ''}>
                   ${escapeHtml(o.tender_name || o.title || o.opportunity_number || 'Tender')} (${o.opportunity_number || 'No Ref'})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+        ` : ''}
+
+        <!-- 2B. Specific Customer Selection (Only when Customer wise is selected) -->
+        ${_expenseFilterScope === 'customer' ? `
+          <div>
+            <label class="form-label" style="font-size: 0.78rem; font-weight: 700; color: #7c3aed; margin-bottom: 4px; display: block;">
+              Select Specific Customer:
+            </label>
+            <select class="form-control" onchange="setExpenseFilterCustomerId(this.value)" style="height: 36px; font-size: 0.8rem; border-color: #ddd6fe;">
+              <option value="all">-- All Customers & Clients (${customers.length}) --</option>
+              ${customers.map(c => `
+                <option value="${c.id}" ${_expenseFilterCustomerId === c.id ? 'selected' : ''}>
+                  ${escapeHtml(c.business_name || c.company_name || 'Customer')} (${escapeHtml(c.city || 'Pakistan')})
                 </option>
               `).join('')}
             </select>
@@ -6296,15 +7222,16 @@ async function renderExpensesHTML() {
     </div>
 
     ${_activeExpenseTab === 'ledger' ? `
-      <!-- TAB 1: 3-TIER EXPENDITURE TRANSACTIONS LEDGER -->
+      <!-- TAB 1: 4-TIER EXPENDITURE TRANSACTIONS LEDGER -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">
-            💳 3-Tier Company & Project Expenditure Ledger
+            💳 4-Tier Company, Project & Customer Expenditure Ledger
             ${hasActiveFilters ? `
               <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem; font-weight:600; margin-left:8px;">
-                Filtered: ${_expenseFilterScope === 'tender' ? '🎯 Tender wise' : (_expenseFilterScope === 'general' ? '🏢 General Expense' : 'All Scope')}
+                Filtered: ${_expenseFilterScope === 'tender' ? '🎯 Tender wise' : (_expenseFilterScope === 'customer' ? '👥 Customer wise' : (_expenseFilterScope === 'general' ? '🏢 General Overhead' : 'All Scope'))}
                 ${_expenseFilterOppId && _expenseFilterOppId !== 'all' ? ` (Specific Tender)` : ''}
+                ${_expenseFilterCustomerId && _expenseFilterCustomerId !== 'all' ? ` (Specific Customer)` : ''}
                 (${expenses.length} results)
               </span>
             ` : ''}
@@ -6317,7 +7244,7 @@ async function renderExpensesHTML() {
           <table class="data-table">
             <thead>
               <tr>
-                <th>Tender Name</th>
+                <th>Attribution / Project / Customer</th>
                 <th>Expense Title / Details</th>
                 <th>Category</th>
                 <th>Amount</th>
@@ -6333,45 +7260,56 @@ async function renderExpensesHTML() {
                 <tr>
                   <td colspan="9" style="text-align:center; padding:36px 20px; color:var(--text-muted);">
                     💳 <strong>No expenditures recorded yet.</strong><br>
-                    <span style="font-size:0.85rem;">Click <strong>+ Record Expenditure</strong> above to log Tier 1 pre-bid expenses, Tier 2 logistics, or Tier 3 overheads.</span>
+                    <span style="font-size:0.85rem;">Click <strong>+ Record Expenditure</strong> above to log Tier 1 pre-bid expenses, Tier 2 logistics, Tier 4 direct customer expenses, or Tier 3 overheads.</span>
                   </td>
                 </tr>
               ` : expenses.map(e => {
                 const isTier1 = tier1Expenses.includes(e);
                 const isTier2 = tier2Expenses.includes(e);
+                const isTier4 = tier4Expenses.includes(e);
 
                 let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
                 if (isTier1) {
                   tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
                 } else if (isTier2) {
                   tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
+                } else if (isTier4) {
+                  tierBadge = `<span class="badge" style="background:#ede9fe; color:#6d28d9;">👥 Tier 4: Customer Direct</span>`;
                 }
 
                 const matchedOpp = (_cachedExpenseOpportunities || []).find(o => o.id === e.opportunity_id) ||
                                    (State.opportunities || []).find(o => o.id === e.opportunity_id);
                 const tenderTitle = e.tender_name || e.opportunity_title || matchedOpp?.tender_name || matchedOpp?.title || '';
                 const tenderRef = e.opportunity_number || matchedOpp?.opportunity_number || '';
-                let tenderDisplay = '';
-                if (tenderTitle) {
-                  tenderDisplay = `
+                let attributionDisplay = '';
+                if (isTier4 || (e.customer_name && !tenderTitle && !e.po_number)) {
+                  attributionDisplay = `
+                    <div style="line-height:1.35;">
+                      <strong style="color:#7c3aed; font-size:0.88rem; font-weight:700;">👤 ${escapeHtml(e.customer_name || 'Direct Customer Expense')}</strong>
+                      <br><span class="badge" style="background:#ede9fe; color:#6d28d9; font-size:0.72rem; font-weight:600;">Client Direct Attribution</span>
+                    </div>
+                  `;
+                } else if (tenderTitle) {
+                  attributionDisplay = `
                     <div style="line-height:1.35;">
                       <strong style="color:#0f172a; font-size:0.88rem; font-weight:700;">${escapeHtml(tenderTitle)}</strong>
                       ${tenderRef ? `<br><span style="font-size:0.73rem; color:var(--primary); font-weight:600;">${escapeHtml(tenderRef)}</span>` : ''}
+                      ${e.customer_name ? `<br><span style="font-size:0.71rem; color:#64748b;">👤 ${escapeHtml(e.customer_name)}</span>` : ''}
                     </div>
                   `;
                 } else if (e.po_number) {
-                  tenderDisplay = `
+                  attributionDisplay = `
                     <div style="line-height:1.35;">
                       <strong style="color:#059669; font-size:0.86rem; font-weight:700;">PO: ${escapeHtml(e.po_number)}</strong>
-                      ${e.customer_name ? `<br><span style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(e.customer_name)}</span>` : ''}
+                      ${e.customer_name ? `<br><span style="font-size:0.72rem; color:var(--text-muted);">👤 ${escapeHtml(e.customer_name)}</span>` : ''}
                     </div>
                   `;
                 } else if (isTier1) {
-                  tenderDisplay = `
+                  attributionDisplay = `
                     <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem;">🎯 Tender Direct (General / Unassigned)</span>
                   `;
                 } else {
-                  tenderDisplay = `<span style="color:#64748b; font-size:0.82rem; font-style:italic;">General Overhead (No Tender)</span>`;
+                  attributionDisplay = `<span style="color:#64748b; font-size:0.82rem; font-style:italic;">General Overhead (No Tender/Client)</span>`;
                 }
 
                 let classificationHtml = tierBadge;
@@ -6379,11 +7317,13 @@ async function renderExpensesHTML() {
                   classificationHtml += `<br><span style="font-size:0.72rem; color:#059669; font-weight:600;">PO: ${escapeHtml(e.po_number || 'PO Ref')}</span>`;
                 } else if (e.contract_number) {
                   classificationHtml += `<br><span style="font-size:0.72rem; color:#2563eb; font-weight:600;">CNT: ${escapeHtml(e.contract_number)}</span>`;
+                } else if (isTier4 && e.customer_name) {
+                  classificationHtml += `<br><span style="font-size:0.72rem; color:#7c3aed; font-weight:600;">Client: ${escapeHtml(e.customer_name)}</span>`;
                 }
 
                 return `
                   <tr>
-                    <td>${tenderDisplay}</td>
+                    <td>${attributionDisplay}</td>
                     <td>
                       <strong>${escapeHtml(e.expense_name || e.category)}</strong><br>
                       <span style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(e.remarks || e.notes || '')}</span>
@@ -6556,9 +7496,49 @@ let _reportDatePreset = 'this_month'; // 'today', 'this_month', 'last_month', 't
 let _reportStartDate = '';
 let _reportEndDate = '';
 let _reportScope = 'all'; // 'all', 'tender', 'quotation'
+let _reportExpenseCustomerId = 'all';
+let _reportExpenseTenderId = 'all';
+let _reportExpenseQuotationId = 'all';
 let _reportShowHeader = true;
 let _reportShowFooter = true;
 let _reportSearchQuery = '';
+
+function onReportExpenseCustomerChange(customerId) {
+  _reportExpenseCustomerId = customerId || 'all';
+  // Cascading reset: when customer changes, reset tender and quotation filters
+  _reportExpenseTenderId = 'all';
+  _reportExpenseQuotationId = 'all';
+  renderActiveView();
+}
+window.onReportExpenseCustomerChange = onReportExpenseCustomerChange;
+
+function onReportExpenseTenderChange(tenderId) {
+  _reportExpenseTenderId = tenderId || 'all';
+  if (_reportExpenseTenderId !== 'all') {
+    _reportExpenseQuotationId = 'all';
+  }
+  renderActiveView();
+}
+window.onReportExpenseTenderChange = onReportExpenseTenderChange;
+
+function onReportExpenseQuotationChange(quotationId) {
+  _reportExpenseQuotationId = quotationId || 'all';
+  if (_reportExpenseQuotationId !== 'all') {
+    _reportExpenseTenderId = 'all';
+  }
+  renderActiveView();
+}
+window.onReportExpenseQuotationChange = onReportExpenseQuotationChange;
+
+function resetExpenseReportFilters() {
+  _reportExpenseCustomerId = 'all';
+  _reportExpenseTenderId = 'all';
+  _reportExpenseQuotationId = 'all';
+  _reportScope = 'all';
+  renderActiveView();
+}
+window.resetExpenseReportFilters = resetExpenseReportFilters;
+
 
 function getReportDatePresetBounds(preset) {
   const now = new Date();
@@ -6773,6 +7753,17 @@ function buildExecutiveReportHeaderHTML(reportTitle, filterSummary) {
   
   const scopeBadge = _reportScope === 'tender' ? '🏛️ Tenders Only' : (_reportScope === 'quotation' ? '💼 Quotations Only' : 'All Scope');
 
+  let expenseFilterBadge = '';
+  if (_activeReportTab === 'expenses') {
+    const parts = [];
+    if (_reportExpenseCustomerId !== 'all') parts.push('Customer Filtered');
+    if (_reportExpenseTenderId !== 'all') parts.push('Tender Filtered');
+    if (_reportExpenseQuotationId !== 'all') parts.push('Quotation Filtered');
+    if (parts.length > 0) {
+      expenseFilterBadge = ` &bull; <span class="badge" style="background:#dcfce7; color:#15803d; font-size:0.7rem; font-weight:700;">🎯 ${parts.join(' + ')}</span>`;
+    }
+  }
+
   return `
     <div class="report-print-header" style="border-bottom:2px solid #0f172a; padding-bottom:14px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:14px; align-items:center;">
@@ -6797,7 +7788,7 @@ function buildExecutiveReportHeaderHTML(reportTitle, filterSummary) {
       <div style="text-align:right;">
         <div style="font-size:1.15rem; font-weight:800; color:#0284c7; text-transform:uppercase; letter-spacing:0.5px;">${reportTitle}</div>
         <div style="font-size:0.75rem; color:#334155; margin-top:2px; font-weight:600;">
-          📅 Period: <span style="color:#0f172a;">${dateScope}</span> &bull; Scope: <span class="badge badge-sec-attached">${scopeBadge}</span>
+          📅 Period: <span style="color:#0f172a;">${dateScope}</span> &bull; Scope: <span class="badge badge-sec-attached">${scopeBadge}</span>${expenseFilterBadge}
         </div>
         <div style="font-size:0.7rem; color:#94a3b8; margin-top:2px;">Generated: ${new Date().toLocaleString('en-GB')} by ${State.currentUser?.fullName || 'Administrator'}</div>
       </div>
@@ -6899,15 +7890,16 @@ function buildExecutiveReportPrintDocumentHTML(activeTab, reportData, currentPro
       { label: 'Tier 3: Admin & Overheads', value: formatCurrency(tier3, 'PKR'), sub: 'Office rent, staff, utilities' }
     ];
 
-    tableHeaders = ['#', 'Date', 'Tier & Stage', 'Category', 'Expense Description', 'Paid To / Vendor', 'Attributed Project / PO', 'Amount (PKR)'];
+    tableHeaders = ['#', 'Date', 'Tier & Stage', 'Category', 'Expense Description', 'Customer / Client', 'Attributed Project / PO', 'Paid To / Vendor', 'Amount (PKR)'];
     tableRows = rows.map((e, i) => [
       i + 1,
       e.expense_date || '-',
       e.expense_tier || 'Direct',
       e.category || 'General',
       e.expense_name || e.title || '-',
-      e.paid_to || 'Vendor',
+      e.customer_name || 'General Operations',
       e.opportunity_number || e.po_number || 'General Overhead',
+      e.paid_to || 'Vendor',
       formatCurrency(e.amount, 'PKR')
     ]);
 
@@ -7332,7 +8324,10 @@ async function printExecutiveReport(tab = null) {
   const filters = {
     startDate: _reportStartDate,
     endDate: _reportEndDate,
-    scope: _reportScope
+    scope: _reportScope,
+    customerId: _reportExpenseCustomerId,
+    tenderId: _reportExpenseTenderId,
+    quotationId: _reportExpenseQuotationId
   };
 
   let reportData = null;
@@ -7397,6 +8392,36 @@ async function renderReportsHTML() {
   const activeCompId = State.currentBusinessProfileId || 'all';
   const profiles = State.businessProfiles || [];
 
+  let customers = [];
+  let allTenders = [];
+  let allQuotations = [];
+  let availableTenders = [];
+  let availableQuotations = [];
+
+  if (_activeReportTab === 'expenses') {
+    try {
+      const [custList, tendersList, quotesList] = await Promise.all([
+        API.getCustomers().catch(() => []),
+        API.getOpportunities(activeCompId).catch(() => []),
+        API.getQuotations(activeCompId).catch(() => [])
+      ]);
+      customers = Array.isArray(custList) ? custList : [];
+      allTenders = Array.isArray(tendersList) ? tendersList : [];
+      allQuotations = Array.isArray(quotesList) ? quotesList : [];
+
+      // Auto-cascading: When customer is selected, dynamically filter tenders and quotations
+      if (_reportExpenseCustomerId && _reportExpenseCustomerId !== 'all') {
+        availableTenders = allTenders.filter(t => String(t.customer_id) === String(_reportExpenseCustomerId));
+        availableQuotations = allQuotations.filter(q => String(q.customer_id) === String(_reportExpenseCustomerId));
+      } else {
+        availableTenders = allTenders;
+        availableQuotations = allQuotations;
+      }
+    } catch (err) {
+      console.warn('Error loading filter lists for expense report:', err);
+    }
+  }
+
   // Fetch report data based on active tab
   let reportData = null;
   let reportError = null;
@@ -7405,7 +8430,10 @@ async function renderReportsHTML() {
     const filters = {
       startDate: _reportStartDate,
       endDate: _reportEndDate,
-      scope: _reportScope
+      scope: _reportScope,
+      customerId: _reportExpenseCustomerId,
+      tenderId: _reportExpenseTenderId,
+      quotationId: _reportExpenseQuotationId
     };
 
     if (_activeReportTab === 'securities') {
@@ -7505,6 +8533,74 @@ async function renderReportsHTML() {
           </div>
 
         </div>
+
+        ${_activeReportTab === 'expenses' ? `
+          <!-- DEDICATED EXPENSE REPORT CASCADING FILTERS (CUSTOMER, TENDER, QUOTATION) -->
+          <div style="margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px 14px; box-shadow:0 1px 3px rgba(0,0,0,0.02);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+              <div style="font-size:0.84rem; font-weight:800; color:#166534; display:flex; align-items:center; gap:6px;">
+                <span>🎯 Granular Expense Filters</span>
+                <span style="font-size:0.7rem; font-weight:600; color:#15803d; background:#dcfce7; padding:2px 8px; border-radius:12px; border:1px solid #86efac;">
+                  Auto-Cascading Active
+                </span>
+              </div>
+              ${(_reportExpenseCustomerId !== 'all' || _reportExpenseTenderId !== 'all' || _reportExpenseQuotationId !== 'all') ? `
+                <button class="secondary-btn" style="padding:3px 10px; font-size:0.75rem; color:#b91c1c; border-color:#fca5a5; background:white; display:flex; align-items:center; gap:4px;" onclick="resetExpenseReportFilters()">
+                  <span>✕</span> Reset Expense Filters
+                </button>
+              ` : `
+                <span style="font-size:0.72rem; color:#15803d;">
+                  💡 Selecting a Customer automatically cascades and filters available Tenders & Quotations
+                </span>
+              `}
+            </div>
+
+            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+              <!-- 1. Customer Dropdown Filter -->
+              <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:220px;">
+                <span style="font-size:0.8rem; font-weight:700; color:#166534; white-space:nowrap;">👤 Customer:</span>
+                <select class="form-select" style="font-size:0.8rem; padding:5px 8px; width:100%; font-weight:600; border-color:#86efac; background:white;" onchange="onReportExpenseCustomerChange(this.value)">
+                  <option value="all" ${_reportExpenseCustomerId === 'all' ? 'selected' : ''}>All Customers (Consolidated)</option>
+                  ${customers.map(c => `
+                    <option value="${c.id}" ${_reportExpenseCustomerId === String(c.id) ? 'selected' : ''}>
+                      ${escapeHtml(c.business_name || c.department_name || 'Customer')}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <!-- 2. Tenders Dropdown Filter (Cascaded to Customer) -->
+              <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:240px;">
+                <span style="font-size:0.8rem; font-weight:700; color:#166534; white-space:nowrap;">🏛️ Tenders:</span>
+                <select class="form-select" style="font-size:0.8rem; padding:5px 8px; width:100%; font-weight:600; border-color:#86efac; background:white;" onchange="onReportExpenseTenderChange(this.value)">
+                  <option value="all" ${_reportExpenseTenderId === 'all' ? 'selected' : ''}>
+                    ${_reportExpenseCustomerId !== 'all' ? `All Customer Tenders (${availableTenders.length})` : `All Tenders (${availableTenders.length})`}
+                  </option>
+                  ${availableTenders.map(t => `
+                    <option value="${t.id}" ${_reportExpenseTenderId === String(t.id) ? 'selected' : ''}>
+                      ${escapeHtml(t.opportunity_number ? `${t.opportunity_number} - ` : '')}${escapeHtml((t.tender_name || t.title || 'Tender').slice(0, 32))}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <!-- 3. Quotations Dropdown Filter (Cascaded to Customer) -->
+              <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:240px;">
+                <span style="font-size:0.8rem; font-weight:700; color:#166534; white-space:nowrap;">💼 Quotations:</span>
+                <select class="form-select" style="font-size:0.8rem; padding:5px 8px; width:100%; font-weight:600; border-color:#86efac; background:white;" onchange="onReportExpenseQuotationChange(this.value)">
+                  <option value="all" ${_reportExpenseQuotationId === 'all' ? 'selected' : ''}>
+                    ${_reportExpenseCustomerId !== 'all' ? `All Customer Quotations (${availableQuotations.length})` : `All Quotations (${availableQuotations.length})`}
+                  </option>
+                  ${availableQuotations.map(q => `
+                    <option value="${q.id}" ${_reportExpenseQuotationId === String(q.id) ? 'selected' : ''}>
+                      ${escapeHtml(q.opportunity_number ? `${q.opportunity_number} - ` : '')}${escapeHtml((q.tender_name || q.title || 'Quotation').slice(0, 32))}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+            </div>
+          </div>
+        ` : ''}
 
         <!-- Quick In-Table Search Filter -->
         <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
@@ -7748,28 +8844,32 @@ function renderExpensesReportHTML(apiRes) {
         <table class="data-table" style="width:100%; font-size:0.8rem; border-collapse:collapse;">
           <thead>
             <tr style="background:#f1f5f9; text-align:left;">
-              <th style="width:14%;">Tier & Stage</th>
-              <th style="width:16%;">Expense Category</th>
-              <th style="width:20%;">Expense Title / Description</th>
-              <th style="width:16%;">Paid To / Vendor</th>
+              <th style="width:12%;">Tier & Stage</th>
+              <th style="width:13%;">Expense Category</th>
+              <th style="width:17%;">Expense Title / Description</th>
+              <th style="width:16%;">Customer / Client</th>
               <th style="width:14%;">Attributed Project / PO</th>
-              <th style="width:10%;">Date</th>
-              <th style="width:10%; text-align:right;">Amount (PKR)</th>
+              <th style="width:14%;">Paid To / Vendor</th>
+              <th style="width:7%;">Date</th>
+              <th style="width:7%; text-align:right;">Amount (PKR)</th>
             </tr>
           </thead>
           <tbody>
             ${rows.length === 0 ? `
-              <tr class="no-search"><td colspan="7" style="text-align:center; padding:28px; color:#94a3b8;">No expenses logged for this filter period.</td></tr>
+              <tr class="no-search"><td colspan="8" style="text-align:center; padding:28px; color:#94a3b8;">No expenses logged for this filter period.</td></tr>
             ` : rows.map(e => `
               <tr style="border-bottom:1px solid #f1f5f9;">
                 <td><span class="badge badge-sec-attached" style="font-size:0.7rem;">${escapeHtml(e.expense_tier || 'Direct')}</span></td>
                 <td><strong>${escapeHtml(e.category)}</strong></td>
                 <td>${escapeHtml(e.expense_name || e.title || '-')}</td>
-                <td>${escapeHtml(e.paid_to || 'Vendor')}</td>
+                <td>
+                  <strong style="color:#0f172a;">${escapeHtml(e.customer_name || 'General Operations')}</strong>
+                </td>
                 <td>
                   <strong>${escapeHtml(e.opportunity_number || e.po_number || e.contract_number || 'General Overhead')}</strong><br>
                   ${e.tender_name ? `<span style="font-size:0.68rem; color:#64748b;">${escapeHtml(e.tender_name.slice(0, 25))}</span>` : ''}
                 </td>
+                <td>${escapeHtml(e.paid_to || 'Vendor')}</td>
                 <td>${e.expense_date || '-'}</td>
                 <td style="text-align:right;"><strong style="color:#b45309; font-size:0.86rem;">${formatCurrency(e.amount, 'PKR')}</strong></td>
               </tr>
@@ -8395,6 +9495,11 @@ async function renderCustomersHTML() {
       </td>
       <td>
         <div style="display:flex; gap:6px; align-items:center;">
+          ${State.hasPermission('expenses', 'add') ? `
+            <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#7c3aed; white-space:nowrap;" onclick="openExpenseModal('Tier 4 - Customer Direct', '', '', '', '${c.id}')" title="Log direct expense against this customer">
+              💳 + Expense
+            </button>
+          ` : ''}
           ${State.hasPermission('customers', 'edit') ? `
             <button class="edit-btn" onclick="openEditCustomerModal('${c.id}')" title="Edit Customer Details">✏️ Edit</button>
             <button class="secondary-btn" style="padding:4px 6px; font-size:0.75rem;" onclick="toggleCustomerStatus('${c.id}', '${c.status}')" title="Toggle Active / Inactive">
@@ -8404,7 +9509,7 @@ async function renderCustomersHTML() {
           ${State.hasPermission('customers', 'delete') ? `
             <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteCustomerItem('${c.id}', '${encodeURIComponent(c.business_name)}')" title="Delete Customer">🗑️ Delete</button>
           ` : ''}
-          ${(!State.hasPermission('customers', 'edit') && !State.hasPermission('customers', 'delete')) ? '<span style="font-size:0.75rem; color:#94a3b8;">👁️ View Only</span>' : ''}
+          ${(!State.hasPermission('customers', 'edit') && !State.hasPermission('customers', 'delete') && !State.hasPermission('expenses', 'add')) ? '<span style="font-size:0.75rem; color:#94a3b8;">👁️ View Only</span>' : ''}
         </div>
       </td>
     </tr>
@@ -8806,8 +9911,10 @@ async function renderProductsHTML() {
           ${p.brand_name ? `<strong style="font-size:0.84rem; color:#1e293b;">${p.brand_name}</strong>` : '<span style="color:#94a3b8; font-size:0.75rem;">—</span>'}
         </td>
         <td>
-          ${p.item_type === 'Medicine' ? `<span class="badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700; font-size:0.72rem;">💊 Medicine</span>` : `<span class="badge badge-sec-attached">${p.item_type || 'Product'}</span>`}<br>
-          <span style="font-size:0.8rem; font-weight:600;">${p.unit || 'PCS'}</span>
+          ${p.category_name ? `<span class="badge" style="background:#f1f5f9; color:#1e293b; border:1px solid #cbd5e1; font-size:0.68rem; font-weight:700; margin-bottom:2px; display:inline-block;">📁 ${p.category_name}</span><br>` : ''}
+          ${p.sub_category_name ? `<span style="font-size:0.68rem; color:#475569; display:block; margin-bottom:2px;">↳ ${p.sub_category_name}</span>` : ''}
+          <span class="badge badge-sec-attached" style="font-size:0.7rem;">${p.item_type || 'Product'}</span>
+          <span style="font-size:0.78rem; font-weight:700; color:#0369a1; background:#f0f9ff; padding:1px 6px; border-radius:4px; margin-left:2px;">${p.uom_code || p.unit || 'PCS'}</span>
         </td>
         <td>
           <span style="font-size:0.8rem; font-weight:600; color:#1e293b;">
@@ -10960,6 +12067,19 @@ function openQuickAddModal(entityType, targetSelectId) {
       modalId = 'modal-add-company';
       openNewCompanyModal();
       break;
+    case 'uom':
+      modalId = 'modal-add-uom';
+      openQuickAddUomModal();
+      break;
+    case 'category':
+      modalId = 'modal-add-category';
+      openQuickAddCategoryModal();
+      break;
+    case 'subcategory':
+    case 'subCategory':
+      modalId = 'modal-add-subcategory';
+      openQuickAddSubCategoryModal();
+      break;
     default:
       console.warn('Unknown quick add entity type:', entityType);
       return;
@@ -11225,6 +12345,10 @@ function openQuotaUpgradeModal(type = 'tender') {
 }
 
 function closeModal(id) {
+  if (id === 'modal-trial-expired' && State.isTrialExpired && State.isTrialExpired()) {
+    showToast('Your Free Trial has expired. Please contact support@mashrue.com or click Sign Out.', 'warning');
+    return;
+  }
   const el = document.getElementById(id);
   if (el) {
     el.classList.remove('open');
@@ -14631,13 +15755,254 @@ async function handleDCPOSSelected(poId) {
           </td>
           <td>
             <input type="number" class="form-input" id="dc-item-dispatch-qty-${idx}" value="${defaultDispatchQty}" min="0" max="${remainingQty}" step="any" style="width: 100px; padding: 4px 6px; font-weight: 700; color: #166534;" oninput="validateDCDispatchQty(${idx})">
+            <button type="button" class="btn-quick-add" onclick="toggleDCItemBatches(${idx})" style="padding:2px 6px; font-size:0.72rem; margin-top:4px; display:block; text-align:center; width:100%;" title="Split into multiple batches">
+              📦 Split Batches
+            </button>
           </td>
           <td>${it.unit || 'PCS'}</td>
+        </tr>
+        <tr id="dc-item-batches-row-${idx}" style="display:none; background:#f8fafc;">
+          <td colspan="6" id="dc-item-batches-container-${idx}" style="padding:8px 12px; border-bottom:2px solid #e2e8f0;">
+            <!-- Populated on-demand by renderDCItemBatchTable -->
+          </td>
         </tr>
       `;
     }).join('');
   }
 }
+
+async function toggleDCItemBatches(idx) {
+  const batchRow = document.getElementById(`dc-item-batches-row-${idx}`);
+  if (!batchRow) return;
+  const isCurrentlyHidden = (batchRow.style.display === 'none');
+  batchRow.style.display = isCurrentlyHidden ? 'table-row' : 'none';
+
+  if (isCurrentlyHidden) {
+    await renderDCItemBatchTable(idx);
+  }
+}
+window.toggleDCItemBatches = toggleDCItemBatches;
+
+async function renderDCItemBatchTable(idx) {
+  const container = document.getElementById(`dc-item-batches-container-${idx}`);
+  if (!container) return;
+  const prodId = document.getElementById(`dc-item-prod-id-${idx}`)?.value;
+  const whId = document.getElementById('dc-warehouse-select')?.value;
+  const dispatchQty = parseFloat(document.getElementById(`dc-item-dispatch-qty-${idx}`)?.value || 0);
+
+  container.innerHTML = `<div style="font-size:0.75rem; color:#64748b; padding:8px;">⏳ Loading warehouse stock & batches...</div>`;
+
+  let stockRows = [];
+  if (whId && prodId) {
+    try {
+      stockRows = await API.getWarehouseStock(whId, prodId);
+    } catch (e) {
+      stockRows = [];
+    }
+  }
+
+  const availableBatches = (stockRows || []).filter(s => parseFloat(s.available_quantity || s.quantity_on_hand || 0) > 0);
+
+  let html = `
+    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:10px 12px; margin:4px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+        <div>
+          <strong style="font-size:0.82rem; color:#0f172a;">📦 Multi-Batch Allocation Engine (e.g. 50 units = 30 Batch A + 20 Batch B)</strong>
+          <span style="font-size:0.75rem; color:#475569; margin-left:6px;">Target Qty: <strong id="dc-target-label-${idx}" style="color:#0369a1;">${dispatchQty}</strong> | Allocated: <strong id="dc-allocated-label-${idx}" style="color:#16a34a;">0</strong></span>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="btn-quick-add" onclick="autoAllocateDCBatchesFEFO(${idx})" style="padding:2px 8px; font-size:0.75rem; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0;">
+            ⚡ Auto-Allocate (FEFO Oldest Expiry)
+          </button>
+          <button type="button" class="btn-quick-add" onclick="addManualDCBatchRow(${idx})" style="padding:2px 8px; font-size:0.75rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">
+            + Add Batch Row
+          </button>
+        </div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+        <thead>
+          <tr style="background:#f1f5f9; color:#334155; text-align:left;">
+            <th style="padding:4px 8px;">Batch / Lot #</th>
+            <th style="padding:4px 8px;">DOM</th>
+            <th style="padding:4px 8px;">Expiry Date (DOE)</th>
+            <th style="padding:4px 8px;">Available in WH</th>
+            <th style="padding:4px 8px; width:120px;">Pick Qty *</th>
+            <th style="padding:4px 8px; width:40px;"></th>
+          </tr>
+        </thead>
+        <tbody id="dc-batch-tbody-${idx}">
+  `;
+
+  if (availableBatches.length > 0) {
+    availableBatches.sort((a, b) => {
+      if (!a.expiry_date) return 1;
+      if (!b.expiry_date) return -1;
+      return new Date(a.expiry_date) - new Date(b.expiry_date);
+    });
+
+    availableBatches.forEach((b, bIdx) => {
+      const avail = parseFloat(b.available_quantity || b.quantity_on_hand || 0);
+      const isExpSoon = b.expiry_date && (new Date(b.expiry_date).getTime() - Date.now()) < (90 * 24 * 60 * 60 * 1000);
+      html += `
+        <tr class="dc-batch-input-row-${idx}" id="dc-batch-row-${idx}-${bIdx}" style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:4px 8px;">
+            <input type="text" class="form-input dc-batch-num-input" value="${b.batch_number || 'LOT-' + (bIdx+1)}" style="padding:2px 6px; font-size:0.75rem; font-weight:700;">
+          </td>
+          <td style="padding:4px 8px;">
+            <input type="date" class="form-input dc-batch-dom-input" value="${b.manufacturing_date ? String(b.manufacturing_date).slice(0, 10) : ''}" style="padding:2px 4px; font-size:0.72rem;">
+          </td>
+          <td style="padding:4px 8px;">
+            <input type="date" class="form-input dc-batch-exp-input" value="${b.expiry_date ? String(b.expiry_date).slice(0, 10) : ''}" style="padding:2px 4px; font-size:0.72rem; ${isExpSoon ? 'border-color:#fca5a5; background:#fff1f2;' : ''}">
+            ${isExpSoon ? '<span style="color:#b91c1c; font-size:0.68rem; font-weight:700;">⚠️ Expiring Soon</span>' : ''}
+          </td>
+          <td style="padding:4px 8px;">
+            <span class="badge badge-won dc-batch-avail-qty" style="font-size:0.72rem;">${avail}</span>
+          </td>
+          <td style="padding:4px 8px;">
+            <input type="number" class="form-input dc-batch-qty-input" value="0" min="0" max="${avail}" step="any" style="padding:2px 6px; font-size:0.78rem; font-weight:700; color:#166534;" oninput="recalcDCAllocatedBatchQty(${idx})">
+          </td>
+          <td style="padding:4px 8px;">
+            <button type="button" onclick="this.closest('tr').remove(); recalcDCAllocatedBatchQty(${idx});" style="background:none; border:none; color:#dc2626; cursor:pointer; font-weight:bold;">&times;</button>
+          </td>
+        </tr>
+      `;
+    });
+  } else {
+    const defaultBatch = document.getElementById(`dc-item-batch-${idx}`)?.value || 'BATCH-001';
+    html += `
+      <tr class="dc-batch-input-row-${idx}" style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:4px 8px;">
+          <input type="text" class="form-input dc-batch-num-input" value="${defaultBatch}" placeholder="Batch #1" style="padding:2px 6px; font-size:0.75rem; font-weight:700;">
+        </td>
+        <td style="padding:4px 8px;">
+          <input type="date" class="form-input dc-batch-dom-input" style="padding:2px 4px; font-size:0.72rem;">
+        </td>
+        <td style="padding:4px 8px;">
+          <input type="date" class="form-input dc-batch-exp-input" style="padding:2px 4px; font-size:0.72rem;">
+        </td>
+        <td style="padding:4px 8px;"><span style="color:#64748b; font-size:0.72rem;">Open / Drop</span></td>
+        <td style="padding:4px 8px;">
+          <input type="number" class="form-input dc-batch-qty-input" value="${dispatchQty}" min="0" step="any" style="padding:2px 6px; font-size:0.78rem; font-weight:700; color:#166534;" oninput="recalcDCAllocatedBatchQty(${idx})">
+        </td>
+        <td style="padding:4px 8px;"></td>
+      </tr>
+      <tr class="dc-batch-input-row-${idx}" style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:4px 8px;">
+          <input type="text" class="form-input dc-batch-num-input" value="BATCH-002" placeholder="Batch #2" style="padding:2px 6px; font-size:0.75rem; font-weight:700;">
+        </td>
+        <td style="padding:4px 8px;">
+          <input type="date" class="form-input dc-batch-dom-input" style="padding:2px 4px; font-size:0.72rem;">
+        </td>
+        <td style="padding:4px 8px;">
+          <input type="date" class="form-input dc-batch-exp-input" style="padding:2px 4px; font-size:0.72rem;">
+        </td>
+        <td style="padding:4px 8px;"><span style="color:#64748b; font-size:0.72rem;">Open / Drop</span></td>
+        <td style="padding:4px 8px;">
+          <input type="number" class="form-input dc-batch-qty-input" value="0" min="0" step="any" style="padding:2px 6px; font-size:0.78rem; font-weight:700; color:#166534;" oninput="recalcDCAllocatedBatchQty(${idx})">
+        </td>
+        <td style="padding:4px 8px;">
+          <button type="button" onclick="this.closest('tr').remove(); recalcDCAllocatedBatchQty(${idx});" style="background:none; border:none; color:#dc2626; cursor:pointer; font-weight:bold;">&times;</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  html += `
+        </tbody>
+      </table>
+      <div id="dc-batch-validation-alert-${idx}" style="font-size:0.75rem; font-weight:600; margin-top:6px; color:#166534;"></div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+  recalcDCAllocatedBatchQty(idx);
+}
+window.renderDCItemBatchTable = renderDCItemBatchTable;
+
+function addManualDCBatchRow(idx) {
+  const tbody = document.getElementById(`dc-batch-tbody-${idx}`);
+  if (!tbody) return;
+  const count = tbody.querySelectorAll('tr').length + 1;
+  const tr = document.createElement('tr');
+  tr.className = `dc-batch-input-row-${idx}`;
+  tr.style.borderBottom = '1px solid #f1f5f9';
+  tr.innerHTML = `
+    <td style="padding:4px 8px;">
+      <input type="text" class="form-input dc-batch-num-input" value="BATCH-00${count}" placeholder="Batch #${count}" style="padding:2px 6px; font-size:0.75rem; font-weight:700;">
+    </td>
+    <td style="padding:4px 8px;">
+      <input type="date" class="form-input dc-batch-dom-input" style="padding:2px 4px; font-size:0.72rem;">
+    </td>
+    <td style="padding:4px 8px;">
+      <input type="date" class="form-input dc-batch-exp-input" style="padding:2px 4px; font-size:0.72rem;">
+    </td>
+    <td style="padding:4px 8px;"><span style="color:#64748b; font-size:0.72rem;">Manual</span></td>
+    <td style="padding:4px 8px;">
+      <input type="number" class="form-input dc-batch-qty-input" value="0" min="0" step="any" style="padding:2px 6px; font-size:0.78rem; font-weight:700; color:#166534;" oninput="recalcDCAllocatedBatchQty(${idx})">
+    </td>
+    <td style="padding:4px 8px;">
+      <button type="button" onclick="this.closest('tr').remove(); recalcDCAllocatedBatchQty(${idx});" style="background:none; border:none; color:#dc2626; cursor:pointer; font-weight:bold;">&times;</button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  recalcDCAllocatedBatchQty(idx);
+}
+window.addManualDCBatchRow = addManualDCBatchRow;
+
+function autoAllocateDCBatchesFEFO(idx) {
+  const targetQty = parseFloat(document.getElementById(`dc-item-dispatch-qty-${idx}`)?.value || 0);
+  const rows = document.querySelectorAll(`.dc-batch-input-row-${idx}`);
+  if (!rows || rows.length === 0) return;
+
+  let remainingToAllocate = targetQty;
+  rows.forEach(r => {
+    const availEl = r.querySelector('.dc-batch-avail-qty');
+    const input = r.querySelector('.dc-batch-qty-input');
+    const avail = availEl ? parseFloat(availEl.innerText || 0) : remainingToAllocate;
+
+    if (remainingToAllocate <= 0) {
+      if (input) input.value = 0;
+    } else {
+      const take = Math.min(avail > 0 ? avail : remainingToAllocate, remainingToAllocate);
+      if (input) input.value = take;
+      remainingToAllocate -= take;
+    }
+  });
+
+  recalcDCAllocatedBatchQty(idx);
+}
+window.autoAllocateDCBatchesFEFO = autoAllocateDCBatchesFEFO;
+
+function recalcDCAllocatedBatchQty(idx) {
+  const targetQty = parseFloat(document.getElementById(`dc-item-dispatch-qty-${idx}`)?.value || 0);
+  const targetLabel = document.getElementById(`dc-target-label-${idx}`);
+  if (targetLabel) targetLabel.innerText = targetQty;
+
+  const rows = document.querySelectorAll(`.dc-batch-input-row-${idx}`);
+  let sum = 0;
+  rows.forEach(r => {
+    const input = r.querySelector('.dc-batch-qty-input');
+    sum += parseFloat(input?.value || 0);
+  });
+
+  const allocLabel = document.getElementById(`dc-allocated-label-${idx}`);
+  if (allocLabel) allocLabel.innerText = sum;
+
+  const alertBox = document.getElementById(`dc-batch-validation-alert-${idx}`);
+  if (alertBox) {
+    if (Math.abs(sum - targetQty) < 0.001) {
+      alertBox.innerHTML = `✓ Allocation Balanced: Exactly ${sum} units split across ${rows.length} batches. Ready to dispatch.`;
+      alertBox.style.color = '#166534';
+    } else if (sum < targetQty) {
+      alertBox.innerHTML = `⚠️ Under-allocated: ${sum} / ${targetQty} allocated. Please allocate remaining ${(targetQty - sum).toFixed(2)} units.`;
+      alertBox.style.color = '#b45309';
+    } else {
+      alertBox.innerHTML = `⚠️ Over-allocated: ${sum} / ${targetQty} allocated. Total exceeds target by ${(sum - targetQty).toFixed(2)} units.`;
+      alertBox.style.color = '#b91c1c';
+    }
+  }
+}
+window.recalcDCAllocatedBatchQty = recalcDCAllocatedBatchQty;
 
 function validateDCDispatchQty(idx) {
   const input = document.getElementById(`dc-item-dispatch-qty-${idx}`);
@@ -14649,6 +16014,7 @@ function validateDCDispatchQty(idx) {
     alert(`Quantity Alert: Cannot dispatch ${val} units. Remaining undelivered quantity for this item is ${maxQty} units.`);
     input.value = maxQty;
   }
+  recalcDCAllocatedBatchQty(idx);
 }
 
 async function submitDeliveryChallanForm() {
@@ -14673,34 +16039,82 @@ async function submitDeliveryChallanForm() {
     return;
   }
 
-  // Collect dispatched items
+  // Collect dispatched items (with multi-batch split support)
   const dcItems = [];
-  _cachedDCPOItems.forEach((it, idx) => {
+  for (let idx = 0; idx < _cachedDCPOItems.length; idx++) {
+    const it = _cachedDCPOItems[idx];
     const qtyInput = document.getElementById(`dc-item-dispatch-qty-${idx}`);
     const itemName = document.getElementById(`dc-item-name-${idx}`)?.value;
     const poiId = document.getElementById(`dc-item-poi-id-${idx}`)?.value;
     const prodId = document.getElementById(`dc-item-prod-id-${idx}`)?.value;
     const unit = document.getElementById(`dc-item-unit-${idx}`)?.value;
 
-    if (qtyInput) {
-      const qty = parseFloat(qtyInput.value) || 0;
-      if (qty > 0) {
+    if (!qtyInput) continue;
+    const qty = parseFloat(qtyInput.value) || 0;
+    if (qty <= 0) continue;
+
+    // Check if multi-batch split allocation is active for this item
+    const batchRows = document.querySelectorAll(`.dc-batch-input-row-${idx}`);
+    let batchSplits = [];
+    let batchSum = 0;
+
+    if (batchRows && batchRows.length > 0) {
+      batchRows.forEach(br => {
+        const bQtyInput = br.querySelector('.dc-batch-qty-input');
+        const bNumInput = br.querySelector('.dc-batch-num-input');
+        const bExpInput = br.querySelector('.dc-batch-exp-input');
+        const bDomInput = br.querySelector('.dc-batch-dom-input');
+        const bQty = parseFloat(bQtyInput?.value || 0);
+        const bNum = bNumInput?.value?.trim() || '';
+        if (bQty > 0) {
+          batchSum += bQty;
+          batchSplits.push({
+            batch_number: bNum || 'BATCH-PRIMARY',
+            quantity: bQty,
+            expiry_date: bExpInput?.value || null,
+            manufacturing_date: bDomInput?.value || null
+          });
+        }
+      });
+    }
+
+    if (batchSplits.length > 0) {
+      if (Math.abs(batchSum - qty) > 0.001) {
+        alert(`⚠️ Batch Allocation Mismatch for "${itemName}":\nTotal dispatch quantity is ${qty}, but the sum of allocated batches is ${batchSum}.\n\nPlease ensure your batch allocations total exactly ${qty}.`);
+        return;
+      }
+      batchSplits.forEach((bs, bIdx) => {
         dcItems.push({
-          id: 'dci-' + Date.now() + '-' + idx,
+          id: 'dci-' + Date.now() + '-' + idx + '-b' + bIdx,
           purchase_order_item_id: poiId || null,
           product_service_id: prodId || null,
           item_name: itemName,
           ordered_quantity: parseFloat(it.quantity || qty),
-          quantity: qty,
+          quantity: bs.quantity,
           unit: unit || 'PCS',
           brand_name: document.getElementById(`dc-item-brand-${idx}`)?.value || null,
-          batch_number: document.getElementById(`dc-item-batch-${idx}`)?.value || null,
-          manufacturing_date: document.getElementById(`dc-item-dom-${idx}`)?.value || null,
-          expiry_date: document.getElementById(`dc-item-doe-${idx}`)?.value || null
+          batch_number: bs.batch_number,
+          manufacturing_date: bs.manufacturing_date || document.getElementById(`dc-item-dom-${idx}`)?.value || null,
+          expiry_date: bs.expiry_date || document.getElementById(`dc-item-doe-${idx}`)?.value || null
         });
-      }
+      });
+    } else {
+      // Standard single-line dispatch
+      dcItems.push({
+        id: 'dci-' + Date.now() + '-' + idx,
+        purchase_order_item_id: poiId || null,
+        product_service_id: prodId || null,
+        item_name: itemName,
+        ordered_quantity: parseFloat(it.quantity || qty),
+        quantity: qty,
+        unit: unit || 'PCS',
+        brand_name: document.getElementById(`dc-item-brand-${idx}`)?.value || null,
+        batch_number: document.getElementById(`dc-item-batch-${idx}`)?.value || null,
+        manufacturing_date: document.getElementById(`dc-item-dom-${idx}`)?.value || null,
+        expiry_date: document.getElementById(`dc-item-doe-${idx}`)?.value || null
+      });
     }
-  });
+  }
 
   if (dcItems.length === 0) {
     alert('Please dispatch at least one item quantity for this Delivery Challan.');
@@ -15837,33 +17251,659 @@ function setAdminClientFilter(tenantId) {
 window.setAdminClientFilter = setAdminClientFilter;
 
 function handleProductItemTypeChange(itemType) {
-  const card = document.getElementById('prod-medicine-batch-card');
+  const card = document.getElementById('prod-batch-lifecycle-card') || document.getElementById('prod-medicine-batch-card');
   const tag = document.getElementById('prod-medicine-tag');
   const icon = document.getElementById('prod-batch-icon');
   const title = document.getElementById('prod-batch-title');
   if (!card) return;
 
-  if (itemType === 'Medicine') {
+  card.style.background = '#f8fafc';
+  card.style.borderColor = '#cbd5e1';
+  card.style.boxShadow = 'none';
+  if (tag) tag.style.display = 'none';
+  if (icon) icon.innerText = '📦';
+  if (title) title.innerText = 'Batch, Lot & Warranty Tracking (All Inventories)';
+}
+window.handleProductItemTypeChange = handleProductItemTypeChange;
+
+function switchProductModalTab(tabName) {
+  const tabs = ['general', 'pricing', 'tracking'];
+  tabs.forEach(t => {
+    const btn = document.getElementById(`tab-btn-prod-${t}`);
+    const pane = document.getElementById(`prod-tab-content-${t}`);
+    if (t === tabName) {
+      if (btn) {
+        btn.classList.add('active');
+        btn.style.background = 'white';
+        btn.style.color = '#0f172a';
+        btn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+      }
+      if (pane) pane.style.display = 'block';
+    } else {
+      if (btn) {
+        btn.classList.remove('active');
+        btn.style.background = 'transparent';
+        btn.style.color = '#64748b';
+        btn.style.boxShadow = 'none';
+      }
+      if (pane) pane.style.display = 'none';
+    }
+  });
+}
+window.switchProductModalTab = switchProductModalTab;
+
+const DEFAULT_STANDARD_UOMS = [
+  { uom_code: 'PCS', uom_name: 'Pieces / Nos / Units', uom_type: 'Quantity' },
+  { uom_code: 'SET', uom_name: 'Complete Set', uom_type: 'Quantity' },
+  { uom_code: 'LOT', uom_name: 'Lot / Package', uom_type: 'Quantity' },
+  { uom_code: 'BOX', uom_name: 'Box Pack', uom_type: 'Packaging' },
+  { uom_code: 'PKT', uom_name: 'Packet / Sachet', uom_type: 'Packaging' },
+  { uom_code: 'CARTON', uom_name: 'Carton / Master Case', uom_type: 'Packaging' },
+  { uom_code: 'BAG', uom_name: 'Bag / Sack', uom_type: 'Packaging' },
+  { uom_code: 'CAN', uom_name: 'Can / Tin', uom_type: 'Packaging' },
+  { uom_code: 'MTR', uom_name: 'Meters (Length)', uom_type: 'Dimension' },
+  { uom_code: 'KG', uom_name: 'Kilograms (Weight)', uom_type: 'Weight' },
+  { uom_code: 'LTR', uom_name: 'Litres (Volume)', uom_type: 'Volume' },
+  { uom_code: 'TON', uom_name: 'Metric Ton (1,000 KG)', uom_type: 'Weight' },
+  { uom_code: 'ROLL', uom_name: 'Roll / Coil', uom_type: 'Dimension' },
+  { uom_code: 'DRUM', uom_name: 'Drum / Barrel', uom_type: 'Volume' },
+  { uom_code: 'VIAL', uom_name: 'Vial / Ampoule (Medical)', uom_type: 'Medical' },
+  { uom_code: 'PAIR', uom_name: 'Pair (2 Units)', uom_type: 'Quantity' },
+  { uom_code: 'SQFT', uom_name: 'Square Feet (Area)', uom_type: 'Area' }
+];
+
+const DEFAULT_STANDARD_CATEGORIES = [
+  { id: 'cat-elec', category_name: 'Electrical & Power Systems', industry_type: 'Electrical / Engineering' },
+  { id: 'cat-mech', category_name: 'Mechanical & Machinery Equipment', industry_type: 'Mechanical / Industrial' },
+  { id: 'cat-civil', category_name: 'Civil Construction & Building Materials', industry_type: 'Construction' },
+  { id: 'cat-med', category_name: 'Medical Devices & Equipment', industry_type: 'Healthcare / Medical' },
+  { id: 'cat-pharma', category_name: 'Pharmaceuticals & Formulations', industry_type: 'Healthcare / Medical' },
+  { id: 'cat-it', category_name: 'IT, Telecom & Hardware', industry_type: 'Information Technology' },
+  { id: 'cat-gen', category_name: 'General Goods & Supplies', industry_type: 'General Trading' }
+];
+
+let _cachedItemCategories = null;
+let _cachedItemUOMs = null;
+
+async function loadProductModalDropdowns() {
+  try {
+    let apiCats = [];
+    try {
+      apiCats = await API.getCategories();
+    } catch (e) {
+      console.warn('API getCategories error:', e);
+    }
+    if (Array.isArray(apiCats) && apiCats.length > 0) {
+      _cachedItemCategories = apiCats;
+    } else if (!_cachedItemCategories || _cachedItemCategories.length === 0) {
+      _cachedItemCategories = DEFAULT_STANDARD_CATEGORIES;
+    }
+
+    let apiUoms = [];
+    try {
+      apiUoms = await API.getUoms();
+    } catch (e) {
+      console.warn('API getUoms error:', e);
+    }
+
+    const mergedUoms = Array.isArray(apiUoms) ? [...apiUoms] : [];
+    DEFAULT_STANDARD_UOMS.forEach(def => {
+      if (!mergedUoms.some(u => (u.uom_code || '').toUpperCase() === def.uom_code)) {
+        mergedUoms.push(def);
+      }
+    });
+    _cachedItemUOMs = mergedUoms;
+
+    const catSelect = document.getElementById('prod-category-select');
+    if (catSelect && Array.isArray(_cachedItemCategories)) {
+      const currentVal = catSelect.value;
+      catSelect.innerHTML = `<option value="">-- Select Industry Category --</option>` +
+        _cachedItemCategories.map(c => `<option value="${c.id || c.category_name}">${c.category_name}</option>`).join('');
+      if (currentVal) catSelect.value = currentVal;
+    }
+
+    const uomSelect = document.getElementById('prod-uom-select');
+    if (uomSelect && Array.isArray(_cachedItemUOMs)) {
+      const currentVal = uomSelect.value;
+      uomSelect.innerHTML = _cachedItemUOMs.map(u => 
+        `<option value="${u.uom_code}">${u.uom_code} - ${u.uom_name} (${u.uom_type || 'General'})</option>`
+      ).join('');
+      if (currentVal) {
+        uomSelect.value = currentVal;
+      } else {
+        uomSelect.value = 'PCS';
+      }
+    }
+  } catch (err) {
+    console.warn('Error loading product dropdowns:', err);
+  }
+}
+window.loadProductModalDropdowns = loadProductModalDropdowns;
+
+function openQuickAddUomModal() {
+  const form = document.getElementById('form-add-uom');
+  if (form) form.reset();
+  const codeEl = document.getElementById('uom-code');
+  if (codeEl) codeEl.value = '';
+  const nameEl = document.getElementById('uom-name');
+  if (nameEl) nameEl.value = '';
+  const typeEl = document.getElementById('uom-type');
+  if (typeEl) typeEl.value = 'Quantity';
+  const decEl = document.getElementById('uom-allow-decimal');
+  if (decEl) decEl.checked = false;
+  openModal('modal-add-uom');
+}
+window.openQuickAddUomModal = openQuickAddUomModal;
+
+async function submitQuickAddUomForm() {
+  const code = (document.getElementById('uom-code')?.value || '').trim().toUpperCase();
+  const name = (document.getElementById('uom-name')?.value || '').trim();
+  const type = document.getElementById('uom-type')?.value || 'Quantity';
+  const allowDecimal = !!document.getElementById('uom-allow-decimal')?.checked;
+
+  if (!code || !name) {
+    showToast('Please provide both UOM Code and Description.', 'warning');
+    return;
+  }
+
+  const payload = {
+    uom_code: code,
+    uom_name: name,
+    uom_type: type,
+    allow_decimal: allowDecimal
+  };
+
+  try {
+    const res = await API.createUom(payload);
+    const newUom = (res && res.data) ? res.data : payload;
+
+    if (!_cachedItemUOMs) _cachedItemUOMs = [];
+    const existsIdx = _cachedItemUOMs.findIndex(u => (u.uom_code || '').toUpperCase() === code);
+    if (existsIdx >= 0) {
+      _cachedItemUOMs[existsIdx] = newUom;
+    } else {
+      _cachedItemUOMs.unshift(newUom);
+    }
+
+    const uomSelect = document.getElementById('prod-uom-select');
+    if (uomSelect) {
+      uomSelect.innerHTML = _cachedItemUOMs.map(u => 
+        `<option value="${u.uom_code}">${u.uom_code} - ${u.uom_name} (${u.uom_type || 'General'})</option>`
+      ).join('');
+      uomSelect.value = code;
+    }
+
+    closeModal('modal-add-uom');
+    showToast(`✨ Added Unit of Measure: ${code} (${name})`, 'success');
+  } catch (err) {
+    console.error('Error saving UOM:', err);
+    showToast(`Failed to save UOM: ${err.message}`, 'error');
+  }
+}
+window.submitQuickAddUomForm = submitQuickAddUomForm;
+
+let _categorySubCategories = [];
+
+function addCategorySubCatTag() {
+  const input = document.getElementById('cat-subcat-input');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  
+  const items = val.split(',').map(s => s.trim()).filter(Boolean);
+  items.forEach(it => {
+    if (!_categorySubCategories.includes(it)) {
+      _categorySubCategories.push(it);
+    }
+  });
+  input.value = '';
+  renderCategorySubCatTags();
+}
+window.addCategorySubCatTag = addCategorySubCatTag;
+
+function removeCategorySubCatTag(idx) {
+  _categorySubCategories.splice(idx, 1);
+  renderCategorySubCatTags();
+}
+window.removeCategorySubCatTag = removeCategorySubCatTag;
+
+function renderCategorySubCatTags() {
+  const container = document.getElementById('cat-subcats-tags-container');
+  if (!container) return;
+  if (!_categorySubCategories || _categorySubCategories.length === 0) {
+    container.innerHTML = `<span id="cat-subcats-placeholder" style="font-size:0.75rem; color:#94a3b8; font-style:italic;">Add sub-categories belonging to this category (e.g. Transformers, Cables)</span>`;
+    return;
+  }
+  container.innerHTML = _categorySubCategories.map((name, idx) => `
+    <span style="display:inline-flex; align-items:center; gap:5px; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:12px;">
+      ${name}
+      <button type="button" onclick="removeCategorySubCatTag(${idx})" style="background:none; border:none; cursor:pointer; font-weight:700; color:#ef4444; font-size:0.85rem; line-height:1; padding:0 2px;">&times;</button>
+    </span>
+  `).join('');
+}
+window.renderCategorySubCatTags = renderCategorySubCatTags;
+
+function openQuickAddCategoryModal() {
+  const form = document.getElementById('form-add-category');
+  if (form) form.reset();
+  const codeEl = document.getElementById('cat-code');
+  if (codeEl) codeEl.value = '';
+  const nameEl = document.getElementById('cat-name');
+  if (nameEl) nameEl.value = '';
+  const indEl = document.getElementById('cat-industry');
+  if (indEl) indEl.value = 'General Goods';
+  const descEl = document.getElementById('cat-description');
+  if (descEl) descEl.value = '';
+  const batchEl = document.getElementById('cat-req-batch');
+  if (batchEl) batchEl.checked = false;
+  const expEl = document.getElementById('cat-req-expiry');
+  if (expEl) expEl.checked = false;
+  
+  _categorySubCategories = [];
+  renderCategorySubCatTags();
+  
+  openModal('modal-add-category');
+}
+window.openQuickAddCategoryModal = openQuickAddCategoryModal;
+
+async function submitQuickAddCategoryForm() {
+  const name = (document.getElementById('cat-name')?.value || '').trim();
+  const code = (document.getElementById('cat-code')?.value || ('CAT-' + Date.now().toString().slice(-4))).trim().toUpperCase();
+  const industry = document.getElementById('cat-industry')?.value || 'General Goods';
+  const description = (document.getElementById('cat-description')?.value || '').trim();
+  const reqBatch = !!document.getElementById('cat-req-batch')?.checked;
+  const reqExpiry = !!document.getElementById('cat-req-expiry')?.checked;
+
+  if (!name) {
+    showToast('Category Name is required.', 'warning');
+    return;
+  }
+
+  const payload = {
+    category_code: code,
+    category_name: name,
+    industry_type: industry,
+    description: description || null,
+    requires_batch_tracking: reqBatch,
+    requires_expiry_tracking: reqExpiry
+  };
+
+  try {
+    const res = await API.createCategory(payload);
+    const newCat = (res && res.data) ? res.data : { ...payload, id: 'cat-' + Date.now() };
+
+    // Auto-create any sub-categories specified in the popup
+    if (_categorySubCategories && _categorySubCategories.length > 0 && newCat.id) {
+      for (const scName of _categorySubCategories) {
+        try {
+          await API.createSubCategory({
+            category_id: newCat.id,
+            sub_category_name: scName
+          });
+        } catch (subErr) {
+          console.warn('Error creating sub-category:', scName, subErr);
+        }
+      }
+    }
+
+    if (!_cachedItemCategories) _cachedItemCategories = [];
+    _cachedItemCategories.unshift(newCat);
+
+    const catSelect = document.getElementById('prod-category-select');
+    if (catSelect) {
+      catSelect.innerHTML = `<option value="">-- Select Industry Category --</option>` +
+        _cachedItemCategories.map(c => `<option value="${c.id}">${c.category_name}</option>`).join('');
+      catSelect.value = newCat.id;
+      await onProductCategorySelected(newCat.id);
+    }
+
+    if (reqBatch || reqExpiry) {
+      const trackSelect = document.getElementById('prod-tracking-type');
+      if (trackSelect) {
+        trackSelect.value = 'Batch_Expiry';
+        handleProductTrackingTypeChange('Batch_Expiry');
+      }
+    }
+
+    closeModal('modal-add-category');
+    showToast(`✨ Added Category: ${name}${_categorySubCategories.length > 0 ? ` with ${_categorySubCategories.length} sub-categories` : ''}`, 'success');
+  } catch (err) {
+    console.error('Error saving category:', err);
+    showToast(`Failed to save Category: ${err.message}`, 'error');
+  }
+}
+window.submitQuickAddCategoryForm = submitQuickAddCategoryForm;
+
+async function openQuickAddSubCategoryModal() {
+  const form = document.getElementById('form-add-subcategory');
+  if (form) form.reset();
+
+  const parentSelect = document.getElementById('subcat-parent-cat');
+  if (parentSelect) {
+    if (!_cachedItemCategories || _cachedItemCategories.length === 0) {
+      try {
+        _cachedItemCategories = await API.getCategories();
+      } catch (e) {}
+    }
+    const cats = Array.isArray(_cachedItemCategories) ? _cachedItemCategories : [];
+    parentSelect.innerHTML = `<option value="">-- Select Parent Category --</option>` +
+      cats.map(c => `<option value="${c.id}">${c.category_name}</option>`).join('');
+
+    const currentProdCat = document.getElementById('prod-category-select')?.value;
+    if (currentProdCat) {
+      parentSelect.value = currentProdCat;
+    }
+  }
+
+  const codeEl = document.getElementById('subcat-code');
+  if (codeEl) codeEl.value = '';
+  const nameEl = document.getElementById('subcat-name');
+  if (nameEl) nameEl.value = '';
+  const descEl = document.getElementById('subcat-description');
+  if (descEl) descEl.value = '';
+
+  openModal('modal-add-subcategory');
+}
+window.openQuickAddSubCategoryModal = openQuickAddSubCategoryModal;
+
+async function submitQuickAddSubCategoryForm() {
+  const categoryId = document.getElementById('subcat-parent-cat')?.value;
+  const name = (document.getElementById('subcat-name')?.value || '').trim();
+  const code = (document.getElementById('subcat-code')?.value || ('SUB-' + Date.now().toString().slice(-4))).trim().toUpperCase();
+  const description = (document.getElementById('subcat-description')?.value || '').trim();
+
+  if (!categoryId) {
+    showToast('Please select a Parent Category.', 'warning');
+    return;
+  }
+  if (!name) {
+    showToast('Sub-Category Name is required.', 'warning');
+    return;
+  }
+
+  const payload = {
+    category_id: categoryId,
+    sub_category_code: code,
+    sub_category_name: name,
+    description: description || null
+  };
+
+  try {
+    const res = await API.createSubCategory(payload);
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to create sub-category');
+    }
+    const newSubCat = res.data || { ...payload, id: 'subcat-' + Date.now() };
+
+    const prodCatSelect = document.getElementById('prod-category-select');
+    if (prodCatSelect) {
+      if (prodCatSelect.value !== categoryId) {
+        prodCatSelect.value = categoryId;
+      }
+      await onProductCategorySelected(categoryId, newSubCat.id);
+    }
+
+    closeModal('modal-add-subcategory');
+    showToast(`✨ Added Sub-Category: ${name}`, 'success');
+  } catch (err) {
+    console.error('Error saving sub-category:', err);
+    showToast(`Failed to save Sub-Category: ${err.message}`, 'error');
+  }
+}
+window.submitQuickAddSubCategoryForm = submitQuickAddSubCategoryForm;
+
+async function onProductCategorySelected(catId, selectedSubCatId = null) {
+  const subCatSelect = document.getElementById('prod-subcategory-select');
+  if (!subCatSelect) return;
+  if (!catId) {
+    subCatSelect.innerHTML = `<option value="">-- All Sub-Categories --</option>`;
+    return;
+  }
+  try {
+    const subCats = await API.getSubCategories(catId);
+    if (Array.isArray(subCats) && subCats.length > 0) {
+      subCatSelect.innerHTML = `<option value="">-- Select Sub-Category --</option>` +
+        subCats.map(sc => `<option value="${sc.id}">${sc.sub_category_name}</option>`).join('');
+      if (selectedSubCatId) {
+        subCatSelect.value = selectedSubCatId;
+      }
+    } else {
+      subCatSelect.innerHTML = `<option value="">-- General / No Sub-Category --</option>`;
+    }
+  } catch (e) {
+    subCatSelect.innerHTML = `<option value="">-- All Sub-Categories --</option>`;
+  }
+}
+window.onProductCategorySelected = onProductCategorySelected;
+
+function handleProductTrackingTypeChange(strategy) {
+  const card = document.getElementById('prod-batch-lifecycle-card') || document.getElementById('prod-medicine-batch-card');
+  const icon = document.getElementById('prod-batch-icon');
+  const title = document.getElementById('prod-batch-title');
+  if (!card) return;
+
+  if (strategy === 'Batch_Expiry') {
     card.style.background = '#f0fdf4';
     card.style.borderColor = '#86efac';
     card.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.15)';
-    if (tag) tag.style.display = 'inline-block';
     if (icon) icon.innerText = '💊';
-    if (title) title.innerText = 'Medicine Specifications & Lifecyle Tracking';
+    if (title) title.innerText = 'Batch & Expiry Date Mandatory Tracking (FEFO)';
+  } else if (strategy === 'Serialized') {
+    card.style.background = '#eff6ff';
+    card.style.borderColor = '#93c5fd';
+    card.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.15)';
+    if (icon) icon.innerText = '🔢';
+    if (title) title.innerText = 'Serial Number Tracking (Asset Tagging)';
   } else {
     card.style.background = '#f8fafc';
     card.style.borderColor = '#cbd5e1';
     card.style.boxShadow = 'none';
-    if (tag) tag.style.display = 'none';
     if (icon) icon.innerText = '📦';
-    if (title) title.innerText = 'Batch & Lifecyle Tracking';
+    if (title) title.innerText = 'Batch & Expiry Date Details';
   }
 }
-window.handleProductItemTypeChange = handleProductItemTypeChange;
+window.handleProductTrackingTypeChange = handleProductTrackingTypeChange;
+
+async function applyIndustryProductTemplate(key) {
+  if (!key) return;
+  await loadProductModalDropdowns();
+
+  const templates = {
+    transformer: {
+      sku: 'ELEC-TRF-132KV',
+      name: '132kV / 11.5kV Power Transformer (40 MVA ONAN/ONAF)',
+      brand: 'Siemens / PEL',
+      category: 'Electrical & Power',
+      subcategory: 'Transformers & Substations',
+      uom: 'SET',
+      tracking: 'Standard',
+      itemType: 'Product',
+      cost: '24,500,000',
+      price: '29,000,000',
+      hsCode: '8504.2200',
+      spec: '132/11.5kV Power Transformer complete with Oil-immersed cooling, OLTC, Buchholz relay, temperature sensors. Conforms to IEC 60076 standards.'
+    },
+    switchgear: {
+      sku: 'ELEC-SWG-11KV',
+      name: '11kV Vacuum Circuit Breaker Switchgear Panel',
+      brand: 'Schneider Electric / PEL',
+      category: 'Electrical & Power',
+      subcategory: 'Switchgears & Panels',
+      uom: 'SET',
+      tracking: 'Standard',
+      itemType: 'Product',
+      cost: '3,800,000',
+      price: '4,600,000',
+      hsCode: '8537.2000',
+      spec: '11kV 25kA Indoor Metal-Clad Vacuum Switchgear with motorized drawout VCB, numerical protection relays, CTs/PTs. Conforms to IEC 62271-200.'
+    },
+    cable: {
+      sku: 'ELEC-CBL-4C185',
+      name: '11kV 3-Core x 185 sq.mm Cu/XLPE/SWA/PVC Power Cable',
+      brand: 'Pakistan Cables / Pioneer',
+      category: 'Electrical & Power',
+      subcategory: 'Cables & Conductors',
+      uom: 'MTR',
+      tracking: 'Standard',
+      itemType: 'Product',
+      cost: '18,500',
+      price: '23,000',
+      hsCode: '8544.6000',
+      spec: 'XLPE insulated, galvanized steel wire armored, PVC outer sheath copper conductor cable for underground duct and direct burial. IEC 60502-2.'
+    },
+    server: {
+      sku: 'IT-SRV-2U-R750',
+      name: 'Enterprise 2U Rack Server (2x Intel Xeon Gold, 128GB RAM, 8x 2.4TB SAS)',
+      brand: 'Dell EMC / HPE',
+      category: 'IT & Telecom',
+      subcategory: 'Servers & Data Center',
+      uom: 'PCS',
+      tracking: 'Serialized',
+      itemType: 'Product',
+      cost: '2,950,000',
+      price: '3,600,000',
+      hsCode: '8471.4900',
+      spec: 'Dual Intel Xeon Gold 6330 processors, 128GB DDR4 ECC RAM, PERC H745 RAID Controller, Dual Redundant 800W Platinum Power Supplies, iDRAC9 Enterprise.'
+    },
+    laptop: {
+      sku: 'IT-LPT-LAT7420',
+      name: 'Dell Latitude 7420 Core i7 Business Laptop (16GB RAM, 512GB NVMe SSD)',
+      brand: 'Dell',
+      category: 'IT & Telecom',
+      subcategory: 'Hardware & Workstations',
+      uom: 'PCS',
+      tracking: 'Serialized',
+      itemType: 'Product',
+      cost: '385,000',
+      price: '465,000',
+      hsCode: '8471.3010',
+      spec: '14.0-inch FHD Anti-Glare display, Intel Core i7-1185G7, 16GB LPDDR4x, 512GB PCIe M.2 NVMe SSD, backlit keyboard, Windows 11 Pro.'
+    },
+    steel: {
+      sku: 'CIV-STL-G60-25M',
+      name: 'Grade-60 Deformed High-Yield Steel Rebar (25mm / #8)',
+      brand: 'Amreli Steels / Mughal Steel',
+      category: 'Civil & Construction',
+      subcategory: 'Structural Steel & Rebar',
+      uom: 'TON',
+      tracking: 'Standard',
+      itemType: 'Raw Material',
+      cost: '268,000',
+      price: '295,000',
+      hsCode: '7214.2000',
+      spec: 'Hot-rolled deformed billet steel bars conforming to ASTM A615 Grade 60 (minimum yield strength 60,000 psi / 420 MPa) in standard 12-meter lengths.'
+    },
+    valve: {
+      sku: 'CIV-VLV-GT-6IN',
+      name: 'Cast Steel Flanged Gate Valve 6-inch Class 150',
+      brand: 'Crane / KITZ / Velan',
+      category: 'Civil & Construction',
+      subcategory: 'Piping & Valves',
+      uom: 'PCS',
+      tracking: 'Standard',
+      itemType: 'Product',
+      cost: '145,000',
+      price: '185,000',
+      hsCode: '8481.8000',
+      spec: 'OS&Y, flexible wedge, ASME B16.34 / B16.10, RF flanged ends Class 150, handwheel operated, hydrostatically tested to API 598.'
+    },
+    syringe: {
+      sku: 'MED-SYR-5CC-LL',
+      name: 'Disposable Syringe 5cc with 23G Needle (Luer Lock, Sterile)',
+      brand: 'Becton Dickinson (BD) / Shifa',
+      category: 'Medical & Diagnostics',
+      subcategory: 'Consumables & Disposables',
+      uom: 'BOX',
+      tracking: 'Batch_Expiry',
+      itemType: 'Medicine',
+      cost: '1,250',
+      price: '1,600',
+      hsCode: '9018.3100',
+      spec: 'Medical-grade polypropylene non-pyrogenic sterile single-use hypodermic syringe 5ml with precision ground 23G x 1-inch needle. Box of 100 pcs. DRAP approved.'
+    },
+    cannula: {
+      sku: 'MED-CAN-20G-PK',
+      name: 'IV Cannula with Injection Port 20G (Pink) Radio-opaque',
+      brand: 'B. Braun / BD Venflon',
+      category: 'Medical & Diagnostics',
+      subcategory: 'Consumables & Disposables',
+      uom: 'BOX',
+      tracking: 'Batch_Expiry',
+      itemType: 'Medicine',
+      cost: '3,400',
+      price: '4,200',
+      hsCode: '9018.3900',
+      spec: 'Intravenous cannula with injection port and PTFE/FEP catheter, radio-opaque stripes, color-coded pink (20G, flow rate 60 ml/min). Pack of 50 pcs. DRAP approved.'
+    },
+    paper: {
+      sku: 'GEN-PPR-A4-80G',
+      name: 'A4 Multipurpose Copy Paper 80 GSM (500 Sheets per Ream)',
+      brand: 'Double A / Paper One / Packages',
+      category: 'General Goods',
+      subcategory: 'Office Supplies & Stationery',
+      uom: 'BOX',
+      tracking: 'Standard',
+      itemType: 'General Goods',
+      cost: '6,500',
+      price: '7,800',
+      hsCode: '4802.5600',
+      spec: 'High-brightness 102% A4 size copy paper (210 x 297 mm), 80 GSM, jam-free high opacity, box containing 5 reams (2,500 sheets).'
+    }
+  };
+
+  const t = templates[key];
+  if (!t) return;
+
+  const skuEl = document.getElementById('prod-sku');
+  if (skuEl) skuEl.value = t.sku;
+  const nameEl = document.getElementById('prod-name');
+  if (nameEl) nameEl.value = t.name;
+  const brandEl = document.getElementById('prod-brand-name');
+  if (brandEl) brandEl.value = t.brand;
+  const uomEl = document.getElementById('prod-uom-select');
+  if (uomEl) uomEl.value = t.uom;
+  const typeEl = document.getElementById('prod-type');
+  if (typeEl) typeEl.value = t.itemType;
+  const costEl = document.getElementById('prod-cost-pkr');
+  if (costEl) costEl.value = t.cost;
+  const sellEl = document.getElementById('prod-selling-price');
+  if (sellEl) sellEl.value = t.price;
+  const hsEl = document.getElementById('prod-hs-code');
+  if (hsEl) hsEl.value = t.hsCode;
+  const descEl = document.getElementById('prod-description');
+  if (descEl) descEl.value = t.spec;
+  const trackEl = document.getElementById('prod-tracking-type');
+  if (trackEl) trackEl.value = t.tracking;
+  handleProductTrackingTypeChange(t.tracking);
+  handleProductItemTypeChange(t.itemType);
+
+  // Match category
+  if (_cachedItemCategories) {
+    const cat = _cachedItemCategories.find(c => c.category_name.toLowerCase().includes(t.category.toLowerCase()));
+    if (cat) {
+      const catSelect = document.getElementById('prod-category-select');
+      if (catSelect) catSelect.value = cat.id;
+      const subCats = await API.getSubCategories(cat.id);
+      const subCatSelect = document.getElementById('prod-subcategory-select');
+      if (subCatSelect && Array.isArray(subCats)) {
+        subCatSelect.innerHTML = `<option value="">-- Select Sub-Category --</option>` +
+          subCats.map(sc => `<option value="${sc.id}">${sc.sub_category_name}</option>`).join('');
+        const matchedSub = subCats.find(sc => sc.sub_category_name.toLowerCase().includes(t.subcategory.toLowerCase()));
+        if (matchedSub) subCatSelect.value = matchedSub.id;
+      }
+    }
+  }
+
+  showToast(`⚡ Loaded template: ${t.name}`, 'info');
+}
+window.applyIndustryProductTemplate = applyIndustryProductTemplate;
 
 async function openNewProductModal() {
   const form = document.getElementById('form-add-product');
   if (form) form.reset();
+
+  switchProductModalTab('general');
+  await loadProductModalDropdowns();
 
   _currentProductSizes = [];
   _currentProductVariants = [];
@@ -15877,6 +17917,9 @@ async function openNewProductModal() {
       <option value="${s.id}">${s.supplier_name} (${s.country || 'Pakistan'})</option>
     `).join('');
   }
+
+  const tmplPicker = document.getElementById('prod-template-picker');
+  if (tmplPicker) tmplPicker.value = '';
 
   const editEl = document.getElementById('prod-edit-id');
   if (editEl) editEl.value = '';
@@ -15892,8 +17935,14 @@ async function openNewProductModal() {
   if (specEl) specEl.value = '';
   const typeEl = document.getElementById('prod-type');
   if (typeEl) typeEl.value = 'Product';
-  const unitEl = document.getElementById('prod-unit');
+  const unitEl = document.getElementById('prod-unit') || document.getElementById('prod-uom-select');
   if (unitEl) unitEl.value = 'PCS';
+  const catEl = document.getElementById('prod-category-select');
+  if (catEl) catEl.value = '';
+  const subCatEl = document.getElementById('prod-subcategory-select');
+  if (subCatEl) subCatEl.innerHTML = `<option value="">-- All Sub-Categories --</option>`;
+  const trackEl = document.getElementById('prod-tracking-type');
+  if (trackEl) trackEl.value = 'Standard';
   const batchEl = document.getElementById('prod-batch-no');
   if (batchEl) batchEl.value = '';
   const mfgEl = document.getElementById('prod-mfg-date');
@@ -15925,15 +17974,22 @@ async function openNewProductModal() {
   }
 
   handleProductItemTypeChange('Product');
+  handleProductTrackingTypeChange('Standard');
   checkProductSellingPriceMargin();
   openModal('modal-add-product');
 }
 
 async function openEditProductModal(id) {
+  switchProductModalTab('general');
+  await loadProductModalDropdowns();
+
   const products = await API.getProducts();
   const suppliers = await API.getSuppliers();
   const p = products.find(item => String(item.id) === String(id));
   if (!p) return;
+
+  const tmplPicker = document.getElementById('prod-template-picker');
+  if (tmplPicker) tmplPicker.value = '';
 
   const supSelect = document.getElementById('prod-supplier-select') || document.getElementById('prod-supplier');
   if (supSelect) {
@@ -15952,7 +18008,26 @@ async function openEditProductModal(id) {
   const specEl = document.getElementById('prod-spec');
   if (specEl) specEl.value = p.specifications || p.spec || '';
   document.getElementById('prod-type').value = p.item_type || 'Product';
-  document.getElementById('prod-unit').value = p.unit || 'PCS';
+
+  const catSelect = document.getElementById('prod-category-select');
+  if (catSelect && p.category_id) {
+    catSelect.value = p.category_id;
+    await onProductCategorySelected(p.category_id, p.sub_category_id);
+  }
+
+  const uomSelect = document.getElementById('prod-uom-select');
+  if (uomSelect && (p.uom_id || p.unit)) {
+    uomSelect.value = p.uom_id || p.unit;
+  }
+
+  const trackingSelect = document.getElementById('prod-tracking-type');
+  if (trackingSelect) {
+    trackingSelect.value = p.tracking_type || (p.item_type === 'Medicine' ? 'Batch_Expiry' : 'Standard');
+    handleProductTrackingTypeChange(trackingSelect.value);
+  }
+
+  const unitEl = document.getElementById('prod-unit');
+  if (unitEl) unitEl.value = p.unit || 'PCS';
   const batchEl = document.getElementById('prod-batch-no');
   if (batchEl) batchEl.value = p.batch_number || p.batch_no || '';
   const mfgEl = document.getElementById('prod-mfg-date');
@@ -16030,7 +18105,11 @@ async function submitNewProductForm() {
   const brand = document.getElementById('prod-brand-name')?.value?.trim() || null;
   const spec = document.getElementById('prod-spec')?.value?.trim() || '';
   const type = document.getElementById('prod-type')?.value || 'Product';
-  const unit = document.getElementById('prod-unit')?.value?.trim() || 'PCS';
+  const categoryId = document.getElementById('prod-category-select')?.value || null;
+  const subCategoryId = document.getElementById('prod-subcategory-select')?.value || null;
+  const uomVal = document.getElementById('prod-uom-select')?.value || document.getElementById('prod-unit')?.value?.trim() || 'PCS';
+  const trackingType = document.getElementById('prod-tracking-type')?.value || (type === 'Medicine' ? 'Batch_Expiry' : 'Standard');
+  const unit = uomVal;
   const batchNo = document.getElementById('prod-batch-no')?.value?.trim() || null;
   const mfgDate = document.getElementById('prod-mfg-date')?.value || null;
   const expDate = document.getElementById('prod-expiry-date')?.value || null;
@@ -16078,6 +18157,10 @@ async function submitNewProductForm() {
       sku: sku,
       name: name,
       brand_name: brand,
+      category_id: categoryId,
+      sub_category_id: subCategoryId,
+      uom_id: uomVal,
+      tracking_type: trackingType,
       specifications: spec,
       sizes: _currentProductSizes,
       variants: _currentProductVariants,
@@ -16306,6 +18389,16 @@ const EXPENSE_CATEGORIES_BY_TIER = {
     'Software & ERP Subscriptions',
     'Office Refreshments & Hospitality',
     'Miscellaneous General Expense'
+  ],
+  'Tier 4 - Customer Direct': [
+    'Client Relationship & Entertainment',
+    'Client Site Visit & Travel',
+    'Customer Specific Sample / Demonstration',
+    'Direct Client Rebate / Settlement',
+    'Client Dedicated Freight / Delivery',
+    'Client Tender / Prequalification Documentation',
+    'Customer Inspection / Testing Witness Fee',
+    'Other Direct Customer Expense'
   ]
 };
 
@@ -16322,14 +18415,25 @@ async function loadExpenseCategories() {
   return _cachedExpenseCategories;
 }
 
-async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', presetOppId = '', presetPoId = '', presetCategory = '') {
+function handleExpenseCustomerSelected(val) {
+  const custIdEl = document.getElementById('exp-customer-id');
+  if (custIdEl) custIdEl.value = val || '';
+}
+window.handleExpenseCustomerSelected = handleExpenseCustomerSelected;
+
+async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', presetOppId = '', presetPoId = '', presetCategory = '', presetCustomerId = '') {
   const el = document.getElementById('modal-add-expense');
   if (!el) return;
+
+  if (presetCustomerId && (!presetTier || presetTier === 'Tier 3 - General Overheads')) {
+    presetTier = 'Tier 4 - Customer Direct';
+  }
 
   const tierEl = document.getElementById('exp-tier');
   const nameEl = document.getElementById('exp-name');
   const oppIdEl = document.getElementById('exp-opportunity-id');
   const poIdEl = document.getElementById('exp-po-id');
+  const custIdEl = document.getElementById('exp-customer-id');
   const searchEl = document.getElementById('exp-linked-search');
   const amountEl = document.getElementById('exp-amount');
   const dateEl = document.getElementById('exp-date');
@@ -16343,6 +18447,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
   if (nameEl) nameEl.value = presetCategory || '';
   if (oppIdEl) oppIdEl.value = presetOppId;
   if (poIdEl) poIdEl.value = presetPoId;
+  if (custIdEl) custIdEl.value = presetCustomerId || '';
   if (searchEl) searchEl.value = '';
   if (amountEl) amountEl.value = '';
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
@@ -16383,6 +18488,24 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
     _cachedExpenseSuggestions = [];
   }
 
+  // Populate Customer list for Tier 4
+  const custSelect = document.getElementById('exp-customer-select');
+  try {
+    const customers = (_cachedExpenseCustomers && _cachedExpenseCustomers.length > 0)
+      ? _cachedExpenseCustomers
+      : await API.getCustomers();
+    _cachedExpenseCustomers = customers || [];
+    if (custSelect) {
+      custSelect.innerHTML = `<option value="">-- Select Customer / Client --</option>` +
+        customers.map(c => `
+          <option value="${c.id}" ${c.id === presetCustomerId ? 'selected' : ''}>
+            ${escapeHtml(c.business_name || c.company_name || 'Customer')} (${escapeHtml(c.city || 'Pakistan')})
+          </option>
+        `).join('');
+      if (presetCustomerId) custSelect.value = presetCustomerId;
+    }
+  } catch (e) {}
+
   // Populate Tender / Quotation dropdown
   const oppSelect = document.getElementById('exp-opportunity-select');
   if (oppSelect) {
@@ -16419,6 +18542,7 @@ function handleExpenseTierChange(tier, presetCategory = '') {
   const selectedTier = tier || document.getElementById('exp-tier')?.value || 'Tier 3 - General Overheads';
   const groupLinked = document.getElementById('group-exp-linked');
   const groupPOSelect = document.getElementById('group-exp-po-select');
+  const groupCustomerSelect = document.getElementById('group-exp-customer-select');
   const catSelect = document.getElementById('exp-category');
   const linkedLabel = document.getElementById('exp-linked-label');
   const linkedSearch = document.getElementById('exp-linked-search');
@@ -16448,15 +18572,22 @@ function handleExpenseTierChange(tier, presetCategory = '') {
   if (selectedTier === 'Tier 1 - Tender Direct') {
     if (groupLinked) groupLinked.style.display = 'block';
     if (groupPOSelect) groupPOSelect.style.display = 'none';
+    if (groupCustomerSelect) groupCustomerSelect.style.display = 'none';
     if (linkedLabel) linkedLabel.innerText = 'Link to Specific Tender / Quotation (Optional)';
     if (linkedSearch) linkedSearch.placeholder = 'Type to search tender by title or tender #...';
   } else if (selectedTier === 'Tier 2 - PO Execution') {
     if (groupLinked) groupLinked.style.display = 'none';
     if (groupPOSelect) groupPOSelect.style.display = 'block';
+    if (groupCustomerSelect) groupCustomerSelect.style.display = 'none';
+  } else if (selectedTier === 'Tier 4 - Customer Direct') {
+    if (groupLinked) groupLinked.style.display = 'none';
+    if (groupPOSelect) groupPOSelect.style.display = 'none';
+    if (groupCustomerSelect) groupCustomerSelect.style.display = 'block';
   } else {
     // Tier 3 - General Overheads
     if (groupLinked) groupLinked.style.display = 'none';
     if (groupPOSelect) groupPOSelect.style.display = 'none';
+    if (groupCustomerSelect) groupCustomerSelect.style.display = 'none';
   }
 }
 
@@ -16646,6 +18777,7 @@ async function submitGeneralExpenseForm() {
   const name = document.getElementById('exp-name')?.value?.trim();
   const oppId = document.getElementById('exp-opportunity-select')?.value || document.getElementById('exp-opportunity-id')?.value;
   const poId = document.getElementById('exp-po-id')?.value || document.getElementById('exp-po-select')?.value;
+  const custId = document.getElementById('exp-customer-select')?.value || document.getElementById('exp-customer-id')?.value;
   const cat = document.getElementById('exp-category')?.value;
   const amount = parseCurrency(document.getElementById('exp-amount')?.value);
   const date = document.getElementById('exp-date')?.value;
@@ -16661,6 +18793,12 @@ async function submitGeneralExpenseForm() {
 
   if (!date) {
     alert('Expense Date is mandatory.');
+    return;
+  }
+
+  if (tier === 'Tier 4 - Customer Direct' && !custId) {
+    alert('Please select a Customer for this Direct Customer Expense.');
+    document.getElementById('exp-customer-select')?.focus();
     return;
   }
 
@@ -16685,9 +18823,9 @@ async function submitGeneralExpenseForm() {
   const payload = {
     business_profile_id: bpId || null,
     expense_tier: tier,
-    expense_type: tier === 'Tier 1 - Tender Direct' ? 'Tender Expense' : (tier === 'Tier 2 - PO Execution' ? 'PO Logistics' : 'General Expense'),
+    expense_type: tier === 'Tier 1 - Tender Direct' ? 'Tender Expense' : (tier === 'Tier 2 - PO Execution' ? 'PO Logistics' : (tier === 'Tier 4 - Customer Direct' ? 'Customer Expense' : 'General Expense')),
     expense_name: name || cat || 'General Business Expense',
-    category: cat || 'Administrative Expenses',
+    category: cat || (tier === 'Tier 4 - Customer Direct' ? 'Other Direct Customer Expense' : 'Administrative Expenses'),
     amount: amount,
     expense_date: date,
     paid_to: paidTo || 'Vendor / Petty Cash',
@@ -16696,6 +18834,7 @@ async function submitGeneralExpenseForm() {
     opportunity_number: linkedOpp?.opportunity_number || linkedPO?.award_number || null,
     purchase_order_id: poId || null,
     po_number: linkedPO?.po_number || null,
+    customer_id: custId || null,
     tender_name: linkedOpp?.tender_name || linkedOpp?.title || null,
     remarks: remarks,
     notes: remarks
@@ -17213,12 +19352,12 @@ const ENTITY_SCHEMAS = {
     title: 'Expenditure Record',
     fetchFn: () => API.getExpenses(State.currentBusinessProfileId),
     fields: [
-      { name: 'expense_type', label: 'Expenditure Type *', type: 'select', options: ['General Expense', 'Tender Expense', 'Quotation Expense'], required: true },
+      { name: 'expense_type', label: 'Expenditure Type *', type: 'select', options: ['General Expense', 'Tender Expense', 'Quotation Expense', 'Customer Expense'], required: true },
       { name: 'expense_name', label: 'Expense Name / Purpose *', type: 'text', required: true },
       { name: 'category', label: 'Expense Category *', type: 'select', options: [
         'Samples', 'Courier & Logistics', 'Gifting', 'Other Direct Costs', 'Taxes & Duties',
         'Salaries', 'Fuel', 'Maintenance', 'Overheads', 'Utility Bills', 'Warehouse Rent',
-        'Refreshments', 'Administrative Expenses'
+        'Refreshments', 'Administrative Expenses', 'Client Relationship & Entertainment', 'Other Direct Customer Expense'
       ], required: true },
       { name: 'amount', label: 'Amount (PKR) *', type: 'number', required: true },
       { name: 'expense_date', label: 'Expense Date *', type: 'date', required: true },
@@ -17231,10 +19370,26 @@ const ENTITY_SCHEMAS = {
         options: async () => {
           const opps = await API.getOpportunities();
           return [
-            { value: '', label: '-- None (General Overhead) --' },
+            { value: '', label: '-- None (General / Direct) --' },
             ...(opps || []).map(o => ({
               value: o.id,
               label: `${o.opportunity_number || 'TND'} - ${o.tender_name || o.title || 'Tender'}`
+            }))
+          ];
+        },
+        colSpan: 2 
+      },
+      { 
+        name: 'customer_id', 
+        label: 'Linked Customer / Client (For Direct Customer Expense)', 
+        type: 'select', 
+        options: async () => {
+          const custs = await API.getCustomers();
+          return [
+            { value: '', label: '-- None (No Customer Direct Link) --' },
+            ...(custs || []).map(c => ({
+              value: c.id,
+              label: `${c.business_name || c.company_name || 'Customer'} (${c.city || 'Pakistan'})`
             }))
           ];
         },

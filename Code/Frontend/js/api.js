@@ -146,6 +146,27 @@ const API = {
     return { success: false, message: 'Invalid username/email or password.' };
   },
 
+  async register(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data && data.success && data.data) {
+        if (data.data.token && data.data.user) {
+          State.setSession(data.data.token, data.data.user);
+        }
+        return data;
+      }
+      return data || { success: false, message: 'Registration failed.' };
+    } catch (e) {
+      console.error('Registration connection error:', e.message);
+      return { success: false, message: e.message };
+    }
+  },
+
   async changePassword(newPassword, currentPassword) {
     try {
       const res = await fetch(`${API_BASE}/auth/change-password`, {
@@ -853,6 +874,81 @@ const API = {
       return json;
     } catch (e) {
       return { success: false, message: `Network error deleting product: ${e.message}` };
+    }
+  },
+
+  // 4b. Units of Measure (UOM) Master
+  async getUoms() {
+    try {
+      const res = await fetch(`${API_BASE}/masters/uoms`, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && Array.isArray(json.data)) return json.data;
+    } catch (e) {
+      console.warn('getUoms fallback:', e.message);
+    }
+    return [];
+  },
+
+  async createUom(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/masters/uoms`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  // 4c. Item Categories & Sub-Categories
+  async getCategories() {
+    try {
+      const res = await fetch(`${API_BASE}/masters/categories`, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && Array.isArray(json.data)) return json.data;
+    } catch (e) {
+      console.warn('getCategories fallback:', e.message);
+    }
+    return [];
+  },
+
+  async createCategory(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/masters/categories`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getSubCategories(categoryId = null) {
+    try {
+      const url = categoryId ? `${API_BASE}/masters/sub-categories?category_id=${encodeURIComponent(categoryId)}` : `${API_BASE}/masters/sub-categories`;
+      const res = await fetch(url, { headers: this.getHeaders() });
+      const json = await res.json();
+      if (json && Array.isArray(json.data)) return json.data;
+    } catch (e) {
+      console.warn('getSubCategories fallback:', e.message);
+    }
+    return [];
+  },
+
+  async createSubCategory(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/masters/sub-categories`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
     }
   },
 
@@ -1891,6 +1987,32 @@ const API = {
     }
   },
 
+  async getStockAdjustmentDetails(productId, warehouseId = null) {
+    try {
+      const q = new URLSearchParams({ product_id: productId });
+      if (warehouseId && warehouseId !== 'all') q.append('warehouse_id', warehouseId);
+      const res = await fetch(`${API_BASE}/inventory/stock-adjustment/item-details?${q.toString()}`, {
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to fetch item details for adjustment.' };
+    }
+  },
+
+  async submitStockAdjustment(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/stock-adjustment`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to submit stock adjustment.' };
+    }
+  },
+
   async reserveTenderStock(payload) {
     try {
       const res = await fetch(`${API_BASE}/reserve`, {
@@ -2400,7 +2522,11 @@ const API = {
         end_date: filters.endDate || '',
         scope: filters.scope || 'all',
         tier: filters.tier || 'all',
-        category: filters.category || 'all'
+        category: filters.category || 'all',
+        customer_id: filters.customerId || '',
+        tender_id: filters.tenderId || '',
+        quotation_id: filters.quotationId || '',
+        opportunity_id: filters.opportunityId || ''
       });
       const res = await fetch(`${API_BASE}/reports/expenses-ledger?${q.toString()}`, { headers: this.getHeaders() });
       const json = await res.json();
@@ -2709,6 +2835,17 @@ const API = {
   async toggleTenantStatus(tenantId, newStatus) {
     const sub = State.saveTenantSubscription(tenantId, { status: newStatus });
     return { success: true, data: sub, message: `Tenant status set to ${newStatus}.` };
+  },
+
+  async sendContactSupportMessage(payload) {
+    try {
+      return await this.request('/auth/support-request', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+      return { success: true, message: 'Message logged' };
+    }
   },
 
   async getMySubscription() {
