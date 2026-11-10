@@ -39,6 +39,25 @@ const reportsRoutes = require('./routes/reports.routes');
 const fbrRoutes = require('./routes/fbr.routes');
 const usersRoutes = require('./routes/users.routes');
 const templatesRoutes = require('./routes/templates.routes');
+const tenderRadarRoutes = require('./routes/tenderRadar.routes');
+const crmRoutes = require('./routes/crm.routes');
+const accountingRoutes = require('./routes/accounting.routes');
+const financeRoutes = require('./routes/finance.routes');
+const taxComplianceRoutes = require('./routes/taxCompliance.routes');
+const hrmRoutes = require('./routes/hrm.routes');
+const payrollRoutes = require('./routes/payroll.routes');
+const manufacturingRoutes = require('./routes/manufacturing.routes');
+const modularErpRoutes = require('./routes/modularErp.routes');
+const notificationsRoutes = require('./routes/notifications.routes');
+const notificationService = require('./services/notificationService');
+const { migrateNotifications } = require('./migrate_notifications');
+const { runModularErpMigration } = require('./migrate_modular_erp');
+const migrateInventoryModule = require('./migrate_inventory_module');
+const migrateFinanceModule = require('./migrate_finance_module');
+const migrateManufacturingModule = require('./migrate_manufacturing_module');
+const migratePayrollModule = require('./migrate_payroll_module');
+const { migrateHrmModule } = require('./migrate_hrm_module');
+const { migrateTaxComplianceModule } = require('./migrate_tax_compliance_module');
 
 const app = express();
 const PORT = process.env.PORT || 3033;
@@ -173,6 +192,21 @@ app.use('/api/expenses', expensesRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/fbr', fbrRoutes);
 app.use('/api/templates', templatesRoutes);
+app.use('/api/tender-radar', tenderRadarRoutes);
+app.use('/api/crm', crmRoutes);
+app.use('/api/erp/crm', crmRoutes);
+app.use('/api/accounting', accountingRoutes);
+app.use('/api/finance', financeRoutes);
+app.use('/api/erp/finance-suite', financeRoutes);
+app.use('/api/tax-compliance', taxComplianceRoutes);
+app.use('/api/hrm', hrmRoutes);
+app.use('/api/payroll', payrollRoutes);
+app.use('/api/erp/payroll-suite', payrollRoutes);
+app.use('/api/manufacturing', manufacturingRoutes);
+app.use('/api/erp/mfg-suite', manufacturingRoutes);
+app.use('/api/erp', modularErpRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/erp/notifications', notificationsRoutes);
 
 // 9.5 Dedicated Public Page Routes (/plans, /contact)
 app.get('/plans', (req, res) => res.sendFile(path.join(frontendDir, 'plans.html')));
@@ -472,6 +506,15 @@ app.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE tender_items ADD COLUMN IF NOT EXISTS sub_category_id UUID REFERENCES item_sub_categories(id) ON DELETE SET NULL;
     `);
     console.log('✓ Database schema verified and updated (customers, business_profiles, products_services, uom_masters, item_categories, warehouses, warehouse_stock, tenants, subscription_payments, indexes).');
+    await runModularErpMigration(false);
+    await migrateNotifications().catch(e => console.warn('Notifications auto-migration warning:', e.message));
+    await migrateInventoryModule().catch(e => console.warn('Inventory auto-migration warning:', e.message));
+    await migrateFinanceModule().catch(e => console.warn('Finance auto-migration warning:', e.message));
+    await migrateManufacturingModule().catch(e => console.warn('Manufacturing auto-migration warning:', e.message));
+    await migratePayrollModule().catch(e => console.warn('Payroll auto-migration warning:', e.message));
+    await migrateHrmModule().catch(e => console.warn('HRM auto-migration warning:', e.message));
+    await migrateTaxComplianceModule().catch(e => console.warn('TaxGuard auto-migration warning:', e.message));
+    notificationService.startBackgroundScheduler(30000);
   } catch (schemaErr) {
     console.warn('Schema auto-migration warning:', schemaErr.message);
   }

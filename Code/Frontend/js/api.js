@@ -2075,6 +2075,175 @@ const API = {
     }
   },
 
+  async getProcurementDetails(id) {
+    try {
+      const res = await fetch(`${API_BASE}/procurements/${id}`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to fetch procurement details.' };
+    }
+  },
+
+  async archiveProduct(id) {
+    try {
+      const res = await fetch(`${API_BASE}/masters/products/${id}/archive`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to archive product.' };
+    }
+  },
+
+  async restoreProduct(id) {
+    try {
+      const res = await fetch(`${API_BASE}/masters/products/${id}/restore`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to restore product.' };
+    }
+  },
+
+  async importProducts(items, warehouseId = null) {
+    try {
+      const res = await fetch(`${API_BASE}/masters/products-import`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ items, warehouse_id: warehouseId })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to import products.' };
+    }
+  },
+
+  async getPurchaseRequisitions() {
+    try {
+      const res = await fetch(`${API_BASE}/procurements/requisitions`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json?.data || [];
+    } catch (e) {
+      console.warn('Error fetching purchase requisitions:', e);
+      return [];
+    }
+  },
+
+  async createPurchaseRequisition(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/procurements/requisitions`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to create requisition.' };
+    }
+  },
+
+  async updateRequisitionStatus(id, status, notes = '') {
+    try {
+      const res = await fetch(`${API_BASE}/procurements/requisitions/${id}/status`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ status, notes })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to update requisition status.' };
+    }
+  },
+
+  async getGoodsReceiptNotes() {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/grn-notes`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json?.data || [];
+    } catch (e) {
+      console.warn('Error fetching GRN notes:', e);
+      return [];
+    }
+  },
+
+  async getGoodsReceiptNoteDetails(id) {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/grn-notes/${id}`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to fetch GRN details.' };
+    }
+  },
+
+  async createSupplierReturn(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/supplier-returns`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to record supplier return.' };
+    }
+  },
+
+  async getSupplierReturns() {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/supplier-returns`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json?.data || [];
+    } catch (e) {
+      console.warn('Error fetching supplier returns:', e);
+      return [];
+    }
+  },
+
+  async getInventoryValuationReport(warehouseId = null) {
+    try {
+      const q = warehouseId && warehouseId !== 'all' ? `?warehouse_id=${warehouseId}` : '';
+      const res = await fetch(`${API_BASE}/inventory/valuation-report${q}`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to fetch valuation report.' };
+    }
+  },
+
+  async getInventoryReorderAlerts() {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/reorder-alerts`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to fetch reorder alerts.' };
+    }
+  },
+
+  async getInventorySettings() {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/settings`, { headers: this.getHeaders() });
+      const json = await res.json();
+      return json?.data || {};
+    } catch (e) {
+      return {};
+    }
+  },
+
+  async updateInventorySettings(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/inventory/settings`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message || 'Failed to update inventory settings.' };
+    }
+  },
+
   // 12. Delivery Challans (DC) (STRICT ZERO-TRUST TENANT ISOLATION)
   async getDeliveryChallans(businessProfileId = 'all') {
     let apiData = [];
@@ -3182,5 +3351,689 @@ const API = {
     } catch (e) {
       return { success: false, message: e.message };
     }
+  },
+
+  // Template Lifecycle, Versioning & Field Registry
+  async duplicateTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}/duplicate`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async archiveTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}/archive`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async restoreTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}/restore`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getTemplateVersions(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}/versions`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('API.getTemplateVersions error:', e.message);
+      return [];
+    }
+  },
+
+  async rollbackTemplateVersion(id, version_number) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/${id}/rollback`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ version_number })
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async exportTemplate(id) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/export/${id}`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async importTemplate(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/templates/import`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getTemplateFieldRegistry() {
+    try {
+      const res = await fetch(`${API_BASE}/templates/registry/fields`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : {};
+    } catch (e) {
+      console.warn('API.getTemplateFieldRegistry error:', e.message);
+      return {};
+    }
+  },
+
+  // Master Reporting Engine API
+  async getReportCatalogue() {
+    try {
+      const res = await fetch(`${API_BASE}/reports/catalogue`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('API.getReportCatalogue error:', e.message);
+      return [];
+    }
+  },
+
+  async executeReport(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/reports/execute`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getSavedReportPresets(reportKey = '') {
+    try {
+      const q = reportKey ? `?report_key=${encodeURIComponent(reportKey)}` : '';
+      const res = await fetch(`${API_BASE}/reports/saved-presets${q}`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('API.getSavedReportPresets error:', e.message);
+      return [];
+    }
+  },
+
+  async saveReportPreset(payload) {
+    try {
+      const res = await fetch(`${API_BASE}/reports/saved-presets`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async deleteReportPreset(id) {
+    try {
+      const res = await fetch(`${API_BASE}/reports/saved-presets/${id}`, {
+        method: 'DELETE',
+        headers: this.getHeaders()
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  async getReportExecutionLogs() {
+    try {
+      const res = await fetch(`${API_BASE}/reports/execution-logs`, { headers: this.getHeaders() });
+      const data = await res.json();
+      return data.success ? data.data : [];
+    } catch (e) {
+      console.warn('API.getReportExecutionLogs error:', e.message);
+      return [];
+    }
+  },
+
+  // ============================================================================
+  // MODULAR ERP SUITE API CLIENT (MODULES 1 - 10)
+  // ============================================================================
+
+  // Module Licensing Matrix
+  async getTenantModules(tenantId = '') {
+    try {
+      const q = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+      const res = await fetch(`${API_BASE}/erp/modules${q}`, { headers: this.getHeaders() });
+      return await res.json();
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+  async updateTenantModules(tenantId, payload) {
+    try {
+      const res = await fetch(`${API_BASE}/erp/modules/${tenantId}`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  // Module 1: Tender Checklist & Competitor Intelligence
+  async getTenderDocuments(oppId) {
+    const res = await fetch(`${API_BASE}/opportunities/${oppId}/documents`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async seedPpraChecklist(oppId) {
+    const res = await fetch(`${API_BASE}/opportunities/${oppId}/documents/seed-ppra-checklist`, { method: 'POST', headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getTenderCompetitors(oppId) {
+    const res = await fetch(`${API_BASE}/opportunities/${oppId}/competitors`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // Module 2: PPRA / EPADS Tender Radar
+  async getTenderRadarFeed(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/tender-radar${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async triggerTenderRadarCrawl() {
+    const res = await fetch(`${API_BASE}/tender-radar/crawl`, { method: 'POST', headers: this.getHeaders() });
+    return await res.json();
+  },
+  async importRadarTender(id, businessProfileId) {
+    const res = await fetch(`${API_BASE}/tender-radar/${id}/import`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ business_profile_id: businessProfileId })
+    });
+    return await res.json();
+  },
+
+  // Module 3: Enterprise Inventory Transfers, Audits & Valuation
+  async getStockTransfers() {
+    const res = await fetch(`${API_BASE}/inventory/transfers`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getStockAdjustments() {
+    const res = await fetch(`${API_BASE}/inventory/adjustments`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getInventoryValuationAndAlerts() {
+    const res = await fetch(`${API_BASE}/inventory/valuation-and-alerts`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // Module 5: Complete CRM Suite (Customers, Leads, Opportunities, Activities, Cases & 360)
+  async getCrmCustomers(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/crm/customers${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getCrmCustomer(id) {
+    const res = await fetch(`${API_BASE}/crm/customers/${id}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async createCrmCustomer(payload) {
+    const res = await fetch(`${API_BASE}/crm/customers`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async updateCrmCustomer(id, payload) {
+    const res = await fetch(`${API_BASE}/crm/customers/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async archiveCrmCustomer(id) {
+    const res = await fetch(`${API_BASE}/crm/customers/${id}/archive`, {
+      method: 'POST',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async restoreCrmCustomer(id) {
+    const res = await fetch(`${API_BASE}/crm/customers/${id}/restore`, {
+      method: 'POST',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async detectCustomerDuplicates(payload) {
+    const res = await fetch(`${API_BASE}/crm/customers/detect-duplicates`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async mergeCustomers(payload) {
+    const res = await fetch(`${API_BASE}/crm/customers/merge`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async exportCrmCustomers() {
+    const res = await fetch(`${API_BASE}/crm/customers-export`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async importCrmCustomers(payload) {
+    const res = await fetch(`${API_BASE}/crm/customers-import`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async addCustomerContact(customerId, payload) {
+    const res = await fetch(`${API_BASE}/crm/customers/${customerId}/contacts`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async deleteCustomerContact(contactId) {
+    const res = await fetch(`${API_BASE}/crm/contacts/${contactId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async addCustomerNote(customerId, payload) {
+    const res = await fetch(`${API_BASE}/crm/customers/${customerId}/notes`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async getCrmLeads(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/crm/leads${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async createCrmLead(payload) {
+    const res = await fetch(`${API_BASE}/crm/leads`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async updateCrmLead(id, payload) {
+    const res = await fetch(`${API_BASE}/crm/leads/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async deleteCrmLead(id) {
+    const res = await fetch(`${API_BASE}/crm/leads/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async convertCrmLead(id, payload) {
+    const res = await fetch(`${API_BASE}/crm/leads/${id}/convert`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload || {})
+    });
+    return await res.json();
+  },
+  async getCrmOpportunities(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/crm/opportunities${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async createCrmOpportunity(payload) {
+    const res = await fetch(`${API_BASE}/crm/opportunities`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async updateCrmOpportunity(id, payload) {
+    const res = await fetch(`${API_BASE}/crm/opportunities/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async deleteCrmOpportunity(id) {
+    const res = await fetch(`${API_BASE}/crm/opportunities/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getCrmActivities(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/crm/activities${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async createCrmActivity(payload) {
+    const res = await fetch(`${API_BASE}/crm/activities`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async updateCrmActivity(id, payload) {
+    const res = await fetch(`${API_BASE}/crm/activities/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async deleteCrmActivity(id) {
+    const res = await fetch(`${API_BASE}/crm/activities/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getCrmCases(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/crm/cases${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async createCrmCase(payload) {
+    const res = await fetch(`${API_BASE}/crm/cases`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async updateCrmCase(id, payload) {
+    const res = await fetch(`${API_BASE}/crm/cases/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async addCrmCaseComment(caseId, payload) {
+    const res = await fetch(`${API_BASE}/crm/cases/${caseId}/comments`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async deleteCrmCase(id) {
+    const res = await fetch(`${API_BASE}/crm/cases/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getCustomer360(customerId) {
+    const res = await fetch(`${API_BASE}/crm/customer-360/${customerId}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // Module 6: Double-Entry Accounting & General Ledger
+  async getChartOfAccounts() {
+    const res = await fetch(`${API_BASE}/accounting/coa`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getJournalEntries() {
+    const res = await fetch(`${API_BASE}/accounting/journal-entries`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getAccountingReports() {
+    const res = await fetch(`${API_BASE}/accounting/reports`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async syncAccountingSubledgers() {
+    const res = await fetch(`${API_BASE}/accounting/sync-subledgers`, { method: 'POST', headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // Module 7 (Phase 7): Taxation & Statutory Compliance (Mashrue TaxGuard)
+  async getTaxJurisdictions() {
+    const res = await fetch(`${API_BASE}/tax-compliance/jurisdictions`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async runStatlBulkVerify() {
+    const res = await fetch(`${API_BASE}/tax-compliance/statl-bulk-verify`, { method: 'POST', headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // Module 8 (Phase 8): Core HRM
+  async getHrmEmployees() {
+    const res = await fetch(`${API_BASE}/hrm/employees`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async markAllPresentToday(attendanceDate) {
+    const res = await fetch(`${API_BASE}/hrm/attendance/mark-all-present`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ attendance_date: attendanceDate })
+    });
+    return await res.json();
+  },
+
+  // Module 9 (Phase 9): Payroll & Bank Advice
+  async getPayrollRuns() {
+    const res = await fetch(`${API_BASE}/payroll/runs`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getPayrollBankAdvice(runId) {
+    const res = await fetch(`${API_BASE}/payroll/runs/${runId}/bank-advice`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // Module 10 (Phase 10): Manufacturing BOMs, Shortage Check & Work Orders
+  async getManufacturingBoms() {
+    const res = await fetch(`${API_BASE}/manufacturing/boms`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async checkBomMaterialShortage(bomId, qty = 1) {
+    const res = await fetch(`${API_BASE}/manufacturing/boms/${bomId}/shortage-check?qty=${encodeURIComponent(qty)}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getManufacturingWorkOrders() {
+    const res = await fetch(`${API_BASE}/manufacturing/work-orders`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+
+  // ==========================================================================
+  // MODULE 2: TENDER NOTIFICATION MODULE API CLIENT
+  // ==========================================================================
+  async getNotificationInbox(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/notifications/inbox${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async getUnreadNotificationCount() {
+    const res = await fetch(`${API_BASE}/notifications/unread-count`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async markNotificationRead(id) {
+    const res = await fetch(`${API_BASE}/notifications/inbox/${id}/read`, {
+      method: 'PUT',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async markAllNotificationsRead() {
+    const res = await fetch(`${API_BASE}/notifications/inbox/read-all`, {
+      method: 'PUT',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async deleteNotification(id) {
+    const res = await fetch(`${API_BASE}/notifications/inbox/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getNotificationRules(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/notifications/rules${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async createNotificationRule(payload) {
+    const res = await fetch(`${API_BASE}/notifications/rules`, {
+      method: 'POST',
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async updateNotificationRule(id, payload) {
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
+      method: 'PUT',
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async duplicateNotificationRule(id) {
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}/duplicate`, {
+      method: 'POST',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async archiveNotificationRule(id) {
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}/archive`, {
+      method: 'PUT',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async restoreNotificationRule(id) {
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}/restore`, {
+      method: 'PUT',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async deleteNotificationRule(id) {
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getNotificationJobs(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/notifications/jobs${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async cancelNotificationJob(id) {
+    const res = await fetch(`${API_BASE}/notifications/jobs/${id}/cancel`, {
+      method: 'POST',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async processNotificationJobsNow() {
+    const res = await fetch(`${API_BASE}/notifications/jobs/process-now`, {
+      method: 'POST',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getNotificationLogs(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/notifications/logs${qs ? '?' + qs : ''}`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async retryNotificationLog(id) {
+    const res = await fetch(`${API_BASE}/notifications/logs/${id}/retry`, {
+      method: 'POST',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async getNotificationProviders() {
+    const res = await fetch(`${API_BASE}/notifications/providers`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async saveNotificationProvider(payload) {
+    const res = await fetch(`${API_BASE}/notifications/providers`, {
+      method: 'POST',
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async deleteNotificationProvider(id) {
+    const res = await fetch(`${API_BASE}/notifications/providers/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return await res.json();
+  },
+  async testSendNotification(payload) {
+    const res = await fetch(`${API_BASE}/notifications/test-send`, {
+      method: 'POST',
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  },
+  async getNotificationPreferences() {
+    const res = await fetch(`${API_BASE}/notifications/preferences`, { headers: this.getHeaders() });
+    return await res.json();
+  },
+  async updateNotificationPreferences(payload) {
+    const res = await fetch(`${API_BASE}/notifications/preferences`, {
+      method: 'PUT',
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
   }
 };

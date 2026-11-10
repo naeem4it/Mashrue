@@ -6,7 +6,7 @@ try {
   localStorage.removeItem('mashrue_token');
   localStorage.removeItem('mashrue_user');
   document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-} catch (e) {}
+} catch (e) { }
 
 // Auto-redirect to login on refresh: clear session on beforeunload
 try {
@@ -15,9 +15,9 @@ try {
       sessionStorage.removeItem('mashrue_token');
       sessionStorage.removeItem('mashrue_user');
       document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    } catch (e) {}
+    } catch (e) { }
   });
-} catch (e) {}
+} catch (e) { }
 
 const State = {
   currentBusinessProfileId: 'all', // 'all' or specific profile UUID
@@ -47,7 +47,7 @@ const State = {
     try {
       localStorage.removeItem('mashrue_token');
       localStorage.removeItem('mashrue_user');
-    } catch (e) {}
+    } catch (e) { }
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user } }));
   },
 
@@ -61,7 +61,7 @@ const State = {
       localStorage.removeItem('mashrue_token');
       localStorage.removeItem('mashrue_user');
       document.cookie = "mashrue_session_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    } catch (e) {}
+    } catch (e) { }
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user: null } }));
   },
 
@@ -72,7 +72,7 @@ const State = {
   isSuperAdmin() {
     if (!this.currentUser) return false;
     return (
-      this.currentUser.role === 'SuperAdmin' || 
+      this.currentUser.role === 'SuperAdmin' ||
       this.currentUser.role === 'LimitedSuperAdmin'
     );
   },
@@ -130,13 +130,28 @@ const State = {
     return this.currentUser.role === 'ReadOnly' || this.currentUser.is_read_only === true;
   },
 
-  hasPermission(module, action = 'view') {
+  hasPermission(moduleName, action = 'view') {
     if (!this.currentUser) return false;
     if (this.isSuperAdmin() || this.isClientAdmin()) return true;
-    const cleanMod = String(module).toLowerCase().replace(/-/g, '_');
+
+    // Read-only user cannot add, edit, or delete anything
+    if (this.isReadOnly() && (action === 'add' || action === 'edit' || action === 'delete')) {
+      return false;
+    }
+
     const perms = this.currentUser.permissions || {};
-    const modPerms = perms[cleanMod] || perms[module] || perms[module.replace(/_/g, '-')] || {};
-    return Boolean(modPerms[action]);
+    const rawKey = String(moduleName || '').trim();
+    const underscoreKey = rawKey.toLowerCase().replace(/-/g, '_');
+    const hyphenKey = rawKey.toLowerCase().replace(/_/g, '-');
+    const modulePerms = perms[rawKey] || perms[underscoreKey] || perms[hyphenKey] || {};
+
+    if (modulePerms[action] !== undefined) {
+      return Boolean(modulePerms[action]);
+    }
+
+    // Default: view is allowed unless explicitly false, add/edit allowed unless ReadOnly
+    if (action === 'view') return true;
+    return !this.isReadOnly();
   },
 
   canSeeBiddingPrices() {
@@ -149,27 +164,6 @@ const State = {
       return this.currentUser.canSeeBiddingPrices === true || this.currentUser.canSeeBiddingPrices === 'true';
     }
     return true;
-  },
-
-  hasPermission(moduleName, action = 'view') {
-    if (!this.currentUser) return false;
-    if (this.isSuperAdmin() || this.isClientAdmin()) return true;
-
-    // Read-only user cannot add, edit, or delete anything
-    if (this.isReadOnly() && (action === 'add' || action === 'edit' || action === 'delete')) {
-      return false;
-    }
-
-    const perms = this.currentUser.permissions || {};
-    const modulePerms = perms[moduleName] || {};
-
-    if (modulePerms[action] !== undefined) {
-      return Boolean(modulePerms[action]);
-    }
-
-    // Default: view is allowed unless explicitly false, add/edit allowed unless ReadOnly
-    if (action === 'view') return true;
-    return !this.isReadOnly();
   },
 
   setBusinessProfile(id) {
@@ -325,9 +319,9 @@ const State = {
   saveStoredUser(user) {
     if (!user) return;
     const list = this.getStoredUsers();
-    const existingIdx = list.findIndex(u => 
-      (u.id && user.id && u.id === user.id) || 
-      (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()) || 
+    const existingIdx = list.findIndex(u =>
+      (u.id && user.id && u.id === user.id) ||
+      (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()) ||
       (u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase())
     );
     if (existingIdx >= 0) {
@@ -432,20 +426,22 @@ const State = {
   },
 
   MODULE_CATALOG: [
-    { key: 'mod_tenders', name: 'Commercial Tenders & Bidding Hub', benchmarkFee: 3000, icon: '📑', desc: 'PPRA, DGP, RFQ, LPQ bidding pipeline & tender details' },
-    { key: 'mod_quotations', name: 'Direct Sales & Quotations', benchmarkFee: 2000, icon: '💼', desc: 'Quotation builder, direct client pricing, master records' },
-    { key: 'mod_bid_security', name: 'Bid Securities & CDR Registry', benchmarkFee: 2500, icon: '🏦', desc: 'CDRs, POs, Bank Guarantees, expiry alerts, release gate' },
-    { key: 'mod_costing_eval', name: 'Costing Sheets & Margin Control', benchmarkFee: 2500, icon: '🧮', desc: 'Direct costs, landed charges, margin calculator, approval flow' },
-    { key: 'mod_supply_dc', name: 'Supply Chain, POs & Delivery Challans', benchmarkFee: 2500, icon: '🚚', desc: 'PO registry, 3PL Delivery Challans, tracking numbers' },
-    { key: 'mod_inventory', name: 'Multi-Warehouse Inventory & SKUs', benchmarkFee: 2500, icon: '📦', desc: 'Stock movement logs, SKU item catalog, reorder levels' },
-    { key: 'mod_fbr_invoicing', name: 'Invoicing & FBR Digital Integration', benchmarkFee: 3000, icon: '🧾', desc: 'Sales Invoices, FBR PRAL Digital Invoicing, QR code stamping' },
-    { key: 'mod_finance_kpi', name: 'Payments, Expenses & Financial KPIs', benchmarkFee: 2000, icon: '📊', desc: 'Cheque vouchers, 13-category expenses, profit analytics' }
+    { key: 'mod_tenders', name: '1. Commercial Tenders & Bidding Suite', benchmarkFee: 3000, icon: '📑', desc: 'Tenders, Quotations, Bid Securities (CDRs), Costing & Approvals, Awards, Client POs & Challans (DC), FBR Invoicing, Payments, Expenses & Executive Reports' },
+    { key: 'mod_notifications', name: '2. PPRA & EPADS Tender Radar', benchmarkFee: 2500, icon: '📡', desc: 'Live public tender scraper, keyword rules & 1-click bid import' },
+    { key: 'mod_inventory', name: '3. Multi-Warehouse Inventory & Transfers', benchmarkFee: 2500, icon: '📦', desc: 'Stock ledger, inter-warehouse transfers, count audits & SKUs' },
+    { key: 'mod_templates', name: '4. Universal Print & Template Studio', benchmarkFee: 1500, icon: '🖨️', desc: 'Letterhead branding, custom columns, scheduled PDF/Excel digests' },
+    { key: 'mod_crm', name: '5. Sales CRM & Lead Pipeline', benchmarkFee: 2500, icon: '🤝', desc: 'Lead intake Kanban, deal stages, call logs & customer conversion' },
+    { key: 'mod_finance', name: '6. Financial Accounting & General Ledger', benchmarkFee: 3500, icon: '📒', desc: 'Chart of Accounts (COA), Double-Entry Journal Vouchers & Trial Balance' },
+    { key: 'mod_tax_compliance', name: '7. TaxGuard (FBR, PRA, WHT & Annex-C)', benchmarkFee: 3000, icon: '🇵🇰', desc: 'Multi-province tax rates, Section 153 CPR tracker & Iris Annex-C export' },
+    { key: 'mod_hrm', name: '8. Core HRM & Attendance', benchmarkFee: 2000, icon: '👥', desc: 'Employee master profiles, departments, daily attendance & leave desk' },
+    { key: 'mod_payroll', name: '9. Payroll, Section 149 Tax & EOBI', benchmarkFee: 2500, icon: '💵', desc: 'Salary structures, FBR Section 149 slabs, EOBI & branded payslips' },
+    { key: 'mod_manufacturing', name: '10. Manufacturing ERP (BOM & Work Orders)', benchmarkFee: 4500, icon: '🏭', desc: 'Multi-level Bill of Materials (BOM), Production Work Orders & COGM' }
   ],
 
   getTenantSubscription(tenantId, tenantObj = null) {
     const tid = tenantId || this.currentUser?.tenant?.id || this.currentUser?.tenant_id || 't1';
-    const curTenant = (this.currentUser?.tenant && (this.currentUser.tenant.id === tid || !tenantId)) 
-      ? this.currentUser.tenant 
+    const curTenant = (this.currentUser?.tenant && (this.currentUser.tenant.id === tid || !tenantId))
+      ? this.currentUser.tenant
       : null;
     const tData = tenantObj || (this.getTenants ? this.getTenants().find(t => t.id === tid) : null) || curTenant;
 
@@ -481,21 +477,28 @@ const State = {
         : (planType === 'Advance' || planType === 'Enterprise' ? 'unlimited' : 10));
 
     const isUnlimitedTenders = (
-      dynamicTenderLimit === 'unlimited' || 
-      dynamicTenderLimit === -1 || 
+      dynamicTenderLimit === 'unlimited' ||
+      dynamicTenderLimit === -1 ||
       dynamicTenderLimit === 'Unlimited' ||
       (dynamicTenderLimit === null && (planType === 'Advance' || planType === 'Enterprise'))
     );
     const isUnlimitedCdrs = (
-      dynamicBidSecurityLimit === 'unlimited' || 
-      dynamicBidSecurityLimit === -1 || 
+      dynamicBidSecurityLimit === 'unlimited' ||
+      dynamicBidSecurityLimit === -1 ||
       dynamicBidSecurityLimit === 'Unlimited' ||
       (dynamicBidSecurityLimit === null && (planType === 'Advance' || planType === 'Enterprise'))
     );
 
-    const dynamicModules = Array.isArray(tData?.activeModules || tData?.active_modules)
-      ? (tData.activeModules || tData.active_modules)
-      : ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'];
+    const allEnterpriseModuleKeys = [
+      'mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval',
+      'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi',
+      'mod_templates', 'mod_notifications', 'mod_crm', 'mod_finance',
+      'mod_tax_compliance', 'mod_hrm', 'mod_payroll', 'mod_manufacturing'
+    ];
+    const rawMods = tData?.activeModules || tData?.active_modules;
+    const dynamicModules = (planType === 'Custom' && Array.isArray(rawMods) && rawMods.length > 0)
+      ? rawMods
+      : allEnterpriseModuleKeys;
 
     const dynamicBillingCycle = tData?.billingCycle || tData?.billing_cycle || 'monthly';
     const dynamicBasePrice = Number(tData?.customBasePrice || tData?.custom_base_price || (planType === 'Starter' ? 14000 : 35000));
@@ -639,7 +642,7 @@ const State = {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') return parsed;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const opps = this.getTenantEntityList ? this.getTenantEntityList('opportunities') : [];
     const oppCount = Array.isArray(opps) ? opps.filter(o => o && o.tenant_id === tid).length : 0;
@@ -655,7 +658,7 @@ const State = {
     };
     try {
       localStorage.setItem(`mashrue_quota_${tid}`, JSON.stringify(initial));
-    } catch (e) {}
+    } catch (e) { }
     return initial;
   },
 
@@ -747,14 +750,39 @@ const State = {
   isModuleActiveForTenant(moduleKey, tenantId) {
     if (this.isSuperAdmin()) return true;
     const sub = this.getTenantSubscription(tenantId);
-    if (Array.isArray(sub.active_modules) && sub.active_modules.length > 0) {
-      return sub.active_modules.includes(moduleKey);
-    }
     if (sub.is_trial || sub.plan_type === 'Advance' || sub.plan_type === 'Enterprise') return true;
+
+    const ALIAS_MAP = {
+      mod_tender_radar: 'mod_notifications',
+      mod_notifications: 'mod_tender_radar',
+      mod_accounting: 'mod_finance',
+      mod_finance: 'mod_accounting',
+      mod_stock_transfers: 'mod_inventory',
+      mod_quotations: 'mod_tenders',
+      mod_bid_security: 'mod_tenders',
+      mod_costing_eval: 'mod_tenders',
+      mod_supply_dc: 'mod_tenders',
+      mod_fbr_invoicing: 'mod_tenders',
+      mod_finance_kpi: 'mod_tenders'
+    };
+    const altKey = ALIAS_MAP[moduleKey];
+
+    if (sub.plan_type === 'Custom' && Array.isArray(sub.active_modules) && sub.active_modules.length > 0) {
+      return sub.active_modules.includes(moduleKey) || (altKey && sub.active_modules.includes(altKey));
+    }
     if (sub.plan_type === 'Starter' || sub.plan_type === 'Basic') {
-      return ['mod_tenders', 'mod_quotations', 'mod_fbr_invoicing'].includes(moduleKey);
+      return ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_fbr_invoicing', 'mod_finance_kpi', 'mod_notifications', 'mod_tender_radar'].includes(moduleKey);
     }
     return true;
+  },
+
+  canUserAccessModule(moduleKey, permModule) {
+    if (!this.isLoggedIn()) return false;
+    if (this.isSuperAdmin()) return true;
+    if (!this.isModuleActiveForTenant(moduleKey)) return false;
+    if (this.isClientAdmin()) return true;
+    if (!permModule) return true;
+    return this.hasPermission(permModule, 'view');
   },
 
   isTenantSuspended(tenantId) {

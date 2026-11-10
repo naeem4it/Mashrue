@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
+const { autoPostExpenseToGL } = require('../utils/glPoster');
 
 function parseSafeDate(d) {
   if (!d) return null;
@@ -492,6 +493,9 @@ router.post('/', authenticate, requirePermission('expenses', 'add'), async (req,
        WHERE ge.id = $1`,
       [result.rows[0].id]
     );
+
+    // Phase 6: Real-time Double-Entry General Ledger Auto-Posting
+    await autoPostExpenseToGL(result.rows[0], req.user?.id || null);
 
     res.status(201).json({
       success: true,

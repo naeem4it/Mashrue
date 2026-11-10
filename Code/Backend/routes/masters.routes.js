@@ -80,7 +80,7 @@ router.post('/customers', authenticate, requirePermission('customers', 'add'), a
     workflow_gates,
     tenant_id
   } = req.body;
-  
+
   if (!business_name || !business_name.trim()) {
     return res.status(400).json({
       success: false,
@@ -226,7 +226,7 @@ router.get('/suppliers', authenticate, requirePermission('suppliers', 'view'), a
 
 router.post('/suppliers', authenticate, requirePermission('suppliers', 'add'), async (req, res) => {
   const { supplier_name, origin, country, city, address, ntn, strn, contact_person, email, phone, rating, payment_terms, tenant_id } = req.body;
-  
+
   if (!supplier_name) {
     return res.status(400).json({ success: false, message: 'Supplier Name is mandatory' });
   }
@@ -249,7 +249,7 @@ router.post('/suppliers', authenticate, requirePermission('suppliers', 'add'), a
         if (tenantRes.rows.length > 0) {
           resolvedTenantId = tenantRes.rows[0].id;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!resolvedTenantId) {
       resolvedTenantId = 'a0000000-0000-0000-0000-000000000001';
@@ -316,7 +316,7 @@ function parseSafeDate(d) {
 
 router.get('/products', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
   try {
-    const { category_id, sub_category_id, industry_type } = req.query;
+    const { category_id, sub_category_id, industry_type, search, is_archived, stock_status, limit, offset } = req.query;
     let queryText = `
       SELECT p.*, s.supplier_name, s.origin as supplier_origin,
              COALESCE(t.company_name, 'Default Org') as tenant_name,
@@ -353,6 +353,12 @@ router.get('/products', authenticate, requirePermission('inventory', 'view'), as
       return res.json({ success: true, data: [] });
     }
 
+    if (is_archived === 'true') {
+      queryText += ` AND p.is_archived = TRUE`;
+    } else if (is_archived !== 'all') {
+      queryText += ` AND (p.is_archived IS NULL OR p.is_archived = FALSE)`;
+    }
+
     if (category_id && isUuid(category_id)) {
       params.push(category_id);
       queryText += ` AND p.category_id::text = $${params.length}`;
@@ -368,7 +374,28 @@ router.get('/products', authenticate, requirePermission('inventory', 'view'), as
       queryText += ` AND c.industry_type = $${params.length}`;
     }
 
+    if (search && search.trim()) {
+      params.push(`%${search.trim().toLowerCase()}%`);
+      queryText += ` AND (LOWER(p.name) LIKE $${params.length} OR LOWER(p.sku) LIKE $${params.length} OR LOWER(COALESCE(p.barcode, '')) LIKE $${params.length} OR LOWER(COALESCE(p.supplier_product_code, '')) LIKE $${params.length})`;
+    }
+
+    if (stock_status === 'low') {
+      queryText += ` AND p.current_stock <= COALESCE(p.reorder_level, 5)`;
+    } else if (stock_status === 'out') {
+      queryText += ` AND p.current_stock <= 0`;
+    }
+
     queryText += ` ORDER BY p.name ASC`;
+
+    if (limit && parseInt(limit, 10) > 0) {
+      params.push(parseInt(limit, 10));
+      queryText += ` LIMIT $${params.length}`;
+      if (offset && parseInt(offset, 10) >= 0) {
+        params.push(parseInt(offset, 10));
+        queryText += ` OFFSET $${params.length}`;
+      }
+    }
+
     let result;
     try {
       result = await db.query(queryText, params);
@@ -377,10 +404,11 @@ router.get('/products', authenticate, requirePermission('inventory', 'view'), as
         `SELECT p.*, s.supplier_name, s.origin as supplier_origin
          FROM products_services p
          LEFT JOIN suppliers s ON p.default_supplier_id = s.id
+         WHERE (p.is_archived IS NULL OR p.is_archived = FALSE)
          ORDER BY p.name ASC`
       );
     }
-    res.json({ success: true, data: result.rows });
+    res.json({ success: true, data: result.rows, total: result.rows.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -388,7 +416,7 @@ router.get('/products', authenticate, requirePermission('inventory', 'view'), as
 
 router.post('/products', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
   const { item_type, sku, name, specifications, description, unit, cost_price, selling_price, tax_category, current_stock, reorder_level, default_supplier_id, tenant_id, sizes, variants } = req.body;
-  
+
   if (!name) {
     return res.status(400).json({ success: false, message: 'Product/Item name is mandatory' });
   }
@@ -411,7 +439,7 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
         if (tenantRes.rows.length > 0) {
           resolvedTenantId = tenantRes.rows[0].id;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!resolvedTenantId) {
       resolvedTenantId = 'a0000000-0000-0000-0000-000000000001';
@@ -441,11 +469,11 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       prodCols = new Set(['tenant_id', 'sku', 'name', 'unit', 'cost_price', 'selling_price', 'current_stock']);
     }
 
-    const parsedSizes = Array.isArray(sizes) 
-      ? JSON.stringify(sizes) 
+    const parsedSizes = Array.isArray(sizes)
+      ? JSON.stringify(sizes)
       : (typeof sizes === 'string' && sizes.trim().startsWith('[') ? sizes : JSON.stringify(sizes ? [sizes] : []));
-    const parsedVariants = Array.isArray(variants) 
-      ? JSON.stringify(variants) 
+    const parsedVariants = Array.isArray(variants)
+      ? JSON.stringify(variants)
       : (typeof variants === 'string' && variants.trim().startsWith('[') ? variants : JSON.stringify(variants ? [variants] : []));
 
     let resolvedUomId = null;
@@ -474,6 +502,16 @@ router.post('/products', authenticate, requirePermission('inventory', 'add'), as
       tax_category: tax_category || 'Standard 18%',
       current_stock: parseFloat(current_stock || 0),
       reorder_level: parseFloat(reorder_level || 5),
+      min_stock_level: req.body.min_stock_level !== undefined ? parseFloat(req.body.min_stock_level) : 0,
+      max_stock_level: req.body.max_stock_level !== undefined ? parseFloat(req.body.max_stock_level) : 1000,
+      valuation_method: req.body.valuation_method || 'WEIGHTED_AVG',
+      purchase_description: req.body.purchase_description || null,
+      sales_description: req.body.sales_description || null,
+      supplier_product_code: req.body.supplier_product_code ? req.body.supplier_product_code.trim() : null,
+      allow_negative_stock: req.body.allow_negative_stock === true,
+      barcode: req.body.barcode ? req.body.barcode.trim() : null,
+      status: req.body.status || 'Active',
+      is_archived: req.body.is_archived === true,
       default_supplier_id: isUuid(default_supplier_id) ? default_supplier_id : null,
       category_id: isUuid(req.body.category_id) ? req.body.category_id : null,
       sub_category_id: isUuid(req.body.sub_category_id) ? req.body.sub_category_id : null,
@@ -622,6 +660,16 @@ router.put('/products/:id', authenticate, requirePermission('inventory', 'edit')
       tax_category: tax_category || null,
       current_stock: current_stock !== undefined ? parseFloat(current_stock) : null,
       reorder_level: reorder_level !== undefined ? parseFloat(reorder_level) : null,
+      min_stock_level: req.body.min_stock_level !== undefined ? parseFloat(req.body.min_stock_level) : null,
+      max_stock_level: req.body.max_stock_level !== undefined ? parseFloat(req.body.max_stock_level) : null,
+      valuation_method: req.body.valuation_method !== undefined ? req.body.valuation_method : null,
+      purchase_description: req.body.purchase_description !== undefined ? req.body.purchase_description : null,
+      sales_description: req.body.sales_description !== undefined ? req.body.sales_description : null,
+      supplier_product_code: req.body.supplier_product_code !== undefined ? req.body.supplier_product_code : null,
+      allow_negative_stock: req.body.allow_negative_stock !== undefined ? (req.body.allow_negative_stock === true) : null,
+      barcode: req.body.barcode !== undefined ? (req.body.barcode ? req.body.barcode.trim() : null) : null,
+      status: req.body.status !== undefined ? req.body.status : null,
+      is_archived: req.body.is_archived !== undefined ? (req.body.is_archived === true) : null,
       default_supplier_id: default_supplier_id || null,
       category_id: req.body.category_id !== undefined ? (isUuid(req.body.category_id) ? req.body.category_id : null) : null,
       sub_category_id: req.body.sub_category_id !== undefined ? (isUuid(req.body.sub_category_id) ? req.body.sub_category_id : null) : null,
@@ -684,6 +732,279 @@ router.delete('/products/:id', authenticate, requirePermission('inventory', 'del
     res.json({ success: true, message: 'Item deleted from catalog successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET single product with warehouse stock breakdown & supplier
+router.get('/products/:id', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const tid = resolveTenantId(req);
+    const prodRes = await db.query(
+      `SELECT p.*, s.supplier_name, s.contact_person, s.phone as supplier_phone, s.email as supplier_email,
+              c.category_name, c.category_code, sc.sub_category_name,
+              uom.uom_code, uom.uom_name
+       FROM products_services p
+       LEFT JOIN suppliers s ON p.default_supplier_id = s.id
+       LEFT JOIN item_categories c ON p.category_id = c.id
+       LEFT JOIN item_sub_categories sc ON p.sub_category_id = sc.id
+       LEFT JOIN uom_masters uom ON p.uom_id = uom.id
+       WHERE p.id::text = $1 AND (p.tenant_id::text = $2 OR $3 = 'SuperAdmin')`,
+      [String(id), String(tid), req.user.role]
+    );
+
+    if (prodRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found.' });
+    }
+    const product = prodRes.rows[0];
+
+    // Fetch warehouse stock lots
+    const stockRes = await db.query(
+      `SELECT ws.*, w.warehouse_name, w.location as warehouse_location, w.city as warehouse_city
+       FROM warehouse_stock ws
+       JOIN warehouses w ON ws.warehouse_id = w.id
+       WHERE ws.product_id::text = $1
+       ORDER BY w.warehouse_name ASC, ws.batch_number ASC`,
+      [String(id)]
+    );
+
+    // Fetch recent 10 transactions
+    const txRes = await db.query(
+      `SELECT it.*, w.warehouse_name, s.supplier_name
+       FROM inventory_transactions it
+       LEFT JOIN warehouses w ON it.warehouse_id = w.id
+       LEFT JOIN suppliers s ON it.supplier_id = s.id
+       WHERE it.product_id::text = $1
+       ORDER BY it.created_at DESC
+       LIMIT 10`,
+      [String(id)]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...product,
+        warehouse_stock: stockRes.rows,
+        recent_transactions: txRes.rows
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Archive product
+router.post('/products/:id/archive', authenticate, requirePermission('inventory', 'delete'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `UPDATE products_services
+       SET is_archived = TRUE, status = 'Archived', updated_at = CURRENT_TIMESTAMP
+       WHERE id::text = $1 AND (tenant_id::text = $2 OR $3 = 'SuperAdmin')
+       RETURNING *`,
+      [String(id), String(tid), req.user.role]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found or unauthorized.' });
+    }
+    res.json({ success: true, message: `Product "${result.rows[0].name}" archived successfully.`, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Restore archived product
+router.post('/products/:id/restore', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `UPDATE products_services
+       SET is_archived = FALSE, status = 'Active', updated_at = CURRENT_TIMESTAMP
+       WHERE id::text = $1 AND (tenant_id::text = $2 OR $3 = 'SuperAdmin')
+       RETURNING *`,
+      [String(id), String(tid), req.user.role]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found or unauthorized.' });
+    }
+    res.json({ success: true, message: `Product "${result.rows[0].name}" restored successfully.`, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Export products catalog (CSV or JSON)
+router.get('/products-export', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const { format } = req.query;
+
+    const result = await db.query(
+      `SELECT p.sku, p.name, p.item_type, p.unit, p.cost_price, p.selling_price,
+              p.current_stock, p.reorder_level, p.min_stock_level, p.max_stock_level,
+              p.barcode, p.brand_name, p.tax_category, p.valuation_method,
+              p.supplier_product_code, p.status,
+              c.category_name, sc.sub_category_name, s.supplier_name
+       FROM products_services p
+       LEFT JOIN item_categories c ON p.category_id = c.id
+       LEFT JOIN item_sub_categories sc ON p.sub_category_id = sc.id
+       LEFT JOIN suppliers s ON p.default_supplier_id = s.id
+       WHERE (p.tenant_id::text = $1 OR $2 = 'SuperAdmin')
+         AND (p.is_archived IS NULL OR p.is_archived = FALSE)
+       ORDER BY p.name ASC`,
+      [String(tid), req.user.role]
+    );
+
+    if (format === 'json') {
+      return res.json({ success: true, count: result.rows.length, data: result.rows });
+    }
+
+    // Generate CSV string
+    const headers = [
+      'SKU', 'Product Name', 'Item Type', 'Category', 'Unit', 'Cost Price',
+      'Selling Price', 'Current Stock', 'Reorder Level', 'Min Stock', 'Max Stock',
+      'Barcode', 'Brand', 'Tax Category', 'Supplier', 'Supplier Product Code', 'Status'
+    ];
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const csvLines = [headers.join(',')];
+    result.rows.forEach(r => {
+      csvLines.push([
+        escapeCsv(r.sku),
+        escapeCsv(r.name),
+        escapeCsv(r.item_type),
+        escapeCsv(r.category_name),
+        escapeCsv(r.unit),
+        r.cost_price || 0,
+        r.selling_price || 0,
+        r.current_stock || 0,
+        r.reorder_level || 5,
+        r.min_stock_level || 0,
+        r.max_stock_level || 1000,
+        escapeCsv(r.barcode),
+        escapeCsv(r.brand_name),
+        escapeCsv(r.tax_category),
+        escapeCsv(r.supplier_name),
+        escapeCsv(r.supplier_product_code),
+        escapeCsv(r.status)
+      ].join(','));
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="mashrue_products_catalog_${Date.now()}.csv"`);
+    res.send(csvLines.join('\n'));
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Import products in bulk with validation & duplicate detection
+router.post('/products-import', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const { items, warehouse_id } = req.body;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'Please provide an array of items to import.' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const tid = resolveTenantId(req);
+
+    // Resolve default warehouse
+    let targetWhId = isUuid(warehouse_id) ? warehouse_id : null;
+    if (!targetWhId) {
+      const whRes = await client.query(`SELECT id FROM warehouses WHERE tenant_id::text = $1 ORDER BY created_at ASC LIMIT 1`, [String(tid)]);
+      targetWhId = whRes.rows[0]?.id || null;
+    }
+
+    const imported = [];
+    const skipped = [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const itm = items[idx];
+      const name = (itm.name || itm['Product Name'] || '').trim();
+      if (!name) {
+        skipped.push({ row: idx + 1, reason: 'Missing Product Name' });
+        continue;
+      }
+
+      const sku = (itm.sku || itm['SKU'] || `SKU-${Date.now().toString().slice(-4)}-${idx + 1}`).trim();
+      const barcode = (itm.barcode || itm['Barcode'] || '').trim() || null;
+
+      // Duplicate check against existing items in database
+      const dupRes = await client.query(
+        `SELECT id, sku, name FROM products_services
+         WHERE tenant_id::text = $1
+           AND (LOWER(sku) = LOWER($2) OR (LOWER(name) = LOWER($3)) OR ($4::varchar IS NOT NULL AND barcode = $4))`,
+        [String(tid), sku, name, barcode]
+      );
+      if (dupRes.rows.length > 0) {
+        skipped.push({ row: idx + 1, sku, name, reason: `Duplicate SKU, Name or Barcode matches existing item: ${dupRes.rows[0].sku}` });
+        continue;
+      }
+
+      const costPrice = parseFloat(itm.cost_price || itm['Cost Price'] || 0);
+      const sellingPrice = parseFloat(itm.selling_price || itm['Selling Price'] || 0);
+      const currentStock = parseFloat(itm.current_stock || itm['Current Stock'] || 0);
+      const reorderLevel = parseFloat(itm.reorder_level || itm['Reorder Level'] || 5);
+      const unit = (itm.unit || itm['Unit'] || 'PCS').trim();
+      const brand = (itm.brand_name || itm['Brand'] || '').trim() || null;
+      const supplierCode = (itm.supplier_product_code || itm['Supplier Product Code'] || '').trim() || null;
+
+      // Insert item
+      const insRes = await client.query(
+        `INSERT INTO products_services (
+          tenant_id, sku, name, unit, cost_price, selling_price, current_stock,
+          reorder_level, barcode, brand_name, supplier_product_code, status, is_archived
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Active', FALSE)
+        RETURNING id, sku, name, current_stock`,
+        [tid, sku, name, unit, costPrice, sellingPrice, currentStock, reorderLevel, barcode, brand, supplierCode]
+      );
+      const newProd = insRes.rows[0];
+
+      // If initial stock is positive and warehouse exists, record initial warehouse stock & lot
+      if (currentStock > 0 && targetWhId) {
+        await client.query(
+          `INSERT INTO warehouse_stock (
+            tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved
+          ) VALUES ($1, $2, $3, 'OPENING-LOT', $4, 0)
+          ON CONFLICT (warehouse_id, product_id, batch_number)
+          DO UPDATE SET quantity_on_hand = warehouse_stock.quantity_on_hand + $4`,
+          [tid, targetWhId, newProd.id, currentStock]
+        );
+
+        await client.query(
+          `INSERT INTO inventory_transactions (
+            tenant_id, product_id, warehouse_id, transaction_type, quantity, unit_cost,
+            batch_number, reference_type, reference_number, remarks, created_by
+          ) VALUES ($1, $2, $3, 'STOCK_IN', $4, $5, 'OPENING-LOT', 'CSV_IMPORT', $6, 'Imported Opening Balance', $7)`,
+          [tid, newProd.id, targetWhId, currentStock, costPrice, `IMP-${Date.now().toString().slice(-6)}`, req.user?.id || null]
+        );
+      }
+
+      imported.push({ id: newProd.id, sku: newProd.sku, name: newProd.name });
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      success: true,
+      message: `Catalog import complete: ${imported.length} items imported, ${skipped.length} skipped.`,
+      imported_count: imported.length,
+      skipped_count: skipped.length,
+      imported,
+      skipped
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
   }
 });
 

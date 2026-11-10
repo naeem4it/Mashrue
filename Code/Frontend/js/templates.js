@@ -247,43 +247,22 @@ window.TemplatesEngine = {
   // --------------------------------------------------------------------------
   // 0. STUDIO UNIFIED SUB-TABS (10/10 UX)
   // --------------------------------------------------------------------------
-  renderStudioTabs(activeTab = 'templates') {
-    return `
-      <div class="studio-tabs-nav-container">
-        <button type="button" class="studio-curved-tab ${activeTab === 'templates' ? 'active' : ''}" onclick="switchView('templates')">
-          <span class="tab-icon">🖨️</span>
-          <span>Document Templates</span>
-        </button>
-        <button type="button" class="studio-curved-tab ${activeTab === 'branding' ? 'active' : ''}" onclick="switchView('template-branding')">
-          <span class="tab-icon">🎨</span>
-          <span>Logo & Letterhead Studio</span>
-        </button>
-        <button type="button" class="studio-curved-tab ${activeTab === 'columns' ? 'active' : ''}" onclick="switchView('template-columns')">
-          <span class="tab-icon">📊</span>
-          <span>Dynamic BoQ Columns</span>
-        </button>
-        <button type="button" class="studio-curved-tab ${activeTab === 'margins' ? 'active' : ''}" onclick="switchView('template-paper-margins')">
-          <span class="tab-icon">📐</span>
-          <span>Paper Sizes & Margins</span>
-        </button>
-        <button type="button" class="studio-curved-tab ${activeTab === 'mappings' ? 'active' : ''}" onclick="switchView('template-customer-mappings')">
-          <span class="tab-icon">👥</span>
-          <span>Customer Rules</span>
-        </button>
-        <button type="button" class="studio-curved-tab ${activeTab === 'sample' ? 'active' : ''}" onclick="switchView('template-sample-upload')">
-          <span class="tab-icon">⚡</span>
-          <span>Auto-Design Sample</span>
-        </button>
-      </div>
-    `;
+  renderStudioTabs() {
+    // All Print & Template Studio screens are directly accessible from the left Sidebar
+    return '';
   },
 
   // --------------------------------------------------------------------------
   // 1. VIEW: Document Templates Directory
   // --------------------------------------------------------------------------
+  currentFilterDocType: 'all',
+  currentFilterModule: 'all',
+  currentFilterStatus: 'published',
+  currentSearchQuery: '',
+
   async renderTemplatesView() {
     await this.loadTemplates();
-    const tList = this.templates;
+    const tList = this.getFilteredTemplates();
 
     return `
       <div style="padding: 10px 0;">
@@ -292,14 +271,17 @@ window.TemplatesEngine = {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
           <div>
             <h2 style="font-size:1.35rem; font-weight:800; color:#0f172a; margin:0 0 4px 0;">🖨️ Document Templates Hub</h2>
-            <div style="font-size:0.85rem; color:#64748b;">Configure official print layouts for Tenders, Quotations, Invoices, Delivery Challans & POs.</div>
+            <div style="font-size:0.85rem; color:#64748b;">Enterprise print layouts, version history, and multi-module document generation.</div>
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <button class="secondary-btn" style="display:flex; align-items:center; gap:6px; background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; font-weight:700;" onclick="switchView('template-branding')">
-              <span>🎨</span> Upload Company Logo
+              <span>🎨</span> Logo & Letterhead
             </button>
             <button class="secondary-btn" style="display:flex; align-items:center; gap:6px; background:#f8fafc; border:1px solid #cbd5e1;" onclick="switchView('template-sample-upload')">
-              <span>⚡</span> Upload Sample to Auto-Design
+              <span>⚡</span> Upload Sample
+            </button>
+            <button class="secondary-btn" style="display:flex; align-items:center; gap:6px; background:#f8fafc; border:1px solid #cbd5e1;" onclick="TemplatesEngine.openImportModal()">
+              <span>📥</span> Import JSON
             </button>
             <button class="primary-btn" style="display:flex; align-items:center; gap:6px; background:#0284c7;" onclick="TemplatesEngine.openTemplateEditorModal()">
               <span>➕</span> Design New Template
@@ -307,16 +289,44 @@ window.TemplatesEngine = {
           </div>
         </div>
 
-        <!-- Filter Bar -->
-        <div style="background:white; border:1px solid #e2e8f0; border-radius:8px; padding:12px 16px; margin-bottom:24px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-          <span style="font-size:0.83rem; font-weight:700; color:#475569;">Document Type:</span>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="tab-btn active" onclick="TemplatesEngine.filterTemplatesByType('all', this)">All Documents (${tList.length})</button>
-            <button class="tab-btn" onclick="TemplatesEngine.filterTemplatesByType('quotation', this)">Quotations</button>
-            <button class="tab-btn" onclick="TemplatesEngine.filterTemplatesByType('tender', this)">Tenders & BoQ</button>
-            <button class="tab-btn" onclick="TemplatesEngine.filterTemplatesByType('delivery_challan', this)">Delivery Challans</button>
-            <button class="tab-btn" onclick="TemplatesEngine.filterTemplatesByType('invoice', this)">Tax Invoices</button>
-            <button class="tab-btn" onclick="TemplatesEngine.filterTemplatesByType('purchase_order', this)">Purchase Orders</button>
+        <!-- Filter & Search Toolbar -->
+        <div style="background:white; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; margin-bottom:20px; display:flex; flex-direction:column; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+          <!-- Top Row: Search, Module Dropdown & Status Tabs -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; gap:10px; align-items:center; flex:1; min-width:280px;">
+              <input type="text" id="tpl-search-input" class="form-input" placeholder="🔍 Search templates by name or description..." 
+                value="${this.currentSearchQuery || ''}" oninput="TemplatesEngine.onSearchChange(this.value)" style="max-width:320px;">
+              
+              <select id="tpl-module-filter" class="form-select" style="max-width:200px;" onchange="TemplatesEngine.onModuleFilterChange(this.value)">
+                <option value="all" ${this.currentFilterModule === 'all' ? 'selected' : ''}>🏢 All Modules</option>
+                <option value="tender" ${this.currentFilterModule === 'tender' ? 'selected' : ''}>📑 Tender & Quotation</option>
+                <option value="finance" ${this.currentFilterModule === 'finance' ? 'selected' : ''}>💰 Finance & Invoicing</option>
+                <option value="inventory" ${this.currentFilterModule === 'inventory' ? 'selected' : ''}>📦 Inventory & DC</option>
+                <option value="crm" ${this.currentFilterModule === 'crm' ? 'selected' : ''}>🤝 CRM & Proposals</option>
+                <option value="manufacturing" ${this.currentFilterModule === 'manufacturing' ? 'selected' : ''}>⚙️ Manufacturing & BOM</option>
+                <option value="hrm" ${this.currentFilterModule === 'hrm' ? 'selected' : ''}>👥 HRM & Appointment</option>
+                <option value="payroll" ${this.currentFilterModule === 'payroll' ? 'selected' : ''}>💵 Payroll & Payslips</option>
+              </select>
+            </div>
+
+            <!-- Status Tabs -->
+            <div style="display:flex; gap:6px; background:#f1f5f9; padding:3px; border-radius:8px;">
+              <button class="tab-btn ${this.currentFilterStatus === 'published' ? 'active' : ''}" style="padding:4px 12px; font-size:0.78rem;" onclick="TemplatesEngine.onStatusFilterChange('published')">Published</button>
+              <button class="tab-btn ${this.currentFilterStatus === 'draft' ? 'active' : ''}" style="padding:4px 12px; font-size:0.78rem;" onclick="TemplatesEngine.onStatusFilterChange('draft')">Drafts</button>
+              <button class="tab-btn ${this.currentFilterStatus === 'archived' ? 'active' : ''}" style="padding:4px 12px; font-size:0.78rem;" onclick="TemplatesEngine.onStatusFilterChange('archived')">Archived</button>
+              <button class="tab-btn ${this.currentFilterStatus === 'all' ? 'active' : ''}" style="padding:4px 12px; font-size:0.78rem;" onclick="TemplatesEngine.onStatusFilterChange('all')">All</button>
+            </div>
+          </div>
+
+          <!-- Document Type Pills -->
+          <div style="display:flex; gap:6px; flex-wrap:wrap; border-top:1px solid #f1f5f9; padding-top:10px; font-size:0.78rem;">
+            <button class="badge-tab ${this.currentFilterDocType === 'all' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('all', this)">All Types (${this.templates.length})</button>
+            <button class="badge-tab ${this.currentFilterDocType === 'quotation' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('quotation', this)">Quotations</button>
+            <button class="badge-tab ${this.currentFilterDocType === 'tender' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('tender', this)">Tenders & BoQ</button>
+            <button class="badge-tab ${this.currentFilterDocType === 'invoice' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('invoice', this)">Tax Invoices</button>
+            <button class="badge-tab ${this.currentFilterDocType === 'delivery_challan' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('delivery_challan', this)">Delivery Challans</button>
+            <button class="badge-tab ${this.currentFilterDocType === 'purchase_order' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('purchase_order', this)">Purchase Orders</button>
+            <button class="badge-tab ${this.currentFilterDocType === 'payslip' ? 'active' : ''}" onclick="TemplatesEngine.filterTemplatesByType('payslip', this)">Payslips</button>
           </div>
         </div>
 
@@ -328,18 +338,74 @@ window.TemplatesEngine = {
     `;
   },
 
+  getFilteredTemplates() {
+    return this.templates.filter(t => {
+      // Document Type
+      if (this.currentFilterDocType !== 'all' && t.doc_type !== this.currentFilterDocType) return false;
+      // Module
+      if (this.currentFilterModule !== 'all') {
+        const mod = (t.module || 'tender').toLowerCase();
+        if (mod !== this.currentFilterModule.toLowerCase()) return false;
+      }
+      // Status
+      if (this.currentFilterStatus === 'published') {
+        if (t.is_archived || (t.status && t.status !== 'published')) return false;
+      } else if (this.currentFilterStatus === 'draft') {
+        if (t.is_archived || t.status !== 'draft') return false;
+      } else if (this.currentFilterStatus === 'archived') {
+        if (!t.is_archived && t.status !== 'archived') return false;
+      }
+      // Search
+      if (this.currentSearchQuery) {
+        const q = this.currentSearchQuery.toLowerCase();
+        const name = (t.template_name || '').toLowerCase();
+        const doc = (t.doc_type || '').toLowerCase();
+        const desc = (t.description || '').toLowerCase();
+        if (!name.includes(q) && !doc.includes(q) && !desc.includes(q)) return false;
+      }
+      return true;
+    });
+  },
+
+  onSearchChange(val) {
+    this.currentSearchQuery = val;
+    this.refreshGrid();
+  },
+
+  onModuleFilterChange(val) {
+    this.currentFilterModule = val;
+    this.refreshGrid();
+  },
+
+  onStatusFilterChange(val) {
+    this.currentFilterStatus = val;
+    const container = document.getElementById('templates-grid-container');
+    if (container) {
+      this.refreshGrid();
+    } else {
+      switchView('templates');
+    }
+  },
+
+  refreshGrid() {
+    const container = document.getElementById('templates-grid-container');
+    if (container) {
+      container.innerHTML = this.renderTemplatesCardsHTML(this.getFilteredTemplates());
+    }
+  },
+
   renderTemplatesCardsHTML(list) {
     if (!list || list.length === 0) {
       return `
         <div style="grid-column: 1 / -1; text-align:center; padding:50px 20px; background:white; border:1px dashed #cbd5e1; border-radius:12px;">
           <div style="font-size:2.8rem; margin-bottom:12px;">📋</div>
-          <h3 style="font-size:1.15rem; font-weight:700; color:#0f172a; margin-bottom:6px;">No Templates Created Yet</h3>
+          <h3 style="font-size:1.15rem; font-weight:700; color:#0f172a; margin-bottom:6px;">No Templates Found</h3>
           <p style="font-size:0.85rem; color:#64748b; max-width:460px; margin:0 auto 16px auto;">
-            Create custom templates with specific columns, paper sizes, and branding, or upload an existing sample to auto-generate a layout.
+            No templates match your active filters. Try adjusting your search query, status tabs, or create a new template.
           </p>
           <div style="display:flex; justify-content:center; gap:10px;">
-            <button class="secondary-btn" onclick="switchView('template-sample-upload')">⚡ Upload Sample Document</button>
-            <button class="primary-btn" onclick="TemplatesEngine.openTemplateEditorModal()">➕ Create Manually</button>
+            <button class="secondary-btn" onclick="TemplatesEngine.onStatusFilterChange('all')">View All Templates</button>
+            <button class="primary-btn" onclick="TemplatesEngine.openTemplateEditorModal()">➕ Design New</button>
           </div>
         </div>
       `;
@@ -349,18 +415,31 @@ window.TemplatesEngine = {
       const cols = typeof t.columns_config === 'string' ? JSON.parse(t.columns_config || '[]') : (t.columns_config || []);
       const visibleCols = cols.filter(c => c.visible !== false);
       const isLetterhead = t.letterhead_mode === 'letterhead';
+      const isArchived = !!t.is_archived || t.status === 'archived';
+      const versionNum = t.version || 1;
+      const mod = t.module || 'tender';
 
       return `
-        <div class="card" style="border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
-          <!-- Card Header Bar -->
+        <div class="card" style="border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(0,0,0,0.04); transition:transform 0.2s; opacity:${isArchived ? '0.75' : '1'};" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+          <!-- Card Accent Bar -->
           <div style="height:6px; background:${t.accent_color || '#0f172a'};"></div>
           <div style="padding:16px; flex:1; display:flex; flex-direction:column;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
-              <div>
-                <span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.5px; padding:3px 8px;">
-                  ${(t.doc_type || 'quotation').replace('_', ' ')}
+            
+            <!-- Badges Row -->
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+              <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;">
+                <span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700; text-transform:uppercase; font-size:0.68rem; padding:3px 7px;">
+                  ${(t.doc_type || 'quotation').replace(/_/g, ' ')}
                 </span>
-                ${t.is_default ? `<span class="badge" style="background:#dcfce7; color:#15803d; font-weight:700; font-size:0.7rem; margin-left:6px; padding:3px 8px;">★ Default</span>` : ''}
+                <span class="badge" style="background:#f1f5f9; color:#475569; font-weight:700; font-size:0.68rem; padding:3px 7px;">
+                  ${mod.toUpperCase()}
+                </span>
+                <span class="badge" style="background:#ede9fe; color:#6d28d9; font-weight:700; font-size:0.68rem; padding:3px 7px;" title="Template Version">
+                  v${versionNum}
+                </span>
+                ${t.status === 'draft' ? `<span class="badge" style="background:#fef3c7; color:#b45309; font-weight:700; font-size:0.68rem; padding:3px 7px;">Draft</span>` : ''}
+                ${isArchived ? `<span class="badge" style="background:#fee2e2; color:#b91c1c; font-weight:700; font-size:0.68rem; padding:3px 7px;">Archived</span>` : ''}
+                ${t.is_default ? `<span class="badge" style="background:#dcfce7; color:#15803d; font-weight:700; font-size:0.68rem; padding:3px 7px;">★ Default</span>` : ''}
               </div>
               <div style="font-size:0.75rem; color:#64748b; font-weight:600;">
                 ${t.paper_size || 'A4'} • ${(t.paper_orientation || 'portrait').toUpperCase()}
@@ -371,35 +450,41 @@ window.TemplatesEngine = {
               ${t.template_name}
             </h3>
 
-            <div style="font-size:0.8rem; color:#64748b; margin-bottom:14px; line-height:1.5;">
-              Mode: <strong>${isLetterhead ? '📄 Pre-Printed Stationery (' + (t.top_margin_mm || 55) + 'mm margin)' : '🖨️ Full Digital Letterhead'}</strong><br>
+            <div style="font-size:0.8rem; color:#64748b; margin-bottom:12px; line-height:1.5;">
+              Mode: <strong>${isLetterhead ? '📄 Stationery (' + (t.top_margin_mm || 55) + 'mm margin)' : '🖨️ Digital Letterhead'}</strong><br>
               Columns: <strong>${visibleCols.length} Visible</strong> (${visibleCols.map(c => c.label).slice(0, 3).join(', ')}${visibleCols.length > 3 ? '...' : ''})
             </div>
 
             <!-- Mini Preview Box -->
-            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px; margin-bottom:16px; font-size:0.75rem; color:#475569; flex:1;">
-              <div style="display:flex; justify-content:space-between; border-bottom:1px solid #cbd5e1; padding-bottom:4px; margin-bottom:6px; font-weight:700; color:${t.accent_color || '#0f172a'};">
-                <span>Sample Table Header</span>
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px; margin-bottom:14px; font-size:0.73rem; color:#475569; flex:1;">
+              <div style="display:flex; justify-content:space-between; border-bottom:1px solid #cbd5e1; padding-bottom:3px; margin-bottom:5px; font-weight:700; color:${t.accent_color || '#0f172a'};">
+                <span>Sample Layout Structure</span>
                 <span>${t.accent_color || '#0f172a'}</span>
               </div>
               <div style="display:flex; gap:4px; overflow-x:hidden;">
                 ${visibleCols.slice(0, 4).map(c => `
-                  <span style="background:#e2e8f0; padding:2px 6px; border-radius:3px; font-size:0.7rem; white-space:nowrap;">${c.label}</span>
+                  <span style="background:#e2e8f0; padding:2px 5px; border-radius:3px; font-size:0.68rem; white-space:nowrap;">${c.label}</span>
                 `).join('')}
               </div>
             </div>
 
             <!-- Card Actions -->
-            <div style="display:flex; justify-content:space-between; align-items:center; pt-2; border-top:1px solid #f1f5f9; padding-top:12px; gap:8px;">
-              <div style="display:flex; gap:6px;">
-                <button class="secondary-btn" style="padding:4px 10px; font-size:0.78rem;" onclick="TemplatesEngine.editTemplate('${t.id}')">✏️ Edit</button>
-                <button class="secondary-btn" style="padding:4px 10px; font-size:0.78rem;" onclick="TemplatesEngine.previewTemplate('${t.id}')">👁️ Preview</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #f1f5f9; padding-top:10px; gap:6px; flex-wrap:wrap;">
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="TemplatesEngine.editTemplate('${t.id}')">✏️ Edit</button>
+                <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="TemplatesEngine.previewTemplate('${t.id}')">👁️ Preview</button>
+                <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem; color:#6d28d9;" onclick="TemplatesEngine.viewVersionHistory('${t.id}')" title="Version History">🕒 v${versionNum}</button>
               </div>
-              <div style="display:flex; gap:6px;">
-                ${!t.is_default ? `
-                  <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; color:#0284c7;" onclick="TemplatesEngine.setDefaultTemplate('${t.id}')" title="Make default">★ Set Default</button>
-                ` : ''}
-                <button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem; color:#ef4444;" onclick="TemplatesEngine.deleteTemplate('${t.id}', '${t.template_name.replace(/'/g, "\\'")}')">🗑️</button>
+
+              <div style="display:flex; gap:4px; align-items:center;">
+                <button class="secondary-btn" style="padding:4px 7px; font-size:0.75rem;" onclick="TemplatesEngine.duplicateTemplate('${t.id}')" title="Duplicate as Draft">📄 Clone</button>
+                <button class="secondary-btn" style="padding:4px 7px; font-size:0.75rem;" onclick="TemplatesEngine.exportTemplateJson('${t.id}')" title="Export as JSON">📥</button>
+                ${!isArchived ? `
+                  <button class="secondary-btn" style="padding:4px 7px; font-size:0.75rem; color:#d97706;" onclick="TemplatesEngine.archiveTemplate('${t.id}')" title="Archive Template">📦</button>
+                ` : `
+                  <button class="secondary-btn" style="padding:4px 7px; font-size:0.75rem; color:#16a34a;" onclick="TemplatesEngine.restoreTemplate('${t.id}')" title="Restore Template">♻️</button>
+                `}
+                <button class="secondary-btn" style="padding:4px 7px; font-size:0.75rem; color:#ef4444;" onclick="TemplatesEngine.deleteTemplate('${t.id}', '${t.template_name.replace(/'/g, "\\'")}')" title="Delete">🗑️</button>
               </div>
             </div>
           </div>
@@ -409,18 +494,12 @@ window.TemplatesEngine = {
   },
 
   filterTemplatesByType(type, btnEl) {
+    this.currentFilterDocType = type;
     if (btnEl && btnEl.parentElement) {
-      btnEl.parentElement.querySelectorAll('.tab-btn, .badge-tab').forEach(b => b.classList.remove('active', 'active-tab'));
+      btnEl.parentElement.querySelectorAll('.badge-tab, .tab-btn').forEach(b => b.classList.remove('active'));
       btnEl.classList.add('active');
     }
-    const container = document.getElementById('templates-grid-container');
-    if (!container) return;
-
-    const filtered = (type === 'all')
-      ? this.templates
-      : this.templates.filter(t => t.doc_type === type);
-
-    container.innerHTML = this.renderTemplatesCardsHTML(filtered);
+    this.refreshGrid();
   },
 
   // --------------------------------------------------------------------------
@@ -2202,12 +2281,17 @@ window.TemplatesEngine = {
     const tpl = tplToEdit || {
       template_name: 'New Custom Template',
       doc_type: 'quotation',
+      module: 'tender',
+      category: 'Commercial',
+      status: 'published',
       is_default: false,
       paper_size: 'A4',
       paper_orientation: 'portrait',
       letterhead_mode: 'digital',
       top_margin_mm: 15,
       bottom_margin_mm: 15,
+      left_margin_mm: 15,
+      right_margin_mm: 15,
       accent_color: '#0284c7',
       font_family: 'Inter, sans-serif',
       columns_config: [
@@ -2224,42 +2308,59 @@ window.TemplatesEngine = {
 
     const modalHtml = `
       <div class="modal-backdrop" id="modal-template-editor" style="display:flex;">
-        <div class="modal-card modal-lg" style="max-width:850px; max-height:92vh; display:flex; flex-direction:column;">
+        <div class="modal-card modal-lg" style="max-width:920px; max-height:92vh; display:flex; flex-direction:column;">
           <div class="modal-header" style="background:#0f172a; color:white;">
             <div style="display:flex; align-items:center; gap:8px;">
               <span>🖨️</span>
-              <h3 style="font-size:1.15rem; font-weight:800; color:white; margin:0;">${isNew ? 'Create Document Template' : 'Edit Template: ' + tpl.template_name}</h3>
+              <h3 style="font-size:1.15rem; font-weight:800; color:white; margin:0;">${isNew ? 'Create Document Template' : 'Edit Template: ' + tpl.template_name + ' (v' + (tpl.version || 1) + ')'}</h3>
             </div>
             <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-template-editor')">&times;</button>
           </div>
           <div class="modal-body" style="overflow-y:auto; padding:20px;">
             <form id="template-editor-form" onsubmit="event.preventDefault(); TemplatesEngine.submitTemplateEditor('${tpl.id || ''}')">
-              <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:14px;">
+              
+              <!-- Basic Metadata -->
+              <div style="display:grid; grid-template-columns:1.8fr 1fr 1fr; gap:14px; margin-bottom:14px;">
                 <div>
                   <label class="form-label">Template Name</label>
                   <input type="text" id="tpl-edit-name" class="form-input" required value="${tpl.template_name}">
                 </div>
                 <div>
+                  <label class="form-label">Associated Module</label>
+                  <select id="tpl-edit-module" class="form-select">
+                    <option value="tender" ${(tpl.module || 'tender') === 'tender' ? 'selected' : ''}>Tender & Bidding</option>
+                    <option value="finance" ${tpl.module === 'finance' ? 'selected' : ''}>Finance & Invoicing</option>
+                    <option value="inventory" ${tpl.module === 'inventory' ? 'selected' : ''}>Inventory & Logistics</option>
+                    <option value="crm" ${tpl.module === 'crm' ? 'selected' : ''}>CRM & Deals</option>
+                    <option value="manufacturing" ${tpl.module === 'manufacturing' ? 'selected' : ''}>Manufacturing</option>
+                    <option value="hrm" ${tpl.module === 'hrm' ? 'selected' : ''}>HRM</option>
+                    <option value="payroll" ${tpl.module === 'payroll' ? 'selected' : ''}>Payroll</option>
+                  </select>
+                </div>
+                <div>
                   <label class="form-label">Document Type</label>
                   <select id="tpl-edit-doc-type" class="form-select">
                     <option value="quotation" ${tpl.doc_type === 'quotation' ? 'selected' : ''}>Commercial Quotation</option>
-                    <option value="tender" ${tpl.doc_type === 'tender' ? 'selected' : ''}>Tender & BoQ Bidding</option>
-                    <option value="purchase_order" ${tpl.doc_type === 'purchase_order' ? 'selected' : ''}>Institutional Purchase Order (Mayo Hospital Format)</option>
-                    <option value="technical_proposal" ${tpl.doc_type === 'technical_proposal' ? 'selected' : ''}>Government Technical Proposal (Mayo Hospital Format)</option>
-                    <option value="financial_proposal" ${tpl.doc_type === 'financial_proposal' ? 'selected' : ''}>Government Financial Proposal (PITB Format)</option>
+                    <option value="tender" ${tpl.doc_type === 'tender' ? 'selected' : ''}>PPRA Tender BoQ Dossier</option>
+                    <option value="purchase_order" ${tpl.doc_type === 'purchase_order' ? 'selected' : ''}>Purchase Order (PO)</option>
                     <option value="delivery_challan" ${tpl.doc_type === 'delivery_challan' ? 'selected' : ''}>Delivery Challan (DC)</option>
                     <option value="invoice" ${tpl.doc_type === 'invoice' ? 'selected' : ''}>Tax Invoice</option>
+                    <option value="stock_transfer" ${tpl.doc_type === 'stock_transfer' ? 'selected' : ''}>Stock Transfer Note</option>
+                    <option value="payslip" ${tpl.doc_type === 'payslip' ? 'selected' : ''}>Employee Payslip</option>
+                    <option value="appointment_letter" ${tpl.doc_type === 'appointment_letter' ? 'selected' : ''}>Appointment Letter</option>
+                    <option value="work_order" ${tpl.doc_type === 'work_order' ? 'selected' : ''}>Production Job Card</option>
                   </select>
                 </div>
               </div>
 
-              <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px;">
+              <!-- Paper & Styling Configuration -->
+              <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; margin-bottom:14px;">
                 <div>
                   <label class="form-label">Paper Format</label>
                   <select id="tpl-edit-paper-size" class="form-select">
-                    <option value="A4" ${tpl.paper_size === 'A4' ? 'selected' : ''}>A4 (Standard)</option>
-                    <option value="Letter" ${tpl.paper_size === 'Letter' ? 'selected' : ''}>Letter</option>
-                    <option value="Legal" ${tpl.paper_size === 'Legal' ? 'selected' : ''}>Legal (Long BoQs)</option>
+                    <option value="A4" ${tpl.paper_size === 'A4' ? 'selected' : ''}>A4 (210 × 297 mm)</option>
+                    <option value="Letter" ${tpl.paper_size === 'Letter' ? 'selected' : ''}>Letter (8.5 × 11 in)</option>
+                    <option value="Legal" ${tpl.paper_size === 'Legal' ? 'selected' : ''}>Legal (8.5 × 14 in)</option>
                   </select>
                 </div>
                 <div>
@@ -2270,31 +2371,76 @@ window.TemplatesEngine = {
                   </select>
                 </div>
                 <div>
-                  <label class="form-label">Accent Color</label>
+                  <label class="form-label">Publication Status</label>
+                  <select id="tpl-edit-status" class="form-select">
+                    <option value="published" ${(tpl.status || 'published') === 'published' ? 'selected' : ''}>Published (Active)</option>
+                    <option value="draft" ${tpl.status === 'draft' ? 'selected' : ''}>Draft</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label">Brand Accent Color</label>
                   <input type="color" id="tpl-edit-color" class="form-input" style="height:38px; padding:2px 4px;" value="${tpl.accent_color || '#0284c7'}">
                 </div>
               </div>
 
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px; background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
-                <div>
-                  <label class="form-label">Letterhead Mode</label>
-                  <select id="tpl-edit-lh-mode" class="form-select" onchange="document.getElementById('tpl-edit-top-margin-group').style.display = (this.value === 'letterhead') ? 'block' : 'none';">
-                    <option value="digital" ${tpl.letterhead_mode === 'digital' ? 'selected' : ''}>Digital Letterhead (Full Logo & Header)</option>
-                    <option value="letterhead" ${tpl.letterhead_mode === 'letterhead' ? 'selected' : ''}>Pre-Printed Stationery (Hides Header)</option>
-                  </select>
+              <!-- Letterhead & Margin Offsets -->
+              <div style="background:#f8fafc; padding:14px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:14px;">
+                <div style="display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr 1fr; gap:10px; align-items:center;">
+                  <div>
+                    <label class="form-label">Letterhead Mode</label>
+                    <select id="tpl-edit-lh-mode" class="form-select">
+                      <option value="digital" ${tpl.letterhead_mode === 'digital' ? 'selected' : ''}>Digital Letterhead (Full Logo)</option>
+                      <option value="letterhead" ${tpl.letterhead_mode === 'letterhead' ? 'selected' : ''}>Pre-Printed Stationery</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Top Margin (mm)</label>
+                    <input type="number" id="tpl-edit-top-margin" class="form-input" min="5" max="100" value="${tpl.top_margin_mm || 15}">
+                  </div>
+                  <div>
+                    <label class="form-label">Bottom (mm)</label>
+                    <input type="number" id="tpl-edit-bottom-margin" class="form-input" min="5" max="100" value="${tpl.bottom_margin_mm || 15}">
+                  </div>
+                  <div>
+                    <label class="form-label">Left (mm)</label>
+                    <input type="number" id="tpl-edit-left-margin" class="form-input" min="5" max="50" value="${tpl.left_margin_mm || 15}">
+                  </div>
+                  <div>
+                    <label class="form-label">Right (mm)</label>
+                    <input type="number" id="tpl-edit-right-margin" class="form-input" min="5" max="50" value="${tpl.right_margin_mm || 15}">
+                  </div>
                 </div>
-                <div id="tpl-edit-top-margin-group" style="display:${tpl.letterhead_mode === 'letterhead' ? 'block' : 'none'};">
-                  <label class="form-label">Top Margin Offset (mm)</label>
-                  <input type="number" id="tpl-edit-top-margin" class="form-input" min="15" max="95" value="${tpl.top_margin_mm || 55}">
-                </div>
+              </div>
+
+              <!-- Dynamic Field Token Picker Toolbar -->
+              <div style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                <label class="form-label" style="margin:0;">Standard Terms & Dynamic Field Bindings</label>
+                <div style="font-size:0.75rem; color:#64748b;">Click any token below to insert it dynamically:</div>
+              </div>
+
+              <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:8px 12px; margin-bottom:12px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                <span style="font-size:0.75rem; font-weight:700; color:#1e40af;">Common Tokens:</span>
+                <button type="button" class="badge" style="background:#ffffff; border:1px solid #93c5fd; color:#1d4ed8; cursor:pointer;" onclick="TemplatesEngine.insertDynamicToken('{{company_name}}')">{{company_name}}</button>
+                <button type="button" class="badge" style="background:#ffffff; border:1px solid #93c5fd; color:#1d4ed8; cursor:pointer;" onclick="TemplatesEngine.insertDynamicToken('{{customer_name}}')">{{customer_name}}</button>
+                <button type="button" class="badge" style="background:#ffffff; border:1px solid #93c5fd; color:#1d4ed8; cursor:pointer;" onclick="TemplatesEngine.insertDynamicToken('{{doc_date}}')">{{doc_date}}</button>
+                <button type="button" class="badge" style="background:#ffffff; border:1px solid #93c5fd; color:#1d4ed8; cursor:pointer;" onclick="TemplatesEngine.insertDynamicToken('{{total_amount}}')">{{total_amount}}</button>
+                <button type="button" class="badge" style="background:#ffffff; border:1px solid #93c5fd; color:#1d4ed8; cursor:pointer;" onclick="TemplatesEngine.insertDynamicToken('{{amount_in_words}}')">{{amount_in_words}}</button>
+                <button type="button" class="badge" style="background:#ffffff; border:1px solid #93c5fd; color:#1d4ed8; cursor:pointer;" onclick="TemplatesEngine.insertDynamicToken('{{payment_terms}}')">{{payment_terms}}</button>
               </div>
 
               <div class="form-group" style="margin-bottom:14px;">
-                <label class="form-label">Standard Commercial Terms & Conditions</label>
                 <textarea id="tpl-edit-terms" class="form-textarea" rows="4">${tpl.custom_terms || ''}</textarea>
               </div>
 
-              <div style="display:flex; justify-content:space-between; align-items:center; pt-2; border-top:1px solid #e2e8f0; margin-top:16px; padding-top:14px;">
+              ${!isNew ? `
+                <div class="form-group" style="margin-bottom:14px;">
+                  <label class="form-label">Version Change Summary (Audit Trail)</label>
+                  <input type="text" id="tpl-edit-change-summary" class="form-input" placeholder="e.g. Updated standard payment terms to 30 days net">
+                </div>
+              ` : ''}
+
+              <!-- Footer Controls -->
+              <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; margin-top:16px; padding-top:14px;">
                 <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer;">
                   <input type="checkbox" id="tpl-edit-is-default" ${tpl.is_default ? 'checked' : ''}>
                   <strong>Set as Default Template for this Document Type</strong>
@@ -2321,20 +2467,34 @@ window.TemplatesEngine = {
     }
   },
 
+  insertDynamicToken(token) {
+    const el = document.getElementById('tpl-edit-terms');
+    if (!el) return;
+    const start = el.selectionStart || el.value.length;
+    const end = el.selectionEnd || el.value.length;
+    el.value = el.value.substring(0, start) + ' ' + token + ' ' + el.value.substring(end);
+    el.focus();
+  },
+
   async submitTemplateEditor(templateId) {
     const payload = {
       template_name: document.getElementById('tpl-edit-name')?.value,
       doc_type: document.getElementById('tpl-edit-doc-type')?.value,
+      module: document.getElementById('tpl-edit-module')?.value,
       paper_size: document.getElementById('tpl-edit-paper-size')?.value,
       paper_orientation: document.getElementById('tpl-edit-orientation')?.value,
+      status: document.getElementById('tpl-edit-status')?.value || 'published',
       accent_color: document.getElementById('tpl-edit-color')?.value,
       letterhead_mode: document.getElementById('tpl-edit-lh-mode')?.value,
       top_margin_mm: parseInt(document.getElementById('tpl-edit-top-margin')?.value || 15, 10),
+      bottom_margin_mm: parseInt(document.getElementById('tpl-edit-bottom-margin')?.value || 15, 10),
+      left_margin_mm: parseInt(document.getElementById('tpl-edit-left-margin')?.value || 15, 10),
+      right_margin_mm: parseInt(document.getElementById('tpl-edit-right-margin')?.value || 15, 10),
       custom_terms: document.getElementById('tpl-edit-terms')?.value,
+      change_summary: document.getElementById('tpl-edit-change-summary')?.value || 'Updated template configuration',
       is_default: !!document.getElementById('tpl-edit-is-default')?.checked
     };
 
-    // Attach active tenant_id if available
     let targetTenantId = State.currentUser?.tenant?.id || State.currentUser?.tenant_id;
     if (typeof State.isSuperAdmin === 'function' && State.isSuperAdmin()) {
       const activeProfile = typeof State.getCurrentBusinessProfile === 'function' ? State.getCurrentBusinessProfile() : null;
@@ -2357,13 +2517,244 @@ window.TemplatesEngine = {
         showToast('✓ Template saved successfully!', 'success');
         closeModal('modal-template-editor');
         await this.loadTemplates();
-        switchView('templates');
+        this.refreshGrid();
       } else {
         alert(res?.message || 'Error saving template');
       }
     } catch (e) {
       showToast('Error: ' + e.message, 'error');
     }
+  },
+
+  async duplicateTemplate(id) {
+    try {
+      const res = await API.duplicateTemplate(id);
+      if (res && res.success) {
+        showToast('✓ Template cloned as Draft!', 'success');
+        await this.loadTemplates();
+        this.refreshGrid();
+      } else {
+        showToast(res?.message || 'Failed to duplicate template', 'error');
+      }
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  },
+
+  async archiveTemplate(id) {
+    if (!confirm('Archive this template? It will be hidden from default printing menus.')) return;
+    try {
+      const res = await API.archiveTemplate(id);
+      if (res && res.success) {
+        showToast('✓ Template archived', 'success');
+        await this.loadTemplates();
+        this.refreshGrid();
+      } else {
+        showToast(res?.message || 'Failed to archive', 'error');
+      }
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  },
+
+  async restoreTemplate(id) {
+    try {
+      const res = await API.restoreTemplate(id);
+      if (res && res.success) {
+        showToast('✓ Template restored to Published', 'success');
+        await this.loadTemplates();
+        this.refreshGrid();
+      } else {
+        showToast(res?.message || 'Failed to restore', 'error');
+      }
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  },
+
+  async viewVersionHistory(id) {
+    try {
+      const tpl = this.templates.find(t => t.id === id);
+      const versions = await API.getTemplateVersions(id);
+
+      const rowsHtml = (!versions || versions.length === 0)
+        ? `<tr><td colspan="5" style="text-align:center; padding:20px; color:#64748b;">No previous versions recorded yet.</td></tr>`
+        : versions.map(v => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:10px 14px; font-weight:700; color:#0f172a;">v${v.version_number}</td>
+            <td style="padding:10px 14px; color:#475569;">${v.change_summary || 'Configuration change'}</td>
+            <td style="padding:10px 14px; color:#64748b; font-size:0.8rem;">${v.author_name || 'System / Admin'}</td>
+            <td style="padding:10px 14px; color:#64748b; font-size:0.8rem;">${new Date(v.created_at).toLocaleString()}</td>
+            <td style="padding:10px 14px; text-align:right;">
+              ${v.version_number !== (tpl?.version || 1) ? `
+                <button class="secondary-btn" style="padding:3px 8px; font-size:0.75rem; color:#6d28d9;" onclick="TemplatesEngine.rollbackToVersion('${id}', ${v.version_number})">
+                  ↺ Rollback
+                </button>
+              ` : `<span class="badge" style="background:#dcfce7; color:#15803d; font-size:0.7rem;">Active</span>`}
+            </td>
+          </tr>
+        `).join('');
+
+      const modalHtml = `
+        <div class="modal-backdrop" id="modal-template-versions" style="display:flex;">
+          <div class="modal-card modal-lg" style="max-width:800px; max-height:85vh; display:flex; flex-direction:column;">
+            <div class="modal-header" style="background:#0f172a; color:white;">
+              <h3 style="font-size:1.1rem; font-weight:800; color:white; margin:0;">Version History: ${tpl?.template_name || 'Template'}</h3>
+              <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-template-versions')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:20px; overflow-y:auto;">
+              <table class="data-table" style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                <thead>
+                  <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; color:#475569;">
+                    <th style="padding:10px 14px;">Version</th>
+                    <th style="padding:10px 14px;">Change Summary</th>
+                    <th style="padding:10px 14px;">Author</th>
+                    <th style="padding:10px 14px;">Timestamp</th>
+                    <th style="padding:10px 14px; text-align:right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+
+      let existing = document.getElementById('modal-template-versions');
+      if (existing) existing.remove();
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      if (typeof openModal === 'function') openModal('modal-template-versions');
+    } catch (e) {
+      showToast('Error loading version history: ' + e.message, 'error');
+    }
+  },
+
+  async rollbackToVersion(id, versionNum) {
+    if (!confirm(`Are you sure you want to rollback this template to Version ${versionNum}?`)) return;
+    try {
+      const res = await API.rollbackTemplateVersion(id, versionNum);
+      if (res && res.success) {
+        showToast(`✓ Rolled back to v${versionNum}!`, 'success');
+        closeModal('modal-template-versions');
+        await this.loadTemplates();
+        this.refreshGrid();
+      } else {
+        showToast(res?.message || 'Rollback failed', 'error');
+      }
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  },
+
+  async exportTemplateJson(id) {
+    try {
+      const data = await API.exportTemplate(id);
+      if (!data) return showToast('Failed to export template', 'error');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(data.template?.template_name || 'template').replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('✓ Template exported as JSON', 'success');
+    } catch (e) {
+      showToast('Export error: ' + e.message, 'error');
+    }
+  },
+
+  openImportModal() {
+    const modalHtml = `
+      <div class="modal-backdrop" id="modal-template-import" style="display:flex;">
+        <div class="modal-card" style="max-width:600px; display:flex; flex-direction:column;">
+          <div class="modal-header" style="background:#0f172a; color:white;">
+            <h3 style="font-size:1.1rem; font-weight:800; color:white; margin:0;">📥 Import Template (JSON)</h3>
+            <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-template-import')">&times;</button>
+          </div>
+          <div class="modal-body" style="padding:20px;">
+            <p style="font-size:0.85rem; color:#64748b; margin-bottom:14px;">
+              Select a previously exported template JSON file, or paste the template configuration definition below.
+            </p>
+            <div style="margin-bottom:14px;">
+              <input type="file" id="tpl-import-file" class="form-input" accept=".json" onchange="TemplatesEngine.handleImportFileSelect(event)">
+            </div>
+            <div class="form-group" style="margin-bottom:14px;">
+              <label class="form-label">Or Paste JSON Content</label>
+              <textarea id="tpl-import-json-text" class="form-textarea" rows="6" placeholder='{"template": {"template_name": "..."}}'></textarea>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+              <button class="secondary-btn" onclick="closeModal('modal-template-import')">Cancel</button>
+              <button class="primary-btn" style="background:#0284c7;" onclick="TemplatesEngine.submitImportTemplate()">Import Template</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    let existing = document.getElementById('modal-template-import');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    if (typeof openModal === 'function') openModal('modal-template-import');
+  },
+
+  handleImportFileSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const area = document.getElementById('tpl-import-json-text');
+      if (area) area.value = e.target.result;
+    };
+    reader.readAsText(file);
+  },
+
+  async submitImportTemplate() {
+    const text = document.getElementById('tpl-import-json-text')?.value;
+    if (!text || !text.trim()) return showToast('Please select a JSON file or paste content', 'warning');
+    try {
+      const parsed = JSON.parse(text);
+      const payload = parsed.template || parsed;
+      const res = await API.importTemplate(payload);
+      if (res && res.success) {
+        showToast('✓ Template imported successfully as Draft!', 'success');
+        closeModal('modal-template-import');
+        await this.loadTemplates();
+        this.refreshGrid();
+      } else {
+        alert(res?.message || 'Error importing template');
+      }
+    } catch (e) {
+      showToast('Invalid JSON file format: ' + e.message, 'error');
+    }
+  },
+
+  // Token Validation & Missing-Field Warnings
+  validateTemplateTokens(text = '') {
+    const tokenRegex = /\{\{([a-zA-Z0-9_]+)\}\}/g;
+    const foundTokens = [];
+    let match;
+    while ((match = tokenRegex.exec(text)) !== null) {
+      foundTokens.push(match[0]);
+    }
+
+    const KNOWN_GLOBAL_TOKENS = [
+      '{{company_name}}', '{{company_ntn}}', '{{company_strn}}', '{{company_address}}', '{{company_phone}}', '{{company_email}}',
+      '{{customer_name}}', '{{customer_ntn}}', '{{customer_address}}', '{{doc_date}}', '{{quote_number}}', '{{quote_date}}',
+      '{{validity_date}}', '{{payment_terms}}', '{{subtotal_amount}}', '{{sales_tax_amount}}', '{{total_amount}}', '{{amount_in_words}}',
+      '{{tender_title}}', '{{tender_ref_no}}', '{{procuring_agency}}', '{{bid_opening_date}}', '{{bid_validity}}',
+      '{{dc_number}}', '{{dispatch_date}}', '{{transporter_name}}', '{{vehicle_number}}',
+      '{{invoice_number}}', '{{fbr_invoice_number}}', '{{taxable_amount}}', '{{sales_tax_rate}}', '{{net_payable}}',
+      '{{payroll_month}}', '{{employee_id}}', '{{employee_name}}', '{{gross_salary}}', '{{net_salary}}'
+    ];
+
+    const unmapped = foundTokens.filter(t => !KNOWN_GLOBAL_TOKENS.includes(t));
+    return {
+      totalFound: foundTokens.length,
+      unmappedTokens: Array.from(new Set(unmapped))
+    };
   },
 
   async editTemplate(id) {
@@ -2376,16 +2767,45 @@ window.TemplatesEngine = {
     if (!tpl) return;
     const html = this.compilePreviewHTML(tpl);
 
+    // Validate tokens in terms and html
+    const tokenCheck = this.validateTemplateTokens((tpl.custom_terms || '') + ' ' + (tpl.custom_header_html || ''));
+    const hasUnmapped = tokenCheck.unmappedTokens.length > 0;
+
     const modalHtml = `
       <div class="modal-backdrop" id="modal-template-preview-full" style="display:flex;">
-        <div class="modal-card modal-lg" style="max-width:900px; max-height:94vh; display:flex; flex-direction:column;">
-          <div class="modal-header" style="background:#0f172a; color:white;">
-            <h3 style="font-size:1.1rem; font-weight:800; color:white; margin:0;">Template Preview: ${tpl.template_name}</h3>
-            <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-template-preview-full')">&times;</button>
+        <div class="modal-card modal-lg" style="max-width:920px; max-height:94vh; display:flex; flex-direction:column;">
+          <div class="modal-header" style="background:#0f172a; color:white; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <h3 style="font-size:1.1rem; font-weight:800; color:white; margin:0 0 2px 0;">Template Preview: ${tpl.template_name} (v${tpl.version || 1})</h3>
+              <div style="font-size:0.75rem; color:#94a3b8;">Format: ${tpl.paper_size || 'A4'} • ${(tpl.paper_orientation || 'portrait').toUpperCase()} • Module: ${(tpl.module || 'tender').toUpperCase()}</div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button class="primary-btn" style="padding:6px 14px; font-size:0.8rem; background:#0284c7;" onclick="TemplatesEngine.openPrintWindow('${tpl.template_name.replace(/'/g, "\\'")}', document.getElementById('tpl-preview-rendered-doc').innerHTML)">
+                🖨️ Print / Save PDF
+              </button>
+              <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-template-preview-full')">&times;</button>
+            </div>
           </div>
+
+          ${hasUnmapped ? `
+            <div style="background:#fef3c7; border-bottom:1px solid #fde68a; padding:10px 18px; display:flex; align-items:center; gap:8px; font-size:0.82rem; color:#92400e;">
+              <span style="font-size:1rem;">⚠️</span>
+              <div>
+                <strong>Missing Field / Unmapped Token Warning:</strong> The following tokens in your template are not mapped to known database fields: 
+                <code>${tokenCheck.unmappedTokens.join(', ')}</code>. They may appear verbatim when generating official documents.
+              </div>
+            </div>
+          ` : ''}
+
           <div class="modal-body" style="background:#64748b; padding:24px; overflow-y:auto;">
-            <div style="background:white; padding:35px; border-radius:4px; box-shadow:0 10px 25px rgba(0,0,0,0.3); max-width:800px; margin:0 auto;">
+            <div id="tpl-preview-rendered-doc" style="background:white; padding:35px; border-radius:4px; box-shadow:0 10px 25px rgba(0,0,0,0.3); max-width:800px; margin:0 auto; position:relative;">
               ${html}
+
+              <!-- Document Generation Metadata Watermark & Audit Stamp -->
+              <div style="margin-top:35px; pt-3; border-top:1px dashed #cbd5e1; padding-top:10px; display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:#94a3b8;">
+                <span>🔒 Official Mashrue Document Engine • Template: ${tpl.template_name} (Rev ${tpl.version || 1})</span>
+                <span>Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -2427,6 +2847,180 @@ window.TemplatesEngine = {
     } catch (e) {
       showToast('Error: ' + e.message, 'error');
     }
+  },
+
+  // ============================================================================
+  // PHASE 4: CROSS-MODULE UNIVERSAL PRINT ENGINE (STN, JV, PAYSLIP, JOB CARD, WHT)
+  // ============================================================================
+  openPrintWindow(title, bodyHtml) {
+    const bp = (typeof State !== 'undefined' && State.businessProfiles && State.businessProfiles.find(b => b.id === State.currentBusinessProfileId)) || (typeof State !== 'undefined' && State.businessProfiles && State.businessProfiles[0]) || {};
+    const companyName = bp.business_name || bp.legal_name || 'Mashrue Enterprise BMS';
+    const companyMeta = [bp.address, bp.phone ? `Tel: ${bp.phone}` : '', bp.ntn ? `NTN: ${bp.ntn}` : '', bp.strn ? `STRN: ${bp.strn}` : ''].filter(Boolean).join(' | ');
+
+    const w = window.open('', '_blank', 'width=920,height=780');
+    if (!w) {
+      if (typeof showToast === 'function') showToast('Please allow pop-ups to print documents.', 'warning');
+      return;
+    }
+    w.document.write(`<!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>${title} - ${companyName}</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 28px; font-size: 13px; }
+          .hdr { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; }
+          .hdr h1 { margin: 0 0 4px 0; font-size: 20px; color: #0f172a; }
+          .hdr .meta { font-size: 11px; color: #475569; }
+          .doc-badge { background: #0f172a; color: #fff; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-size: 14px; text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          th { background: #f1f5f9; color: #1e293b; text-align: left; padding: 8px 10px; border: 1px solid #cbd5e1; font-size: 12px; }
+          td { padding: 8px 10px; border: 1px solid #cbd5e1; font-size: 12px; }
+          .sig-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin-top: 48px; text-align: center; }
+          .sig-box { border-top: 1px solid #334155; padding-top: 6px; font-size: 11px; font-weight: 700; color: #475569; }
+          @media print { .no-print { display: none !important; } body { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom:14px; text-align:right;">
+          <button onclick="window.print()" style="background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;">🖨️ Print / Save PDF</button>
+        </div>
+        <div class="hdr">
+          <div>
+            <h1>${companyName}</h1>
+            <div class="meta">${companyMeta}</div>
+          </div>
+          <div class="doc-badge">${title}</div>
+        </div>
+        ${bodyHtml}
+      </body>
+      </html>`);
+    w.document.close();
+  },
+
+  printStockTransferNote(trf) {
+    const items = Array.isArray(trf.items) ? trf.items : [];
+    const rows = items.map((it, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td><strong>${it.item_name || ''}</strong><br/><small>${it.sku || ''}</small></td>
+        <td>${it.batch_number || 'LOT-PRIMARY'}</td>
+        <td style="text-align:right;font-weight:700;">${parseFloat(it.quantity || 0).toLocaleString()}</td>
+        <td style="text-align:right;">PKR ${parseFloat(it.unit_cost || 0).toLocaleString()}</td>
+      </tr>
+    `).join('');
+    this.openPrintWindow('Stock Transfer Note', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f8fafc;padding:12px;border:1px solid #cbd5e1;border-radius:6px;">
+        <div><strong>Transfer No:</strong> ${trf.transfer_number || ''}<br/><strong>Source Warehouse:</strong> ${trf.from_warehouse_name || ''}</div>
+        <div><strong>Date:</strong> ${(trf.transfer_date || '').slice(0, 10)}<br/><strong>Destination Warehouse:</strong> ${trf.to_warehouse_name || ''}<br/><strong>Driver / Vehicle:</strong> ${trf.driver_name || '-'} / ${trf.vehicle_number || '-'}</div>
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>Item Description</th><th>Batch</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Cost</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="sig-grid">
+        <div class="sig-box">Issued By (Source Store)</div>
+        <div class="sig-box">Driver / Carrier Signature</div>
+        <div class="sig-box">Received By (Destination Store)</div>
+      </div>
+    `);
+  },
+
+  printJournalVoucher(jv) {
+    const lines = Array.isArray(jv.lines) ? jv.lines : [];
+    const rows = lines.map((l, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td><strong>${l.account_code || ''} - ${l.account_name || ''}</strong></td>
+        <td>${l.line_description || ''}</td>
+        <td style="text-align:right;">${parseFloat(l.debit || 0) > 0 ? 'PKR ' + parseFloat(l.debit).toLocaleString() : '-'}</td>
+        <td style="text-align:right;">${parseFloat(l.credit || 0) > 0 ? 'PKR ' + parseFloat(l.credit).toLocaleString() : '-'}</td>
+      </tr>
+    `).join('');
+    this.openPrintWindow('Journal Voucher (JV)', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f8fafc;padding:12px;border:1px solid #cbd5e1;border-radius:6px;">
+        <div><strong>Voucher No:</strong> ${jv.entry_number || ''}<br/><strong>Reference Type:</strong> ${jv.reference_type || 'Manual Voucher'}</div>
+        <div><strong>Date:</strong> ${(jv.entry_date || '').slice(0, 10)}<br/><strong>Narration:</strong> ${jv.narration || ''}</div>
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>GL Account</th><th>Line Description</th><th style="text-align:right;">Debit (PKR)</th><th style="text-align:right;">Credit (PKR)</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="font-weight:800;background:#f1f5f9;">
+            <td colspan="3" style="text-align:right;">TOTAL BALANCED AMOUNT:</td>
+            <td style="text-align:right;">PKR ${parseFloat(jv.total_debit || 0).toLocaleString()}</td>
+            <td style="text-align:right;">PKR ${parseFloat(jv.total_credit || 0).toLocaleString()}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="sig-grid">
+        <div class="sig-box">Prepared By (Accountant)</div>
+        <div class="sig-box">Checked By (Finance Manager)</div>
+        <div class="sig-box">Approved By (Director / CFO)</div>
+      </div>
+    `);
+  },
+
+  printPayslip(slip, periodLabel) {
+    this.openPrintWindow('Employee Salary Slip', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f8fafc;padding:12px;border:1px solid #cbd5e1;border-radius:6px;">
+        <div><strong>Employee:</strong> ${slip.first_name || ''} ${slip.last_name || ''} (${slip.employee_code || ''})<br/><strong>CNIC:</strong> ${slip.cnic || '-'}<br/><strong>Designation:</strong> ${slip.designation_name || '-'}</div>
+        <div><strong>Payroll Period:</strong> ${periodLabel || ''}<br/><strong>Bank / IBAN:</strong> ${slip.bank_name || 'Bank Transfer'} ${slip.bank_iban ? '(' + slip.bank_iban + ')' : ''}<br/><strong>Status:</strong> ${slip.is_paid ? 'PAID' : 'APPROVED'}</div>
+      </div>
+      <table>
+        <thead><tr><th>Earnings Breakdown</th><th style="text-align:right;">Amount (PKR)</th><th>Statutory & Deductions</th><th style="text-align:right;">Amount (PKR)</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Basic Salary</td><td style="text-align:right;">${parseFloat(slip.basic_salary || 0).toLocaleString()}</td>
+            <td>FBR Section 149 Income Tax</td><td style="text-align:right;">${parseFloat(slip.income_tax_deduction || 0).toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td>Allowances (HRA, Medical, Conveyance)</td><td style="text-align:right;">${parseFloat(slip.total_allowances || 0).toLocaleString()}</td>
+            <td>EOBI Employee Contribution</td><td style="text-align:right;">${parseFloat(slip.eobi_employee_deduction || 0).toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td></td><td></td>
+            <td>Unpaid Leave / Loan Adjustment</td><td style="text-align:right;">${(parseFloat(slip.unpaid_leave_deduction || 0) + parseFloat(slip.loan_deduction || 0)).toLocaleString()}</td>
+          </tr>
+          <tr style="font-weight:800;background:#f1f5f9;">
+            <td>GROSS SALARY</td><td style="text-align:right;">PKR ${parseFloat(slip.gross_salary || 0).toLocaleString()}</td>
+            <td>TOTAL DEDUCTIONS</td><td style="text-align:right;">PKR ${parseFloat(slip.total_deductions || 0).toLocaleString()}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:16px;padding:14px;background:#ecfdf5;border:2px solid #059669;border-radius:6px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-weight:800;font-size:15px;color:#065f46;">NET TAKE-HOME SALARY PAYABLE:</span>
+        <span style="font-weight:900;font-size:18px;color:#047857;">PKR ${parseFloat(slip.net_salary || 0).toLocaleString()}</span>
+      </div>
+      <div class="sig-grid">
+        <div class="sig-box">HR & Payroll Department</div>
+        <div class="sig-box">Finance Authorization</div>
+        <div class="sig-box">Employee Signature</div>
+      </div>
+    `);
+  },
+
+  printWorkOrderJobCard(wo) {
+    this.openPrintWindow('Production Job Card / Work Order', `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f8fafc;padding:12px;border:1px solid #cbd5e1;border-radius:6px;">
+        <div><strong>Work Order No:</strong> ${wo.order_number || ''}<br/><strong>BOM Recipe:</strong> ${wo.bom_code || ''}<br/><strong>Target Finished Product:</strong> ${wo.product_name || ''} (${wo.sku || ''})</div>
+        <div><strong>Start Date:</strong> ${(wo.start_date || '').slice(0, 10)} | <strong>Due:</strong> ${(wo.due_date || '-').slice(0, 10)}<br/><strong>Status:</strong> ${wo.status || 'Draft'}<br/><strong>Target Quantity:</strong> ${parseFloat(wo.target_quantity || 0).toLocaleString()}</div>
+      </div>
+      <table>
+        <thead><tr><th>Cost Component</th><th style="text-align:right;">Estimated / Actual (PKR)</th></tr></thead>
+        <tbody>
+          <tr><td>Direct Raw Materials Cost</td><td style="text-align:right;">PKR ${parseFloat(wo.actual_material_cost || 0).toLocaleString()}</td></tr>
+          <tr><td>Direct Factory Labor Cost</td><td style="text-align:right;">PKR ${parseFloat(wo.actual_labor_cost || 0).toLocaleString()}</td></tr>
+          <tr><td>Manufacturing Overhead Absorption</td><td style="text-align:right;">PKR ${parseFloat(wo.actual_overhead_cost || 0).toLocaleString()}</td></tr>
+          <tr style="font-weight:800;background:#f1f5f9;"><td>TOTAL COST OF GOODS MANUFACTURED (COGM)</td><td style="text-align:right;">PKR ${parseFloat(wo.total_production_cost || 0).toLocaleString()}</td></tr>
+        </tbody>
+      </table>
+      <div class="sig-grid">
+        <div class="sig-box">Store Material Issuer</div>
+        <div class="sig-box">Production Floor Supervisor</div>
+        <div class="sig-box">Quality Assurance (QA) Inspector</div>
+      </div>
+    `);
   }
 };
 

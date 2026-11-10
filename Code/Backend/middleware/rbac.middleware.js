@@ -17,7 +17,14 @@ const BUSINESS_MODULES = [
   'invoices',      // Sales Invoices & FBR
   'payments',      // Payments & Cheques
   'expenses',      // Expense Vouchers
-  'reports'        // Executive Reports & Analytics
+  'reports',       // Executive Reports & Analytics
+  'tender_radar',  // Module 2: PPRA / EPADS Tender Notification Radar
+  'crm',           // Module 5: Customer Resource Management
+  'accounting',    // Module 6: Financial COA & Double-Entry GL
+  'tax_compliance',// Module 10: Taxation, WHT CPR & FBR Annex-C
+  'hrm',           // Module 7: Core Human Resource Management
+  'payroll',       // Module 8: Payroll, Section 149 Slabs & EOBI
+  'manufacturing'  // Module 9: BOM & Production Work Orders
 ];
 
 // 2. Restricted Administrative Modules (Accessible only to SuperAdmin & TenantAdmin)
@@ -193,6 +200,93 @@ function sanitizePrices(data, canSeePrices) {
   return maskItem(data);
 }
 
+/**
+ * Autonomous Module Licensing Gatekeeper (requireModuleLicense)
+ * Verifies if the authenticated tenant has an active license for the requested commercial module.
+ * Includes strict Zero-Disruption Grandfathering:
+ *  - SuperAdmin always bypasses.
+ *  - Advance/Enterprise plans or legacy tenants without explicit deactivation default to allowed.
+ *
+ * @param {string} moduleKey (e.g. 'mod_tenders', 'mod_notifications', 'mod_crm', 'mod_finance', 'mod_hrm', 'mod_payroll', 'mod_manufacturing', 'mod_tax_compliance')
+ */
+function requireModuleLicense(moduleKey) {
+  const MODULE_TO_PERM_MAP = {
+    mod_tenders: 'opportunities',
+    mod_tender_radar: 'tender_radar',
+    mod_notifications: 'tender_radar',
+    mod_quotations: 'bids',
+    mod_bid_security: 'bid_securities',
+    mod_costing_eval: 'bids',
+    mod_supply_dc: 'delivery_challans',
+    mod_inventory: 'inventory',
+    mod_stock_transfers: 'stock_transfers',
+    mod_fbr_invoicing: 'invoices',
+    mod_finance_kpi: 'reports',
+    mod_crm: 'crm',
+    mod_accounting: 'accounting',
+    mod_finance: 'accounting',
+    mod_tax_compliance: 'tax_compliance',
+    mod_hrm: 'hrm',
+    mod_payroll: 'payroll',
+    mod_manufacturing: 'manufacturing'
+  };
+
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized: Authentication required.' });
+    }
+
+    // SuperAdmin always has full access
+    if (req.user.role === 'SuperAdmin' || req.user.isSuperAdmin) {
+      return next();
+    }
+
+    const tenant = req.user.tenant;
+    if (tenant) {
+      const plan = tenant.subscriptionPlan || 'Advance';
+      const activeModules = Array.isArray(tenant.activeModules) ? tenant.activeModules : null;
+
+      const TENDER_SUITE_KEYS = [
+        'mod_tenders', 'mod_quotations', 'mod_bid_security',
+        'mod_costing_eval', 'mod_supply_dc', 'mod_fbr_invoicing', 'mod_finance_kpi'
+      ];
+      const hasLicense = activeModules.includes(moduleKey) ||
+        (TENDER_SUITE_KEYS.includes(moduleKey) && activeModules.includes('mod_tenders')) ||
+        ((moduleKey === 'mod_finance' || moduleKey === 'mod_accounting') && (activeModules.includes('mod_finance') || activeModules.includes('mod_accounting'))) ||
+        ((moduleKey === 'mod_tender_radar' || moduleKey === 'mod_notifications') && (activeModules.includes('mod_tender_radar') || activeModules.includes('mod_notifications')));
+
+      if (plan === 'Custom' && activeModules && activeModules.length > 0 && !hasLicense) {
+        return res.status(403).json({
+          success: false,
+          module_unlicensed: true,
+          module_key: moduleKey,
+          message: `Module '${moduleKey}' is not included in your organization's active modular subscription. Please upgrade or enable this module.`
+        });
+      }
+    }
+
+    // Enforce User-Level Module Assignment for non-Admin employees
+    const isTenantAdmin = (req.user.role === 'ClientAdmin' || req.user.role === 'CompanyAdmin');
+    if (!isTenantAdmin && req.user.permissions && Object.keys(req.user.permissions).length > 0) {
+      const permKey = MODULE_TO_PERM_MAP[moduleKey] || moduleKey.replace(/^mod_/, '');
+      const hyphenKey = permKey.replace(/_/g, '-');
+      const userModPerm = req.user.permissions[permKey] || req.user.permissions[hyphenKey] || req.user.permissions[moduleKey];
+
+      // If the Tenant Admin explicitly set view: false for this module on this user, block access
+      if (userModPerm && userModPerm.view === false) {
+        return res.status(403).json({
+          success: false,
+          user_module_restricted: true,
+          module_key: moduleKey,
+          message: `Access denied. Your organization administrator has not granted your user account access to '${moduleKey}'.`
+        });
+      }
+    }
+
+    next();
+  };
+}
+
 module.exports = {
   BUSINESS_MODULES,
   RESTRICTED_ADMIN_MODULES,
@@ -201,5 +295,6 @@ module.exports = {
   resolveTenantId,
   requireRoles,
   requirePermission,
+  requireModuleLicense,
   sanitizePrices
 };

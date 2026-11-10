@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
+const { autoPostPaymentToGL } = require('../utils/glPoster');
 
 // Safe date parser — handles ISO (YYYY-MM-DD), DD/MM/YYYY, and Date objects
 function parseSafeDate(val) {
@@ -134,15 +135,16 @@ router.post('/', authenticate, requirePermission('payments', 'add'), async (req,
 
     const payNum = payment_number || `PAY-${Date.now().toString().slice(-6)}`;
 
-    // Insert Payment Record
+    // Insert Payment Record (with unified customer_id for both Module 1 and Module 6 Finance AR)
     const result = await db.query(
       `INSERT INTO payments 
-       (tenant_id, business_profile_id, invoice_id, payment_number, payment_date, payment_method, amount, check_no, check_from, bank_account, deposited_in_bank, reference_number, gross_invoice_amount, income_tax_wht_pct, income_tax_wht_amount, sales_tax_wht_amount, ld_penalties_amount, other_deductions_amount, net_received_amount, deduction_certificate_no, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+       (tenant_id, business_profile_id, customer_id, invoice_id, payment_number, payment_date, payment_method, amount, check_no, check_from, bank_account, deposited_in_bank, reference_number, gross_invoice_amount, income_tax_wht_pct, income_tax_wht_amount, sales_tax_wht_amount, ld_penalties_amount, other_deductions_amount, net_received_amount, deduction_certificate_no, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
       [
         tenantId,
         business_profile_id || inv.business_profile_id,
+        inv.customer_id || null,
         targetInvoiceId,
         payNum,
         parseSafeDate(payment_date) || new Date().toISOString().split('T')[0],
@@ -177,6 +179,9 @@ router.post('/', authenticate, requirePermission('payments', 'add'), async (req,
        WHERE id = $3`,
       [newPaidAmount, nextStatus, targetInvoiceId]
     );
+
+    // Phase 6 & 7: Real-time Double-Entry General Ledger & WHT CPR Auto-Posting
+    await autoPostPaymentToGL(result.rows[0], req.user?.id || null);
 
     res.status(201).json({
       success: true,

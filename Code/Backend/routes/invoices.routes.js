@@ -4,6 +4,7 @@ const router = express.Router();
 const db = require('../config/db');
 const FBRService = require('../services/fbrService');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
+const { autoPostInvoiceToGL } = require('../utils/glPoster');
 
 // GET all invoices
 router.get('/', authenticate, requirePermission('invoices', 'view'), async (req, res) => {
@@ -247,6 +248,9 @@ router.post('/', authenticate, requirePermission('invoices', 'add'), async (req,
     );
 
     const createdInvoice = insertRes.rows[0];
+
+    // Phase 6: Real-time Double-Entry General Ledger Auto-Posting
+    await autoPostInvoiceToGL(createdInvoice, req.user?.id || null);
 
     // Trigger FBR if requested
     if (fbrRequired) {

@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 const { requirePermission, resolveTenantId, sanitizePrices } = require('../middleware/rbac.middleware');
+const notificationService = require('../services/notificationService');
 
 // Auto-migration for quotation enhancements
 (async () => {
@@ -184,6 +185,25 @@ router.get('/:id', authenticate, requirePermission('opportunities', 'view'), asy
       [String(req.params.id)]
     );
 
+    // Fetch Tender Document Checklist & Competitor Post-Opening Bids (Phase 1 Standalone Readiness)
+    let docsRows = [];
+    let compRows = [];
+    try {
+      const docsRes = await db.query(
+        `SELECT * FROM tender_documents WHERE opportunity_id::text = $1 ORDER BY is_mandatory DESC, created_at ASC`,
+        [String(req.params.id)]
+      );
+      docsRows = docsRes.rows;
+
+      const compRes = await db.query(
+        `SELECT * FROM tender_competitor_bids WHERE opportunity_id::text = $1 ORDER BY ranking ASC NULLS LAST, financial_bid_amount ASC`,
+        [String(req.params.id)]
+      );
+      compRows = compRes.rows;
+    } catch (e) {
+      // Safe fallback if migration hasn't run yet
+    }
+
     res.json({
       success: true,
       data: {
@@ -191,7 +211,9 @@ router.get('/:id', authenticate, requirePermission('opportunities', 'view'), asy
         items: sanitizedItems,
         bidSecurities: secRes.rows,
         hasActiveBidSecurity: secRes.rows.some(s => ['Active', 'Submitted'].includes(s.status)),
-        requirements: reqRes.rows
+        requirements: reqRes.rows,
+        tenderDocuments: docsRows,
+        competitorBids: compRows
       }
     });
   } catch (err) {
@@ -434,6 +456,40 @@ router.post('/', authenticate, requirePermission('opportunities', 'add'), async 
       }
     }
 
+    // Trigger Tender Notification Engine Events
+    notificationService.triggerEvent({
+      tenantId,
+      module: 'tenders',
+      eventTrigger: 'tender_created',
+      entityType: 'opportunity',
+      entityId: createdOpp.id,
+      data: {
+        tender_number: createdOpp.opportunity_number || createdOpp.external_tender_number,
+        title: createdOpp.title || createdOpp.tender_name,
+        closing_date: createdOpp.closing_date,
+        submission_deadline: createdOpp.submission_deadline || createdOpp.closing_date,
+        estimated_value: createdOpp.estimated_value,
+        status: createdOpp.status || 'New',
+        organization: department || 'Procuring Agency'
+      }
+    }).catch(e => console.warn('[Notification Hook] tender_created warning:', e.message));
+
+    if (createdOpp.submission_deadline || createdOpp.closing_date) {
+      notificationService.triggerEvent({
+        tenantId,
+        module: 'tenders',
+        eventTrigger: 'deadline_approaching',
+        entityType: 'opportunity',
+        entityId: createdOpp.id,
+        data: {
+          tender_number: createdOpp.opportunity_number || createdOpp.external_tender_number,
+          title: createdOpp.title || createdOpp.tender_name,
+          submission_deadline: createdOpp.submission_deadline || createdOpp.closing_date,
+          closing_date: createdOpp.closing_date
+        }
+      }).catch(e => console.warn('[Notification Hook] deadline_approaching warning:', e.message));
+    }
+
     res.status(201).json({
       success: true,
       data: createdOpp,
@@ -464,6 +520,15 @@ router.post('/:id/select', authenticate, requirePermission('opportunities', 'edi
        RETURNING *`,
       [selection_status, selection_reason || remarks || '', nextStatus, req.params.id]
     );
+
+    const updatedOpp = result.rows[0];
+    if (updatedOpp) {
+      notificationService.onTenderStatusChanged({
+        tenantId: updatedOpp.tenant_id,
+        tenderId: updatedOpp.id,
+        newStatus: nextStatus
+      }).catch(e => console.warn('[Notification Hook] selection status change warning:', e.message));
+    }
 
     res.json({
       success: true,
@@ -710,6 +775,23 @@ router.put('/:id', optionalAuth, async (req, res) => {
       }
     }
 
+    const updatedOpp = result.rows[0];
+    const oppTenant = updatedOpp.tenant_id;
+    if (status) {
+      notificationService.onTenderStatusChanged({
+        tenantId: oppTenant,
+        tenderId: updatedOpp.id,
+        newStatus: status
+      }).catch(e => console.warn('[Notification Hook] status change warning:', e.message));
+    }
+    if (safeSubmission || safeClosing) {
+      notificationService.onTenderDeadlineUpdated({
+        tenantId: oppTenant,
+        tenderId: updatedOpp.id,
+        newDeadline: safeSubmission || safeClosing
+      }).catch(e => console.warn('[Notification Hook] deadline update warning:', e.message));
+    }
+
     res.json({
       success: true,
       data: result.rows[0],
@@ -745,6 +827,163 @@ router.delete('/:id', optionalAuth, async (req, res) => {
   } catch (err) {
     console.error('[OPPORTUNITY DELETE ERROR]:', err);
     res.status(500).json({ success: false, error: err.message, message: `Database error deleting tender: ${err.message}` });
+  }
+});
+
+// ============================================================================
+// PHASE 1: TENDER DOCUMENT CHECKLIST & COMPETITOR INTELLIGENCE ENDPOINTS
+// ============================================================================
+
+// GET Tender Checklist Documents for an Opportunity
+router.get('/:id/documents', authenticate, requirePermission('opportunities', 'view'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `SELECT * FROM tender_documents WHERE opportunity_id::text = $1 AND tenant_id = $2 ORDER BY is_mandatory DESC, created_at ASC`,
+      [String(req.params.id), tenantId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Add Tender Document / Checklist Item
+router.post('/:id/documents', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
+  const { document_title, document_category, file_url, file_size_kb, checklist_status, is_mandatory, remarks } = req.body;
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `INSERT INTO tender_documents
+       (tenant_id, opportunity_id, document_title, document_category, file_url, file_size_kb, checklist_status, is_mandatory, remarks, uploaded_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [
+        tenantId,
+        req.params.id,
+        document_title || 'Mandatory Tender Document',
+        document_category || 'Eligibility Profile',
+        file_url || '',
+        parseInt(file_size_kb || 0, 10),
+        checklist_status || 'Pending',
+        is_mandatory !== false,
+        remarks || '',
+        req.user?.id || null
+      ]
+    );
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST 1-Click Auto-Seed Standard PPRA Mandatory Bidding Checklist
+router.post('/:id/documents/seed-ppra-checklist', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const oppId = req.params.id;
+    const defaultChecklist = [
+      { title: 'Technical Bid Proposal & Compliance Sheet (Signed & Stamped)', cat: 'Technical Bid' },
+      { title: 'Financial Bid / Priced BoQ Schedule', cat: 'Financial Bid' },
+      { title: '2% Earnest Money / Bid Security (CDR / Pay Order Copy)', cat: 'CDR Copy' },
+      { title: 'Active Taxpayer List (ATL) Certificate - FBR Income & Sales Tax', cat: 'Eligibility Profile' },
+      { title: 'Affidavit of Non-Blacklisting on Stamp Paper', cat: 'Prequalification' },
+      { title: 'Manufacturer Authorization / ISO / DRAP / PEC Certificate', cat: 'Technical Bid' }
+    ];
+    const inserted = [];
+    for (const item of defaultChecklist) {
+      const r = await db.query(
+        `INSERT INTO tender_documents (tenant_id, opportunity_id, document_title, document_category, checklist_status, is_mandatory, uploaded_by)
+         VALUES ($1, $2, $3, $4, 'Pending', TRUE, $5) RETURNING *`,
+        [tenantId, oppId, item.title, item.cat, req.user?.id || null]
+      );
+      inserted.push(r.rows[0]);
+    }
+    res.status(201).json({ success: true, data: inserted, message: 'Standard PPRA 6-point mandatory checklist generated.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT Update Checklist Document Status
+router.put('/documents/:docId', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
+  const { checklist_status, file_url, remarks, document_title } = req.body;
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `UPDATE tender_documents
+       SET checklist_status = COALESCE($1, checklist_status),
+           file_url = COALESCE($2, file_url),
+           remarks = COALESCE($3, remarks),
+           document_title = COALESCE($4, document_title)
+       WHERE id = $5 AND tenant_id = $6 RETURNING *`,
+      [checklist_status, file_url, remarks, document_title, req.params.docId, tenantId]
+    );
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Checklist Document
+router.delete('/documents/:docId', authenticate, requirePermission('opportunities', 'delete'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    await db.query(`DELETE FROM tender_documents WHERE id = $1 AND tenant_id = $2`, [req.params.docId, tenantId]);
+    res.json({ success: true, message: 'Checklist item deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Competitor Bids for an Opportunity
+router.get('/:id/competitors', authenticate, requirePermission('opportunities', 'view'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `SELECT * FROM tender_competitor_bids WHERE opportunity_id::text = $1 AND tenant_id = $2 ORDER BY ranking ASC NULLS LAST, financial_bid_amount ASC`,
+      [String(req.params.id), tenantId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Add Competitor Post-Opening Bid Record
+router.post('/:id/competitors', authenticate, requirePermission('opportunities', 'edit'), async (req, res) => {
+  const { competitor_name, technical_score, financial_bid_amount, ranking, is_winner, rejection_grounds, quoted_brand } = req.body;
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `INSERT INTO tender_competitor_bids
+       (tenant_id, opportunity_id, competitor_name, technical_score, financial_bid_amount, ranking, is_winner, rejection_grounds, quoted_brand)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [
+        tenantId,
+        req.params.id,
+        competitor_name,
+        parseFloat(technical_score || 0),
+        parseFloat(financial_bid_amount || 0),
+        parseInt(ranking || 1, 10),
+        !!is_winner,
+        rejection_grounds || '',
+        quoted_brand || ''
+      ]
+    );
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Competitor Bid Record
+router.delete('/competitors/:compId', authenticate, requirePermission('opportunities', 'delete'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    await db.query(`DELETE FROM tender_competitor_bids WHERE id = $1 AND tenant_id = $2`, [req.params.compId, tenantId]);
+    res.json({ success: true, message: 'Competitor bid removed' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -29,14 +29,14 @@ function initCustomDateTimePickers() {
         if (origVal) {
           el.value = formatDateInput(origVal);
         }
-      } catch (e) {}
+      } catch (e) { }
     });
 
     if (typeof flatpickr !== 'undefined') {
       document.querySelectorAll('.date-picker').forEach(el => {
         const currentVal = el.value || el.getAttribute('value') || '';
         if (el._flatpickr) {
-          try { el._flatpickr.destroy(); } catch (e) {}
+          try { el._flatpickr.destroy(); } catch (e) { }
         }
         const fp = flatpickr(el, {
           dateFormat: 'd/m/Y',
@@ -45,7 +45,7 @@ function initCustomDateTimePickers() {
           monthSelectorType: 'dropdown',
           prevArrow: '<span style="font-weight:700;">&larr;</span>',
           nextArrow: '<span style="font-weight:700;">&rarr;</span>',
-          onChange: function(selectedDates, dateStr, instance) {
+          onChange: function (selectedDates, dateStr, instance) {
             instance.element.value = dateStr;
             instance.element.dispatchEvent(new Event('input', { bubbles: true }));
             instance.element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -53,21 +53,21 @@ function initCustomDateTimePickers() {
         });
         if (currentVal) {
           el.value = currentVal;
-          try { fp.setDate(currentVal, false); } catch (e) {}
+          try { fp.setDate(currentVal, false); } catch (e) { }
         }
       });
 
       document.querySelectorAll('.datetime-picker').forEach(el => {
         const currentVal = el.value || el.getAttribute('value') || '';
         if (el._flatpickr) {
-          try { el._flatpickr.destroy(); } catch (e) {}
+          try { el._flatpickr.destroy(); } catch (e) { }
         }
         const fp = flatpickr(el, {
           enableTime: false,
           dateFormat: 'd/m/Y',
           defaultDate: currentVal ? currentVal : undefined,
           allowInput: true,
-          onChange: function(selectedDates, dateStr, instance) {
+          onChange: function (selectedDates, dateStr, instance) {
             instance.element.value = dateStr;
             instance.element.dispatchEvent(new Event('input', { bubbles: true }));
             instance.element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -75,7 +75,7 @@ function initCustomDateTimePickers() {
         });
         if (currentVal) {
           el.value = currentVal;
-          try { fp.setDate(currentVal, false); } catch (e) {}
+          try { fp.setDate(currentVal, false); } catch (e) { }
         }
       });
     }
@@ -162,17 +162,17 @@ function autoEnhanceDataTablesWithUniversalSearch() {
   tables.forEach((tbl, idx) => {
     // Generate or get table ID
     if (!tbl.id) tbl.id = `auto-search-table-${idx + 1}`;
-    
+
     // Find closest card or container
     const card = tbl.closest('.card') || tbl.closest('.card-body')?.parentElement;
     if (!card) return;
-    
+
     const cardHeader = card.querySelector('.card-header');
     if (!cardHeader) return;
-    
+
     // Check if universal search input already exists
     if (cardHeader.querySelector('.table-universal-search-input')) return;
-    
+
     // Ensure flex layout on card header
     cardHeader.style.display = 'flex';
     cardHeader.style.justifyContent = 'space-between';
@@ -404,7 +404,7 @@ async function handleUpdateTenderStatus(oppId, newStatus, encodedTitle = '', est
 
     await API.updateOpportunity(oppId, { status: 'Won', selection_status: 'Selected' });
     showToast(`🏆 Tender "${title}" successfully marked as WON!`, 'success');
-    
+
     const awardChoice = confirm('Would you like to register the formal Letter of Award (LOA) now?');
     if (awardChoice) {
       promptAwardLetterModal(oppId, encodeURIComponent(title));
@@ -454,7 +454,7 @@ function togglePasswordVisibility(inputId, btn) {
 async function checkAndHandleSetPasswordUrl() {
   const hash = window.location.hash || '';
   const search = window.location.search || '';
-  
+
   let token = null;
   let email = null;
 
@@ -647,7 +647,7 @@ async function submitSetPasswordTokenForm() {
 }
 
 // Global Preloader Controls
-window.showMashrueLoader = function(msg) {
+window.showMashrueLoader = function (msg) {
   const loader = document.getElementById('mashrue-global-loader');
   const txt = document.getElementById('mashrue-loader-status-text');
   if (txt && msg) txt.textContent = msg;
@@ -657,7 +657,7 @@ window.showMashrueLoader = function(msg) {
   }
 };
 
-window.hideMashrueLoader = function() {
+window.hideMashrueLoader = function () {
   const loader = document.getElementById('mashrue-global-loader');
   if (loader) {
     loader.classList.add('loader-hidden');
@@ -670,7 +670,7 @@ window.hideMashrueLoader = function() {
 };
 
 // On-demand dynamic loader for Tesseract.js (saves ~5MB on initial page load)
-window.ensureTesseractLoaded = async function() {
+window.ensureTesseractLoaded = async function () {
   if (typeof Tesseract !== 'undefined') return true;
   return new Promise((resolve) => {
     const s = document.createElement('script');
@@ -724,7 +724,7 @@ async function initApp() {
   }
 
   // User is logged in - display preloader with Mashrue branding while loading data
-  window.showMashrueLoader('Initializing enterprise workspace & business telemetry...');
+  window.showMashrueLoader('Loading secure workspace...');
 
   if (loginView) {
     loginView.classList.add('hidden');
@@ -804,7 +804,7 @@ async function initApp() {
 
   // 6. Listen for Business Profile change events
   window.addEventListener('businessProfileChanged', () => {
-    window.showMashrueLoader('Switching business entity & calculating telemetry...');
+    window.showMashrueLoader('Switching business profile...');
     renderActiveView().finally(() => window.hideMashrueLoader());
   });
 }
@@ -1022,7 +1022,7 @@ function updateHeaderUserProfile() {
     const tenant = u.tenant;
     const trialEnds = tenant?.trialEndsAt ? new Date(tenant.trialEndsAt) : (u.trialEndsAt ? new Date(u.trialEndsAt) : null);
     const now = new Date();
-    
+
     if (trialEnds && trialEnds > now) {
       const msLeft = trialEnds.getTime() - now.getTime();
       const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
@@ -1096,12 +1096,12 @@ function renderHeaderSubStatusPill(overrideTenders, overrideCdrs) {
   const liveTenders = (overrideTenders !== undefined) ? overrideTenders : (State.liveTendersCount !== undefined ? State.liveTendersCount : (quota?.tenders_created || 0));
   const liveCdrs = (overrideCdrs !== undefined) ? overrideCdrs : (State.liveCdrsCount !== undefined ? State.liveCdrsCount : (quota?.bid_securities_created || 0));
 
-  const tendersText = isUnlimitedTenders 
-    ? `<span>📑 <strong>${liveTenders}</strong> Tenders</span>` 
+  const tendersText = isUnlimitedTenders
+    ? `<span>📑 <strong>${liveTenders}</strong> Tenders</span>`
     : `<span>📑 <strong>${liveTenders}/${sub.tender_limit || sub.trial_tender_limit || 5}</strong></span>`;
 
-  const cdrsText = isUnlimitedCdrs 
-    ? `<span>🏦 <strong>${liveCdrs}</strong> CDRs</span>` 
+  const cdrsText = isUnlimitedCdrs
+    ? `<span>🏦 <strong>${liveCdrs}</strong> CDRs</span>`
     : `<span>🏦 <strong>${liveCdrs}/${sub.bid_security_limit || sub.trial_bid_security_limit || 10}</strong></span>`;
 
   const entitySeatsText = `${sub.free_companies_limit || 1} Cos &bull; ${sub.free_users_limit || 1} Seats`;
@@ -1347,7 +1347,7 @@ function openUserProfileModal() {
 
   const canSeePrices = State.canSeeBiddingPrices();
   if (priceAccessEl) {
-    priceAccessEl.innerHTML = canSeePrices 
+    priceAccessEl.innerHTML = canSeePrices
       ? '<span style="color:#059669; font-weight:700;">🔓 Unmasked (Cost Price & Profit Margins Visible)</span>'
       : '<span style="color:#dc2626; font-weight:700;">🔒 Masked (Restricted to Commercial Admin)</span>';
   }
@@ -1504,41 +1504,124 @@ function renderDynamicSidebarNavigation() {
   const isSuper = State.isSuperAdmin();
   const isAdmin = State.isClientAdmin();
 
-  // Navigation schema with permissions & modular subscription keys
-  const coreLinks = [
-    { view: 'dashboard', icon: '📊', label: 'Dashboard & KPIs', perm: 'dashboard', always: true },
+  // Navigation schema with permissions & modular subscription keys (Dedicated Sidebar Screens per Module)
+  const overviewLinks = [
+    { view: 'dashboard', icon: '📊', label: 'Dashboard & KPIs', perm: 'dashboard', always: true }
+  ];
+
+  const tenderSuiteLinks = [
     { view: 'opportunities', icon: '📑', label: 'Tenders & Bidding', perm: 'opportunities', moduleKey: 'mod_tenders' },
     { view: 'quotations', icon: '💬', label: 'Quotations & Proposals', perm: 'opportunities', moduleKey: 'mod_tenders' },
-    { view: 'bid-securities', icon: '🛡️', label: 'Bid Security Registry', perm: 'bid-securities', moduleKey: 'mod_bid_security' },
-    { view: 'costing', icon: '💰', label: 'Costing & Margin', perm: 'costing', moduleKey: 'mod_costing_eval' },
-    { view: 'approvals', icon: '⚖️', label: 'Bid Approvals', perm: 'approvals', moduleKey: 'mod_costing_eval' },
+    { view: 'bid-securities', icon: '🛡️', label: 'Bid Security Registry', perm: 'bid-securities', moduleKey: 'mod_tenders' },
+    { view: 'costing', icon: '💰', label: 'Costing & Margin', perm: 'costing', moduleKey: 'mod_tenders' },
+    { view: 'approvals', icon: '⚖️', label: 'Bid Approvals', perm: 'approvals', moduleKey: 'mod_tenders' },
     { view: 'awards', icon: '🏆', label: 'Awards & Guarantees', perm: 'awards', moduleKey: 'mod_tenders' },
-    { view: 'purchase-orders', icon: '📦', label: 'Purchase Orders (PO)', perm: 'purchase-orders', moduleKey: 'mod_supply_dc' },
-    { view: 'delivery-challans', icon: '🚚', label: 'Supply & Challan (DC)', perm: 'delivery-challans', moduleKey: 'mod_supply_dc' },
-    { view: 'invoices', icon: '🧾', label: 'Invoices & FBR PRAL', perm: 'invoices', moduleKey: 'mod_fbr_invoicing' },
-    { view: 'payments', icon: '💵', label: 'Payments Received', perm: 'payments', moduleKey: 'mod_finance_kpi' }
+    { view: 'purchase-orders', icon: '📦', label: 'Purchase Orders (PO)', perm: 'purchase-orders', moduleKey: 'mod_tenders' },
+    { view: 'delivery-challans', icon: '🚚', label: 'Supply & Challan (DC)', perm: 'delivery-challans', moduleKey: 'mod_tenders' },
+    { view: 'invoices', icon: '🧾', label: 'Invoices & FBR PRAL', perm: 'invoices', moduleKey: 'mod_tenders' },
+    { view: 'payments', icon: '💵', label: 'Payments Received', perm: 'payments', moduleKey: 'mod_tenders' },
+    { view: 'expenses', icon: '💳', label: 'Expenses & Overheads', perm: 'expenses', moduleKey: 'mod_tenders' },
+    { view: 'reports', icon: '📈', label: 'Executive Reports', perm: 'reports', moduleKey: 'mod_tenders' },
+    { view: 'settings', icon: '⚙️', label: 'Settings & FBR', adminOnly: true, moduleKey: 'mod_tenders' }
   ];
 
-  const supplyLinks = [
-    { view: 'inventory', icon: '🏬', label: 'Warehouse & Stock', perm: 'inventory', moduleKey: 'mod_inventory' },
-    { view: 'expenses', icon: '💳', label: 'Expenses & Overheads', perm: 'expenses', moduleKey: 'mod_finance_kpi' },
-    { view: 'reports', icon: '📈', label: 'Executive Reports', perm: 'reports', moduleKey: 'mod_finance_kpi' }
+  const radarLinks = [
+    { view: 'tender-radar', icon: '📬', label: 'Inbox & Alerts', perm: 'tender-radar', moduleKey: 'mod_notifications' },
+    { view: 'radar-feed', icon: '📡', label: 'PPRA & EPADS Feed', perm: 'tender-radar', moduleKey: 'mod_notifications', badge: 'Live', badgeBg: '#0284c7' },
+    { view: 'radar-rules', icon: '⚙️', label: 'Notification Rules', perm: 'tender-radar', moduleKey: 'mod_notifications' },
+    { view: 'radar-jobs', icon: '⏱️', label: 'Scheduled Deadlines', perm: 'tender-radar', moduleKey: 'mod_notifications' },
+    { view: 'radar-logs', icon: '📜', label: 'Delivery Logs & Retries', perm: 'tender-radar', moduleKey: 'mod_notifications' },
+    { view: 'radar-providers', icon: '🔌', label: 'Gateway & Providers', perm: 'tender-radar', moduleKey: 'mod_notifications' }
   ];
 
-  const adminLinks = [
-    { view: 'customers', icon: '👥', label: 'Customer Directory', perm: 'customers' },
-    { view: 'suppliers', icon: '🏭', label: 'Supplier Directory', perm: 'suppliers' },
-    { view: 'products', icon: '📦', label: 'Item & SKU Catalog', perm: 'products', moduleKey: 'mod_inventory' },
-    { view: 'business-profiles', icon: '🏢', label: 'Companies & Profiles', adminOnly: true },
-    { view: 'users', icon: '👤', label: isSuper ? 'Tenants & Users' : 'Users & RBAC', adminOnly: true },
-    { view: 'subscriptions', icon: '👑', label: 'Subscriptions & Billing', isSuperOnly: true },
-    { view: 'my-subscription', icon: '💳', label: 'My Plan & Billing', isClientAdminOnly: true },
-    { view: 'settings', icon: '⚙️', label: 'Settings & FBR', adminOnly: true, moduleKey: 'mod_fbr_invoicing' }
+  const inventoryLinks = [
+    { view: 'inventory', icon: '📦', label: 'Stock Balances', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-warehouses', icon: '🏬', label: 'Warehouse Facilities', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-movements', icon: '📜', label: 'Stock Movements', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'stock-transfers', icon: '🔄', label: 'Transfers & Adjustments', perm: 'stock-transfers', moduleKey: 'mod_inventory' },
+    { view: 'inventory-requisitions', icon: '📋', label: 'Purchase Requisitions', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-procurements', icon: '🚢', label: 'Supplier Procurements', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-grn', icon: '📥', label: 'Goods Receipts (GRN)', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-returns', icon: '↩️', label: 'Supplier Returns (RTV)', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-valuation', icon: '📊', label: 'Valuation & Alerts', perm: 'inventory', moduleKey: 'mod_inventory' },
+    { view: 'inventory-settings', icon: '⚙️', label: 'Inventory Settings', perm: 'inventory', moduleKey: 'mod_inventory' }
   ];
 
   const templateLinks = [
-    { view: 'templates', icon: '🖨️', label: 'Print & Branding Studio', always: true, badge: 'Unified' },
-    { view: 'template-branding', icon: '🎨', label: 'Logo & Letterhead Hub', always: true }
+    { view: 'templates', icon: '🖨️', label: 'Document Templates', perm: 'templates', moduleKey: 'mod_templates', badge: 'Unified' },
+    { view: 'template-branding', icon: '🎨', label: 'Logo & Letterhead Hub', perm: 'templates', moduleKey: 'mod_templates' },
+    { view: 'template-columns', icon: '📊', label: 'Dynamic BoQ Columns', perm: 'templates', moduleKey: 'mod_templates' },
+    { view: 'template-paper-margins', icon: '📐', label: 'Paper Sizes & Margins', perm: 'templates', moduleKey: 'mod_templates' },
+    { view: 'template-customer-mappings', icon: '👥', label: 'Customer Rules', perm: 'templates', moduleKey: 'mod_templates' },
+    { view: 'template-sample-upload', icon: '⚡', label: 'Auto-Design Sample', perm: 'templates', moduleKey: 'mod_templates' }
+  ];
+
+  const crmLinks = [
+    { view: 'crm', icon: '📊', label: 'CRM Dashboard & KPIs', perm: 'crm', moduleKey: 'mod_crm' },
+    { view: 'crm-leads', icon: '🎯', label: 'Leads & Inquiries', perm: 'crm', moduleKey: 'mod_crm' },
+    { view: 'crm-deals', icon: '💼', label: 'Deals Pipeline Kanban', perm: 'crm', moduleKey: 'mod_crm' },
+    { view: 'crm-activities', icon: '📅', label: 'Tasks & Follow-ups', perm: 'crm', moduleKey: 'mod_crm' },
+    { view: 'crm-cases', icon: '🎫', label: 'Support Cases & SLA', perm: 'crm', moduleKey: 'mod_crm' }
+  ];
+
+  const financeLinks = [
+    { view: 'accounting', icon: '📊', label: 'Finance Dashboard', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-coa', icon: '🗂️', label: 'Chart of Accounts', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-journals', icon: '📝', label: 'Journals & General Ledger', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-ar', icon: '🧾', label: 'Receivables (AR)', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-ap', icon: '📥', label: 'Payables (AP)', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-banking', icon: '🏦', label: 'Cash, Bank & Recon', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-expenses', icon: '💳', label: 'Expenses & Budgets', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-tax', icon: '🏛️', label: 'Tax Codes & Summary', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-assets', icon: '🏗️', label: 'Fixed Assets & Depr.', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-statements', icon: '📈', label: 'Financial Statements', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-settings', icon: '⚙️', label: 'Periods & Fiscal Config', perm: 'accounting', moduleKey: 'mod_finance' },
+    { view: 'finance-audit', icon: '🛡️', label: 'Audit & GL Events', perm: 'accounting', moduleKey: 'mod_finance' }
+  ];
+
+  const taxLinks = [
+    { view: 'tax-compliance', icon: '📑', label: 'Monthly Tax Returns', perm: 'tax-compliance', moduleKey: 'mod_tax_compliance' },
+    { view: 'tax-cpr-ledger', icon: '🏦', label: 'WHT u/s 153 CPR Ledger', perm: 'tax-compliance', moduleKey: 'mod_tax_compliance' },
+    { view: 'tax-jurisdictions', icon: '⚖️', label: 'Jurisdictions & WHT Rules', perm: 'tax-compliance', moduleKey: 'mod_tax_compliance' }
+  ];
+
+  const hrmLinks = [
+    { view: 'hrm', icon: '👥', label: 'Employee Directory', perm: 'hrm', moduleKey: 'mod_hrm' },
+    { view: 'hrm-attendance', icon: '🕒', label: 'Daily Attendance', perm: 'hrm', moduleKey: 'mod_hrm' },
+    { view: 'hrm-leaves', icon: '🌴', label: 'Leaves & Quotas', perm: 'hrm', moduleKey: 'mod_hrm' },
+    { view: 'hrm-policies', icon: '📅', label: 'Policies & Holidays', perm: 'hrm', moduleKey: 'mod_hrm' },
+    { view: 'hrm-audit', icon: '📜', label: 'HR Audit Log', perm: 'hrm', moduleKey: 'mod_hrm' }
+  ];
+
+  const isHrmActive = typeof State.isModuleActiveForTenant === 'function' && State.isModuleActiveForTenant('mod_hrm');
+  const payrollLinks = [
+    { view: 'payroll', icon: '📊', label: 'Payroll Dashboard', perm: 'payroll', moduleKey: 'mod_payroll' },
+    ...(!isHrmActive ? [{ view: 'payroll-employees', icon: '👥', label: 'Employee Directory', perm: 'payroll', moduleKey: 'mod_payroll' }] : []),
+    { view: 'payroll-runs', icon: '🧮', label: 'Process Payroll Runs', perm: 'payroll', moduleKey: 'mod_payroll' },
+    { view: 'payroll-payments', icon: '💵', label: 'Payslips & Disbursal', perm: 'payroll', moduleKey: 'mod_payroll' },
+    { view: 'payroll-loans', icon: '🏦', label: 'Loans & Advances', perm: 'payroll', moduleKey: 'mod_payroll' },
+    { view: 'payroll-config', icon: '⚙️', label: 'Components & Tax Slabs', perm: 'payroll', moduleKey: 'mod_payroll' },
+    { view: 'payroll-reports', icon: '📈', label: 'YTD & Year-End Reports', perm: 'payroll', moduleKey: 'mod_payroll' },
+    { view: 'payroll-audit', icon: '🛡️', label: 'Payroll Audit History', perm: 'payroll', moduleKey: 'mod_payroll' }
+  ];
+
+  const manufacturingLinks = [
+    { view: 'manufacturing', icon: '📊', label: 'Planning Board & KPIs', perm: 'manufacturing', moduleKey: 'mod_manufacturing' },
+    { view: 'mfg-boms', icon: '📐', label: 'Bills of Materials (BOM)', perm: 'manufacturing', moduleKey: 'mod_manufacturing' },
+    { view: 'mfg-orders', icon: '🏭', label: 'Work Orders & Shop Floor', perm: 'manufacturing', moduleKey: 'mod_manufacturing' },
+    { view: 'mfg-mrp', icon: '📦', label: 'MRP & Shortage Check', perm: 'manufacturing', moduleKey: 'mod_manufacturing' },
+    { view: 'mfg-config', icon: '⚙️', label: 'Work Centres & UOMs', perm: 'manufacturing', moduleKey: 'mod_manufacturing' },
+    { view: 'mfg-reports', icon: '📈', label: 'Costing & Variance', perm: 'manufacturing', moduleKey: 'mod_manufacturing' }
+  ];
+
+  const adminLinks = [
+    { view: 'customers', icon: '👥', label: 'Customer Directory (360°)', perm: 'customers' },
+    { view: 'suppliers', icon: '🏭', label: 'Supplier Directory', perm: 'suppliers' },
+    { view: 'products', icon: '🏷️', label: 'Item & SKU Catalog', perm: 'products' },
+    { view: 'business-profiles', icon: '🏢', label: 'Companies & Profiles', adminOnly: true },
+    { view: 'users', icon: '👤', label: isSuper ? 'Tenants & Users' : 'Users & RBAC', adminOnly: true },
+    { view: 'subscriptions', icon: '👑', label: 'Subscriptions & Billing', isSuperOnly: true },
+    { view: 'my-subscription', icon: '💳', label: 'My Plan & Billing', isClientAdminOnly: true }
   ];
 
   const filterLinks = (list) => {
@@ -1558,10 +1641,20 @@ function renderDynamicSidebarNavigation() {
     });
   };
 
-  const visibleCore = filterLinks(coreLinks);
-  const visibleSupply = filterLinks(supplyLinks);
-  const visibleTemplates = filterLinks(templateLinks);
-  const visibleAdmin = filterLinks(adminLinks);
+  const navSections = [
+    { id: 'sec-overview', label: '📊 Executive Overview', items: filterLinks(overviewLinks) },
+    { id: 'sec-tenders', label: '📑 Tenders & Bidding', items: filterLinks(tenderSuiteLinks) },
+    { id: 'sec-radar', label: '📡 Tender Radar & Alerts', items: filterLinks(radarLinks) },
+    { id: 'sec-inventory', label: '🏬 Inventory & Procurement', items: filterLinks(inventoryLinks) },
+    { id: 'sec-templates', label: '🖨️ Print & Template Studio', items: filterLinks(templateLinks) },
+    { id: 'sec-crm', label: '🤝 Sales CRM & Pipeline', items: filterLinks(crmLinks) },
+    { id: 'sec-finance', label: '📒 Financial Management', items: filterLinks(financeLinks) },
+    { id: 'sec-tax', label: '🇵🇰 TaxGuard & Annex-C', items: filterLinks(taxLinks) },
+    { id: 'sec-hrm', label: '👥 Core HRM & Attendance', items: filterLinks(hrmLinks) },
+    { id: 'sec-payroll', label: '💵 Payroll & Sec 149 Tax', items: filterLinks(payrollLinks) },
+    { id: 'sec-manufacturing', label: '🏭 Manufacturing & BOM', items: filterLinks(manufacturingLinks) },
+    { id: 'sec-admin', label: isSuper ? '👑 Global Administration' : '🏢 Registries & Administration', items: filterLinks(adminLinks) }
+  ];
 
   let _openNavSectionId = null;
 
@@ -1591,13 +1684,10 @@ function renderDynamicSidebarNavigation() {
   window.updateNavSectionAccordionDOM = updateNavSectionAccordionDOM;
 
   // Auto-expand section matching current active view
-  const sectionHasActive = (items) => items.some(i => i.view === State.activeView);
   if (!_openNavSectionId) {
-    if (sectionHasActive(visibleCore)) _openNavSectionId = 'sec-core';
-    else if (sectionHasActive(visibleSupply)) _openNavSectionId = 'sec-supply';
-    else if (sectionHasActive(visibleTemplates)) _openNavSectionId = 'sec-templates';
-    else if (sectionHasActive(visibleAdmin)) _openNavSectionId = 'sec-admin';
-    else _openNavSectionId = 'sec-core';
+    const matchedSec = navSections.find(sec => sec.items.some(i => i.view === State.activeView));
+    const firstNonOverview = navSections.find(sec => sec.id !== 'sec-overview' && sec.items.length > 0);
+    _openNavSectionId = matchedSec ? matchedSec.id : (firstNonOverview ? firstNonOverview.id : 'sec-overview');
   }
 
   const renderNavSection = (sectionId, label, items) => {
@@ -1624,12 +1714,7 @@ function renderDynamicSidebarNavigation() {
     `;
   };
 
-  container.innerHTML = `
-    ${renderNavSection('sec-core', 'Core Business Workflow', visibleCore)}
-    ${renderNavSection('sec-supply', 'Supply Chain & Financials', visibleSupply)}
-    ${renderNavSection('sec-templates', '🖨️ Template Engine', visibleTemplates)}
-    ${renderNavSection('sec-admin', isSuper ? 'Global System Administration' : 'Registries & Administration', visibleAdmin)}
-  `;
+  container.innerHTML = navSections.map(s => renderNavSection(s.id, s.label, s.items)).join('\n');
 }
 
 function toggleMobileSidebar(forceState = null) {
@@ -1876,6 +1961,11 @@ async function renderActiveView() {
   // Keep dynamic trial counters (Tenders & CDRs) refreshed
   syncDynamicTrialCounters();
 
+  // Refresh live notification badge telemetry
+  if (typeof ModularERP !== 'undefined' && typeof ModularERP.pollUnreadNotificationBadge === 'function') {
+    ModularERP.pollUnreadNotificationBadge();
+  }
+
   const currentProfile = State.getCurrentBusinessProfile();
   const isAdmin = State.isSuperAdmin() || State.isClientAdmin();
 
@@ -1934,7 +2024,7 @@ async function renderActiveView() {
         <div style="font-size:3.5rem; margin-bottom:12px;">🛑</div>
         <h3 style="font-size:1.35rem; font-weight:800; color:#0f172a; margin-bottom:8px;">Application Access Paused</h3>
         <p style="font-size:0.92rem; color:#475569; line-height:1.6; margin-bottom:20px;">
-          You added an additional company profile (PKR 4,500/month) while on your Free Trial. Because your organization is on a trial period, application access is paused until payment for this company profile is completed.
+          Your organization registered an additional company entity profile (PKR 4,500/month). Because the 15-Day Free Trial includes 1 registered corporate entity, payment verification is required to activate multi-entity operations.
         </p>
         <button class="primary-btn" onclick="openModal('modal-trial-paid-company-stop')" style="margin:0 auto; padding:12px 24px; font-weight:700; background:#059669;">
           💳 Submit Payment & Resume Access
@@ -2032,10 +2122,36 @@ async function renderActiveView() {
         break;
 
       case 'inventory':
-        viewTitle.innerText = 'Warehouse Stock & Inventory';
-        viewSubtitle.innerText = '';
+      case 'inventory-warehouses':
+      case 'inventory-movements':
+      case 'inventory-adjustments':
+      case 'inventory-requisitions':
+      case 'inventory-procurements':
+      case 'inventory-grn':
+      case 'inventory-returns':
+      case 'inventory-valuation':
+      case 'inventory-settings': {
+        const invTabMap = {
+          'inventory': { tab: 'stock', title: 'Warehouse Stock Balances', sub: 'Real-time On-Hand, Reserved & Available Inventory Across Facilities' },
+          'inventory-warehouses': { tab: 'warehouses', title: 'Warehouse Facilities', sub: 'Central & Regional Storage Locations Setup' },
+          'inventory-movements': { tab: 'transactions', title: 'Inventory Stock Movements', sub: 'Complete Inward, Outward & Adjustment Traceability Ledger' },
+          'inventory-adjustments': { tab: 'stock_adjustment', title: 'Stock Adjustments', sub: 'Authorized Quantity & Valuation Adjustments' },
+          'inventory-requisitions': { tab: 'requisitions', title: 'Purchase Requisitions (PR)', sub: 'Internal Material Requests & Approval Queue' },
+          'inventory-procurements': { tab: 'procurements', title: 'Supplier Procurements', sub: 'Vendor Purchase Orders & Inbound Supply Tracking' },
+          'inventory-grn': { tab: 'grn_notes', title: 'Goods Receipt Notes (GRN)', sub: 'Verified Warehouse Inward Receipts & Batch/Lot Inspection' },
+          'inventory-returns': { tab: 'supplier_returns', title: 'Supplier Returns (RTV)', sub: 'Return to Vendor Dispatches & Defective Lot Deductions' },
+          'inventory-valuation': { tab: 'valuation_alerts', title: 'Inventory Valuation & Reorder Alerts', sub: 'Weighted-Average Asset Value & Low-Stock Threshold Warnings' },
+          'inventory-settings': { tab: 'settings', title: 'Inventory Module Settings', sub: 'Negative Stock Policy, Numbering & Valuation Configuration' }
+        };
+        const invCfg = invTabMap[State.activeView] || invTabMap['inventory'];
+        if (State.activeView !== 'inventory' || _activeInventoryTab !== 'add_item') {
+          _activeInventoryTab = invCfg.tab;
+        }
+        viewTitle.innerText = invCfg.title;
+        viewSubtitle.innerText = invCfg.sub;
         contentArea.innerHTML = await renderInventoryHTML();
         break;
+      }
 
       case 'expenses':
         viewTitle.innerText = 'Expenses & Overhead Ledger';
@@ -2050,8 +2166,9 @@ async function renderActiveView() {
         break;
 
       case 'customers':
-        viewTitle.innerText = 'Customer Directory';
-        viewSubtitle.innerText = '';
+      case 'crm-customers':
+        viewTitle.innerText = 'Customer Directory (360°)';
+        viewSubtitle.innerText = 'Unified Client Registry, 360° CRM Profiles, Contacts, Addresses & Tax Info';
         contentArea.innerHTML = await renderCustomersHTML();
         break;
 
@@ -2133,6 +2250,172 @@ async function renderActiveView() {
         contentArea.innerHTML = await TemplatesEngine.renderCustomerMappingsView();
         break;
 
+      case 'tender-radar':
+      case 'radar-feed':
+      case 'radar-rules':
+      case 'radar-jobs':
+      case 'radar-logs':
+      case 'radar-providers': {
+        const radarTabMap = {
+          'tender-radar': { tab: 'inbox', title: 'Tender Notification Inbox & Alerts', sub: 'In-App Tender Deadlines, Status Changes & Actionable Alerts' },
+          'radar-feed': { tab: 'scrapes', title: 'PPRA & EPADS Public Tender Feed', sub: 'Live Scraped Pakistan Procurement Notices & 1-Click Bid Import' },
+          'radar-rules': { tab: 'rules', title: 'Notification Rules & Triggers', sub: 'Configure Lead Times, Recurrence, Quiet Hours & Recipient Roles' },
+          'radar-jobs': { tab: 'jobs', title: 'Scheduled Deadlines & Countdown Jobs', sub: 'Automated Submission Countdown Queue & Reschedule Control' },
+          'radar-logs': { tab: 'logs', title: 'Notification Delivery Logs & Retries', sub: 'Multi-Channel Dispatch Audit Trail & 1-Click Retry' },
+          'radar-providers': { tab: 'providers', title: 'Notification Gateway & Providers', sub: 'SMTP Email, SMS & WhatsApp Provider Credentials & Test Dispatch' }
+        };
+        const rCfg = radarTabMap[State.activeView] || radarTabMap['tender-radar'];
+        if (window.ModularERP) window.ModularERP._notifActiveTab = rCfg.tab;
+        viewTitle.innerText = rCfg.title;
+        viewSubtitle.innerText = rCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderTenderRadarHTML();
+        break;
+      }
+
+      case 'stock-transfers':
+        viewTitle.innerText = 'Inter-Warehouse Transfers & Stock Reconciliation';
+        viewSubtitle.innerText = 'Multi-Location Inventory Transfers & Physical Shelf Count Audits';
+        contentArea.innerHTML = await ModularERP.renderStockTransfersHTML();
+        break;
+
+      case 'crm':
+      case 'crm-leads':
+      case 'crm-deals':
+      case 'crm-activities':
+      case 'crm-cases': {
+        const crmTabMap = {
+          'crm': { tab: 'dashboard', title: 'Sales CRM Dashboard & KPIs', sub: 'Pipeline Overview, Weighted Revenue Forecast & SLA Alerts' },
+          'crm-leads': { tab: 'leads', title: 'Sales Leads & Inquiries', sub: 'B2B Lead Capture, Qualification & 1-Click Deal Conversion' },
+          'crm-deals': { tab: 'opportunities', title: 'Commercial Deals & Pipeline', sub: 'Stage Progression, Win Probability & Expected Closing Forecast' },
+          'crm-activities': { tab: 'activities', title: 'CRM Tasks, Calls & Follow-ups', sub: 'Scheduled Client Interactions, Meetings & Overdue Reminders' },
+          'crm-cases': { tab: 'cases', title: 'Customer Support Cases & SLA', sub: 'Issue Ticketing, Priority SLA Target Tracking & Resolution Log' }
+        };
+        const cCfg = crmTabMap[State.activeView] || crmTabMap['crm'];
+        if (window.ModularERP) window.ModularERP._crmActiveTab = cCfg.tab;
+        viewTitle.innerText = cCfg.title;
+        viewSubtitle.innerText = cCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderCrmHTML();
+        break;
+      }
+
+      case 'accounting':
+      case 'finance-coa':
+      case 'finance-journals':
+      case 'finance-ar':
+      case 'finance-ap':
+      case 'finance-banking':
+      case 'finance-expenses':
+      case 'finance-tax':
+      case 'finance-assets':
+      case 'finance-statements':
+      case 'finance-settings':
+      case 'finance-audit': {
+        const finTabMap = {
+          'accounting': { tab: 'dashboard', title: 'Financial Management Dashboard', sub: 'Executive Cash, Receivables, Payables & Profitability Overview' },
+          'finance-coa': { tab: 'coa', title: 'Chart of Accounts (COA)', sub: '5-Class Hierarchical Ledger Accounts & Opening Balance Migration' },
+          'finance-journals': { tab: 'journals', title: 'Double-Entry Journals & General Ledger', sub: 'Manual Journal Vouchers, Approval, Posting & Reversal Controls' },
+          'finance-ar': { tab: 'ar', title: 'Accounts Receivable (AR)', sub: 'Standalone Customer Invoices, Credit Notes, Receipts & AR Aging' },
+          'finance-ap': { tab: 'ap', title: 'Accounts Payable (AP)', sub: 'Supplier Bills, Debit Notes, Bill Payments & AP Aging' },
+          'finance-banking': { tab: 'banking', title: 'Cash, Bank Accounts & Reconciliation', sub: 'Bank/Petty Cash Accounts, Inter-Account Transfers & Statement Recon' },
+          'finance-expenses': { tab: 'expenses', title: 'Expense Claims & Department Budgets', sub: 'Operational Expense Vouchers, Approvals & Budget vs. Actual' },
+          'finance-tax': { tab: 'tax', title: 'Tax Codes & Tax Summary', sub: 'Configurable Sales Tax / WHT Rates & Input vs. Output Tax Ledger' },
+          'finance-assets': { tab: 'assets', title: 'Fixed Assets & Depreciation', sub: 'Capital Asset Register, Automated Depreciation Runs & Disposals' },
+          'finance-statements': { tab: 'statements', title: 'Financial Statements & Trial Balance', sub: 'Trial Balance, GL Activity, Profit & Loss, Balance Sheet & Cash Flow' },
+          'finance-settings': { tab: 'settings', title: 'Fiscal Periods & Accounting Settings', sub: 'Financial Years, Period Locking, Multi-Currency & Integration Toggles' },
+          'finance-audit': { tab: 'audit', title: 'Financial Audit Trail & GL Events', sub: 'Immutable Accounting Action Log & Sub-Ledger Posting Monitor' }
+        };
+        const fCfg = finTabMap[State.activeView] || finTabMap['accounting'];
+        if (window.FinanceModule) window.FinanceModule.activeTab = fCfg.tab;
+        viewTitle.innerText = fCfg.title;
+        viewSubtitle.innerText = fCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderAccountingHTML();
+        break;
+      }
+
+      case 'tax-compliance':
+      case 'tax-cpr-ledger':
+      case 'tax-jurisdictions': {
+        const taxTabMap = {
+          'tax-compliance': { tab: 'returns', title: 'Monthly Tax Returns (Annex-C & Annex-A)', sub: 'Period-Scoped Output/Input Tax Compiler, Filing Lock & IRIS CSV Export' },
+          'tax-cpr-ledger': { tab: 'cprs', title: 'Section 153 WHT & Bank CPR Ledger', sub: 'Withholding Tax Deduction Certificates, Bank Challan Verification & Audit' },
+          'tax-jurisdictions': { tab: 'rules', title: 'Tax Jurisdictions & Section 153 WHT Slabs', sub: 'Federal (FBR) & Provincial (PRA, SRB, KPRA, BRA) Statutory Rates' }
+        };
+        const tCfg = taxTabMap[State.activeView] || taxTabMap['tax-compliance'];
+        if (window.TaxComplianceModule) window.TaxComplianceModule._tab = tCfg.tab;
+        viewTitle.innerText = tCfg.title;
+        viewSubtitle.innerText = tCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderTaxComplianceHTML();
+        break;
+      }
+
+      case 'hrm':
+      case 'hrm-attendance':
+      case 'hrm-leaves':
+      case 'hrm-policies':
+      case 'hrm-audit': {
+        const hrmTabMap = {
+          'hrm': { tab: 'employees', title: 'Employee Master Directory', sub: 'Workforce Onboarding, Designations, Compensation & Offboarding' },
+          'hrm-attendance': { tab: 'attendance', title: 'Daily Attendance & Check-In Desk', sub: 'Biometric / Manual Check-In Logs, Working Hours & Bulk Present' },
+          'hrm-leaves': { tab: 'leaves', title: 'Leave Requests & Quota Balances', sub: 'Pending Leave Approvals, Rejections & Yearly Entitlement Tracking' },
+          'hrm-policies': { tab: 'policies', title: 'HR Leave Policies & Public Holidays', sub: 'Annual, Casual & Medical Quota Rules and Official Holiday Calendar' },
+          'hrm-audit': { tab: 'audit', title: 'HR Lifecycle Audit Trail', sub: 'Immutable Log of Onboarding, Salary Revisions & Status Changes' }
+        };
+        const hCfg = hrmTabMap[State.activeView] || hrmTabMap['hrm'];
+        if (window.HrmModule) window.HrmModule._tab = hCfg.tab;
+        viewTitle.innerText = hCfg.title;
+        viewSubtitle.innerText = hCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderHrmHTML();
+        break;
+      }
+
+      case 'payroll':
+      case 'payroll-employees':
+      case 'payroll-runs':
+      case 'payroll-payments':
+      case 'payroll-loans':
+      case 'payroll-config':
+      case 'payroll-reports':
+      case 'payroll-audit': {
+        const payTabMap = {
+          'payroll': { tab: 'dashboard', title: 'Payroll Dashboard & Active Periods', sub: 'YTD Gross, Net Pay, FBR Section 149 Tax & Monthly Period Schedule' },
+          'payroll-employees': { tab: 'employees', title: 'Payroll Employee Profiles & Salary Structures', sub: 'Standalone or HRM-Synced Compensation, IBANs & Component Overrides' },
+          'payroll-runs': { tab: 'runs', title: 'Payroll Run Processing & Approval', sub: 'Automated Proration, Sec 149 Tax, EOBI, Line-Item Overrides & Finalization' },
+          'payroll-payments': { tab: 'payments', title: 'Payslips & Bank Disbursement Batches', sub: 'Printable Employee Payslips, Bank Advice CSV & Partial Failure Retries' },
+          'payroll-loans': { tab: 'loans', title: 'Employee Loans & Salary Advances', sub: 'Loan Issuance, Automated Monthly Installments & Negative-Net Cap' },
+          'payroll-config': { tab: 'config', title: 'Salary Components & FBR Tax Slabs', sub: 'Earnings/Deduction Rules, Progressive Tax Brackets & Tax Calculator' },
+          'payroll-reports': { tab: 'reports', title: 'YTD Earnings & Statutory Year-End Reports', sub: 'Employee YTD Tax/EOBI Register & Fiscal Year-End Closing' },
+          'payroll-audit': { tab: 'audit', title: 'Payroll Governance & Audit History', sub: 'Complete Trail of Payroll Runs, Approvals, Reversals & Batches' }
+        };
+        const pCfg = payTabMap[State.activeView] || payTabMap['payroll'];
+        if (window.PayrollModule) window.PayrollModule.activeTab = pCfg.tab;
+        viewTitle.innerText = pCfg.title;
+        viewSubtitle.innerText = pCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderPayrollHTML();
+        break;
+      }
+
+      case 'manufacturing':
+      case 'mfg-boms':
+      case 'mfg-orders':
+      case 'mfg-mrp':
+      case 'mfg-config':
+      case 'mfg-reports': {
+        const mfgTabMap = {
+          'manufacturing': { tab: 'dashboard', title: 'Manufacturing Planning Board & KPIs', sub: 'Shop-Floor Work Order Status, Output Yield & Scrap Overview' },
+          'mfg-boms': { tab: 'boms', title: 'Bills of Materials (BOM) Studio', sub: 'Multi-Level Recipes, Versioning, Circular Check & Landed Cost Rollup' },
+          'mfg-orders': { tab: 'orders', title: 'Production Work Orders & Shop Floor', sub: 'Material Reservation, Issue, Scrap Logging & Finished Goods Receipt' },
+          'mfg-mrp': { tab: 'mrp', title: 'Material Requirements Planning (MRP)', sub: 'BOM Component Shortage Calculator & Procurement Recommendations' },
+          'mfg-config': { tab: 'config', title: 'Work Centres, UOM Conversions & Settings', sub: 'Production Lines, Hourly Labor/Overhead Rates & Unit Conversions' },
+          'mfg-reports': { tab: 'reports', title: 'Manufacturing Costing & Variance Reports', sub: 'Planned vs. Actual Material/Cost Variance, WIP & FG Output Ledger' }
+        };
+        const mCfg = mfgTabMap[State.activeView] || mfgTabMap['manufacturing'];
+        if (window.ManufacturingModule) window.ManufacturingModule.activeTab = mCfg.tab;
+        viewTitle.innerText = mCfg.title;
+        viewSubtitle.innerText = mCfg.sub;
+        contentArea.innerHTML = await ModularERP.renderManufacturingHTML();
+        break;
+      }
+
       default:
         contentArea.innerHTML = `<div class="card"><div class="card-body"><h3>View not found</h3></div></div>`;
     }
@@ -2175,19 +2458,19 @@ function formatDashMoney(amount) {
 }
 window.formatDashMoney = formatDashMoney;
 
-window.toggleDashboardPrivacy = function() {
+window.toggleDashboardPrivacy = function () {
   State.dashboardPrivacy = !State.dashboardPrivacy;
   sessionStorage.setItem('mashrue_dash_privacy', State.dashboardPrivacy ? 'true' : 'false');
   renderActiveView();
 };
 
-window.toggleDashboardDecimals = function() {
+window.toggleDashboardDecimals = function () {
   State.dashboardDecimals = !State.dashboardDecimals;
   sessionStorage.setItem('mashrue_dash_decimals', State.dashboardDecimals ? 'true' : 'false');
   renderActiveView();
 };
 
-window.toggleDashboardAutoReload = function() {
+window.toggleDashboardAutoReload = function () {
   State.dashboardAutoReload = !State.dashboardAutoReload;
   if (window._dashAutoReloadTimer) {
     clearInterval(window._dashAutoReloadTimer);
@@ -2230,7 +2513,7 @@ function parseSafeDashDate(dStr) {
 
 function buildCustomerPieChartHTML(startDate, endDate) {
   const invoices = window._dashInvoices || [];
-  
+
   // Filter invoices by date range
   const filtered = invoices.filter(i => {
     const d = parseSafeDashDate(i.invoice_date || i.created_at);
@@ -2310,9 +2593,9 @@ function buildCustomerPieChartHTML(startDate, endDate) {
       <!-- Legend Breakdown (All Customers in Date Range) -->
       <div style="flex: 1; min-width: 180px; max-height: 185px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 7px;">
         ${sortedCustomers.map((cust, idx) => {
-          const pct = topCustTotal > 0 ? Math.round((cust.amount / topCustTotal) * 100) : 0;
-          const color = colors[idx % colors.length];
-          return `
+    const pct = topCustTotal > 0 ? Math.round((cust.amount / topCustTotal) * 100) : 0;
+    const color = colors[idx % colors.length];
+    return `
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.8rem; background: #f8fafc; border: 1px solid #f1f5f9; padding: 6px 10px; border-radius: 6px;">
               <div style="display: flex; align-items: center; gap: 7px; overflow: hidden;">
                 <span style="width: 8px; height: 8px; border-radius: 50%; background: ${color}; flex-shrink: 0;"></span>
@@ -2326,7 +2609,7 @@ function buildCustomerPieChartHTML(startDate, endDate) {
               </div>
             </div>
           `;
-        }).join('')}
+  }).join('')}
       </div>
     </div>
 
@@ -2370,7 +2653,7 @@ function buildProductLineChartHTML(startDate, endDate) {
   filteredInvoices.forEach(i => {
     const dStr = parseSafeDashDate(i.invoice_date || i.created_at);
     const invoiceTotal = parseFloat(i.total_amount || 0);
-    
+
     if (Array.isArray(i.items) && i.items.length > 0) {
       i.items.forEach(itm => {
         const pName = itm.description || itm.item_name || 'Commercial Item';
@@ -2560,16 +2843,16 @@ function buildProductLineChartHTML(startDate, endDate) {
     <!-- Top Mini Legend for Product Lines -->
     <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; max-height: 48px; overflow-y: auto; padding: 1px 2px;">
       ${sortedProducts.map((p, idx) => {
-        const c = DASH_PROD_COLORS[idx % DASH_PROD_COLORS.length];
-        const shortTitle = p.name.length > 28 ? p.name.slice(0, 26) + '...' : p.name;
-        return `
+    const c = DASH_PROD_COLORS[idx % DASH_PROD_COLORS.length];
+    const shortTitle = p.name.length > 28 ? p.name.slice(0, 26) + '...' : p.name;
+    return `
           <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.71rem; font-weight: 600; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 7px; border-radius: 999px; cursor: pointer;"
                 onmouseenter="highlightProductLine(${idx})" onmouseleave="unhighlightProductLine(${idx})" title="${escapeHtml(p.name)}: ${formatDashMoney(p.amount)}">
             <span style="width: 8px; height: 8px; border-radius: 50%; background: ${c}; flex-shrink: 0;"></span>
             ${escapeHtml(shortTitle)}
           </span>
         `;
-      }).join('')}
+  }).join('')}
     </div>
 
     <!-- Multi-Line Graph SVG -->
@@ -2592,9 +2875,9 @@ function buildProductLineChartHTML(startDate, endDate) {
     <!-- Product Breakdown List (All products in date range with matching line color) -->
     <div style="display: flex; flex-direction: column; gap: 7px; max-height: 180px; overflow-y: auto; padding-right: 4px;">
       ${sortedProducts.map((prod, idx) => {
-        const sharePct = totalProdSales > 0 ? Math.round((prod.amount / totalProdSales) * 100) : 0;
-        const color = DASH_PROD_COLORS[idx % DASH_PROD_COLORS.length];
-        return `
+    const sharePct = totalProdSales > 0 ? Math.round((prod.amount / totalProdSales) * 100) : 0;
+    const color = DASH_PROD_COLORS[idx % DASH_PROD_COLORS.length];
+    return `
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.8rem; background: #f8fafc; border: 1px solid #f1f5f9; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: all 0.2s;"
                onmouseenter="highlightProductLine(${idx}); this.style.background='#f1f5f9';" 
                onmouseleave="unhighlightProductLine(${idx}); this.style.background='#f8fafc';">
@@ -2615,7 +2898,7 @@ function buildProductLineChartHTML(startDate, endDate) {
             </div>
           </div>
         `;
-      }).join('')}
+  }).join('')}
     </div>
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 8px; border-top: 1px dashed #e2e8f0; font-size: 0.82rem; font-weight: 700;">
@@ -2625,7 +2908,7 @@ function buildProductLineChartHTML(startDate, endDate) {
   `;
 }
 
-window.highlightProductLine = function(pIdx) {
+window.highlightProductLine = function (pIdx) {
   const g = document.getElementById('prod-line-series-' + pIdx);
   if (g) {
     g.style.opacity = '1';
@@ -2637,7 +2920,7 @@ window.highlightProductLine = function(pIdx) {
   });
 };
 
-window.unhighlightProductLine = function(pIdx) {
+window.unhighlightProductLine = function (pIdx) {
   document.querySelectorAll('.prod-series').forEach(g => {
     g.style.opacity = '1';
     const path = g.querySelector('path[fill="none"]');
@@ -2645,7 +2928,7 @@ window.unhighlightProductLine = function(pIdx) {
   });
 };
 
-window.setProductLineMode = function(mode) {
+window.setProductLineMode = function (mode) {
   window._dashProdChartMode = mode;
   const btnEvent = document.getElementById('prod-mode-event');
   const btnCum = document.getElementById('prod-mode-cum');
@@ -2665,7 +2948,7 @@ window.setProductLineMode = function(mode) {
   updateProductLineGraph();
 };
 
-window.updateCustomerPieGraph = function() {
+window.updateCustomerPieGraph = function () {
   const startEl = document.getElementById('cust-pie-start-date');
   const endEl = document.getElementById('cust-pie-end-date');
   const container = document.getElementById('dash-customers-pie-container');
@@ -2675,7 +2958,7 @@ window.updateCustomerPieGraph = function() {
   container.innerHTML = buildCustomerPieChartHTML(s, e);
 };
 
-window.resetCustomerPieDateFilter = function(mode) {
+window.resetCustomerPieDateFilter = function (mode) {
   const startEl = document.getElementById('cust-pie-start-date');
   const endEl = document.getElementById('cust-pie-end-date');
   if (mode === 'all') {
@@ -2689,7 +2972,7 @@ window.resetCustomerPieDateFilter = function(mode) {
   updateCustomerPieGraph();
 };
 
-window.updateProductLineGraph = function() {
+window.updateProductLineGraph = function () {
   const startEl = document.getElementById('prod-line-start-date');
   const endEl = document.getElementById('prod-line-end-date');
   const container = document.getElementById('dash-products-line-container');
@@ -2699,7 +2982,7 @@ window.updateProductLineGraph = function() {
   container.innerHTML = buildProductLineChartHTML(s, e);
 };
 
-window.resetProductLineDateFilter = function(mode) {
+window.resetProductLineDateFilter = function (mode) {
   const startEl = document.getElementById('prod-line-start-date');
   const endEl = document.getElementById('prod-line-end-date');
   if (mode === 'all') {
@@ -2716,7 +2999,7 @@ window.resetProductLineDateFilter = function(mode) {
 async function renderDashboardHTML() {
   // Fast 1-Roundtrip Live Bundle (Zero Caching - Live Database Query)
   let kpis = {}, invoices = [], payments = [], expenses = [], products = [], customers = [], dcs = [], pos = [], securities = [];
-  
+
   const bundle = await API.getDashboardBundle(State.currentBusinessProfileId);
   if (bundle && bundle.kpis) {
     kpis = bundle.kpis || {};
@@ -2769,36 +3052,36 @@ async function renderDashboardHTML() {
   const pipelineVal = parseFloat(tendersKPI.total_pipeline_value || 0);
   const pipelineDisplay = !canSeePrices
     ? '🔒 [Hidden]'
-    : (pipelineVal >= 1000000 
-      ? `PKR ${(pipelineVal / 1000000).toFixed(1)}M` 
+    : (pipelineVal >= 1000000
+      ? `PKR ${(pipelineVal / 1000000).toFixed(1)}M`
       : `PKR ${pipelineVal.toLocaleString()}`);
 
   const secVal = parseFloat(secKPI.active_securities_amount || 0);
   const secDisplay = !canSeePrices
     ? '🔒 [Hidden]'
-    : (secVal >= 1000000 
-      ? `PKR ${(secVal / 1000000).toFixed(1)}M` 
+    : (secVal >= 1000000
+      ? `PKR ${(secVal / 1000000).toFixed(1)}M`
       : (secVal >= 1000 ? `PKR ${(secVal / 1000).toFixed(0)}k` : `PKR ${secVal.toLocaleString()}`));
 
   const collectedVal = parseFloat(finKPI.total_collected || 0);
   const collectedDisplay = !canSeePrices
     ? '🔒 [Hidden]'
-    : (collectedVal >= 1000000 
-      ? `PKR ${(collectedVal / 1000000).toFixed(1)}M` 
+    : (collectedVal >= 1000000
+      ? `PKR ${(collectedVal / 1000000).toFixed(1)}M`
       : `PKR ${collectedVal.toLocaleString()}`);
 
   const invoicedVal = parseFloat(finKPI.total_invoiced || 0);
   const invoicedDisplay = !canSeePrices
     ? '🔒 [Hidden]'
-    : (invoicedVal >= 1000000 
-      ? `PKR ${(invoicedVal / 1000000).toFixed(1)}M` 
+    : (invoicedVal >= 1000000
+      ? `PKR ${(invoicedVal / 1000000).toFixed(1)}M`
       : `PKR ${invoicedVal.toLocaleString()}`);
 
   const recVal = parseFloat(finKPI.total_receivables || 0);
   const recDisplay = !canSeePrices
     ? '🔒 [Hidden]'
-    : (recVal >= 1000000 
-      ? `PKR ${(recVal / 1000000).toFixed(1)}M` 
+    : (recVal >= 1000000
+      ? `PKR ${(recVal / 1000000).toFixed(1)}M`
       : `PKR ${recVal.toLocaleString()}`);
 
   // Subscription Notification Banner (preserved for organization trial/status notifications)
@@ -2999,11 +3282,11 @@ async function renderDashboardHTML() {
       m += 12;
       y -= 1;
     }
-    last6Months.push({ 
-      monthIndex: m, 
-      year: y, 
-      label: monthNames[m], 
-      rev: 0, 
+    last6Months.push({
+      monthIndex: m,
+      year: y,
+      label: monthNames[m],
+      rev: 0,
       exp: 0,
       poExp: 0,
       unreceivedExp: 0,
@@ -3077,7 +3360,7 @@ async function renderDashboardHTML() {
     return sum + Math.max(0, unp);
   }, 0);
   const totalOpsExpensesAll = expenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-  
+
   // Total Expenses = Purchases + Unreceived Invoices + Operational Overheads
   const totalExpensesAll = totalPurchasesAll + totalUnreceivedAll + totalOpsExpensesAll;
   const netCashPosition = totalRevenueReceived - totalExpensesAll;
@@ -3128,13 +3411,13 @@ async function renderDashboardHTML() {
 
       <!-- Columns -->
       ${last6Months.map((m, idx) => {
-        const xCenter = idx * colWidth + (colWidth / 2);
-        const barW = Math.min(15, colWidth * 0.28);
-        const revH = getBarHeight(m.rev);
-        const expH = getBarHeight(m.exp);
-        const revY = chartHeight - revH;
-        const expY = chartHeight - expH;
-        return `
+    const xCenter = idx * colWidth + (colWidth / 2);
+    const barW = Math.min(15, colWidth * 0.28);
+    const revH = getBarHeight(m.rev);
+    const expH = getBarHeight(m.exp);
+    const revY = chartHeight - revH;
+    const expY = chartHeight - expH;
+    return `
           <g style="cursor: pointer;">
             <title>${m.label} Monthly Cash Flow:&#10;• Revenue (Received): ${formatDashMoney(m.rev)}&#10;• Expenses & Outstandings: ${formatDashMoney(m.exp)}&#10;  - Purchases (POs): ${formatDashMoney(m.poExp)}&#10;  - Unreceived Invoices: ${formatDashMoney(m.unreceivedExp)}&#10;  - General Overheads: ${formatDashMoney(m.opsExp)}</title>
             
@@ -3153,7 +3436,7 @@ async function renderDashboardHTML() {
             <text x="${xCenter}" y="${chartHeight + 16}" font-size="11" font-weight="700" fill="#64748b" text-anchor="middle">${m.label}</text>
           </g>
         `;
-      }).join('')}
+  }).join('')}
     </svg>
   `;
 
@@ -3201,10 +3484,25 @@ async function renderDashboardHTML() {
   const undepositedFunds = Math.max(0, totalInvoicedAll - totalCollectedAll);
   const totalLiquidFunds = cashOnHand + bankAccounts;
 
+  const canAccessTenders = typeof State.canUserAccessModule === 'function' ? State.canUserAccessModule('mod_tenders', 'opportunities') : true;
+  const canAccessSec = typeof State.canUserAccessModule === 'function' ? State.canUserAccessModule('mod_bid_security', 'bid-securities') : true;
+  const canAccessFinance = typeof State.canUserAccessModule === 'function'
+    ? (State.canUserAccessModule('mod_fbr_invoicing', 'invoices') || State.canUserAccessModule('mod_finance', 'payments') || State.canUserAccessModule('mod_finance', 'accounting'))
+    : true;
+  const canAccessInventory = typeof State.canUserAccessModule === 'function' ? State.canUserAccessModule('mod_inventory', 'inventory') : true;
+
+  const dashFilter = window._activeDashboardModuleFilter || 'all';
+  const showCoreTenderCards = canAccessTenders && (dashFilter === 'all' || dashFilter === 'tenders');
+  const showCoreFinanceCards = canAccessFinance && (dashFilter === 'all' || dashFilter === 'finance');
+
+  const modularDashboardHTML = (window.ModularERP && typeof window.ModularERP.renderModularDashboardSection === 'function')
+    ? await window.ModularERP.renderModularDashboardSection(dashFilter, { kpis, invoices, payments, expenses, products, customers, dcs, pos, securities })
+    : '';
+
   return `
     <div style="display: flex; flex-direction: column; gap: 20px; width: 100%;">
       ${subscriptionBanner}
-      ${onboardingBanner}
+      ${canAccessTenders ? onboardingBanner : ''}
 
       <!-- Top Greeting & Live Action Strip -->
       <div class="card" style="margin-bottom: 0; padding: 16px 22px; background: #ffffff; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
@@ -3213,7 +3511,7 @@ async function renderDashboardHTML() {
             ${timeGreeting}, ${firstName}
           </h2>
           <p style="font-size: 0.84rem; color: #64748b; margin: 0;">
-            Here's your executive enterprise overview at a glance
+            Module-Based Enterprise Workspace &mdash; Personalized for your subscribed modules &amp; role permissions
           </p>
         </div>
 
@@ -3221,7 +3519,7 @@ async function renderDashboardHTML() {
           <div style="font-size: 0.8rem; font-weight: 600; color: #475569; background: #f1f5f9; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
             📅 ${todayDateStr}
           </div>
-          ${lowStockItems.length > 0 ? `
+          ${canAccessInventory ? (lowStockItems.length > 0 ? `
             <button type="button" class="secondary-btn" style="padding: 6px 14px; font-size: 0.8rem; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onclick="switchView('inventory')" title="Click to view Low Stock Items in Warehouse & Stock">
               <span style="display: inline-block; width: 7px; height: 7px; background: #ef4444; border-radius: 50%;"></span>
               ${lowStockItems.length} Low Stock Item${lowStockItems.length !== 1 ? 's' : ''}
@@ -3231,13 +3529,18 @@ async function renderDashboardHTML() {
               <span style="display: inline-block; width: 7px; height: 7px; background: #22c55e; border-radius: 50%;"></span>
               0 Low Stock Items
             </button>
-          `}
+          `) : ''}
         </div>
       </div>
 
-      <!-- 1. TOP 4 EXECUTIVE KPI CARDS (PROMINENT AT TOP) -->
+      <!-- MODULE-BASED DYNAMIC DASHBOARD HUB (GAP 1) -->
+      ${modularDashboardHTML}
+
+      <!-- 1. TOP EXECUTIVE KPI CARDS (FILTERED BY MODULE LICENSE & USER PERMISSION) -->
+      ${(showCoreTenderCards || showCoreFinanceCards) ? `
       <div class="kpi-grid" style="margin-bottom: 0;">
-        <div class="kpi-card blue">
+        ${showCoreTenderCards ? `
+        <div class="kpi-card blue" style="cursor:pointer;" onclick="switchView('opportunities')">
           <div class="kpi-card-header">
             <span class="kpi-card-title">Commercial Pipeline & Sales</span>
             <div class="kpi-card-icon" style="background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe;">📑</div>
@@ -3245,8 +3548,10 @@ async function renderDashboardHTML() {
           <div class="kpi-card-value">${pipelineDisplay}</div>
           <div class="kpi-card-sub">${tendersKPI.in_process || 0} In Process | ${tendersKPI.won_count || 0} Contracts Won</div>
         </div>
+        ` : ''}
 
-        <div class="kpi-card purple">
+        ${(showCoreTenderCards && canAccessSec) ? `
+        <div class="kpi-card purple" style="cursor:pointer;" onclick="switchView('bid-securities')">
           <div class="kpi-card-header">
             <span class="kpi-card-title">Active Bid Securities & CDRs</span>
             <div class="kpi-card-icon" style="background:#f5f3ff; color:#7c3aed; border:1px solid #ddd6fe;">🛡️</div>
@@ -3254,8 +3559,10 @@ async function renderDashboardHTML() {
           <div class="kpi-card-value">${secDisplay}</div>
           <div class="kpi-card-sub">${secKPI.active_securities_count || 0} Active CDR / Guarantee Instruments</div>
         </div>
+        ` : ''}
 
-        <div class="kpi-card green">
+        ${showCoreFinanceCards ? `
+        <div class="kpi-card green" style="cursor:pointer;" onclick="switchView('payments')">
           <div class="kpi-card-header">
             <span class="kpi-card-title">Payment Collected</span>
             <div class="kpi-card-icon" style="background:#ecfdf5; color:#059669; border:1px solid #a7f3d0;">💵</div>
@@ -3264,7 +3571,7 @@ async function renderDashboardHTML() {
           <div class="kpi-card-sub">Invoiced Volume: ${invoicedDisplay}</div>
         </div>
 
-        <div class="kpi-card amber">
+        <div class="kpi-card amber" style="cursor:pointer;" onclick="switchView('invoices')">
           <div class="kpi-card-header">
             <span class="kpi-card-title">Pending Receivables</span>
             <div class="kpi-card-icon" style="background:#fffbeb; color:#d97706; border:1px solid #fde68a;">⏳</div>
@@ -3272,8 +3579,11 @@ async function renderDashboardHTML() {
           <div class="kpi-card-value">${recDisplay}</div>
           <div class="kpi-card-sub">Outstanding Bills to Collect</div>
         </div>
+        ` : ''}
       </div>
+      ` : ''}
 
+      ${showCoreFinanceCards ? `
       <!-- 2. TWO ADJACENT GRAPHS (COMPACT, PRESENTABLE & SIDE-BY-SIDE) -->
       <div class="dash-two-adjacent" style="margin-bottom: 0;">
         
@@ -3521,6 +3831,7 @@ async function renderDashboardHTML() {
         </div>
 
       </div>
+      ` : ''}
 
     </div>
   `;
@@ -3598,16 +3909,16 @@ async function renderOpportunitiesHTML() {
                 </td>
               </tr>
             ` : opps.map(o => {
-              // ── 3-state Bid Security badge: PG Submitted / Attached / Missing ──
-              const linkedSec = Array.isArray(securities) && securities.find(
-                s => s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)
-              );
-              const secStatus = linkedSec?.status || null;
-              const isPGSubmitted = secStatus === 'PG Submitted';
-              const hasAttachedSecurity = (parseInt(o.active_bid_securities_count, 10) > 0) || 
-                (linkedSec && (secStatus === 'Active' || secStatus === 'Submitted' || secStatus === 'PG Submitted' || !secStatus));
-              // ─────────────────────────────────────────────────────────────────
-              return `
+    // ── 3-state Bid Security badge: PG Submitted / Attached / Missing ──
+    const linkedSec = Array.isArray(securities) && securities.find(
+      s => s.opportunity_id === o.id || String(s.opportunity_id) === String(o.id)
+    );
+    const secStatus = linkedSec?.status || null;
+    const isPGSubmitted = secStatus === 'PG Submitted';
+    const hasAttachedSecurity = (parseInt(o.active_bid_securities_count, 10) > 0) ||
+      (linkedSec && (secStatus === 'Active' || secStatus === 'Submitted' || secStatus === 'PG Submitted' || !secStatus));
+    // ─────────────────────────────────────────────────────────────────
+    return `
               <tr data-source="${o.tender_source || 'PPRA (Federal)'}">
                 <td>
                   <strong>${o.tender_name || o.title}</strong><br>
@@ -3624,17 +3935,17 @@ async function renderOpportunitiesHTML() {
                   <span style="font-size:0.75rem; color:var(--text-muted);">⌛ Close: ${formatDateDDMMYYYY(o.closing_date)}</span>
                 </td>
                 <td class="amount-cell">
-                  ${State.canSeeBiddingPrices() 
-                    ? `<strong>${formatCurrency(o.estimated_value, o.currency || 'PKR')}</strong>` 
-                    : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
+                  ${State.canSeeBiddingPrices()
+        ? `<strong>${formatCurrency(o.estimated_value, o.currency || 'PKR')}</strong>`
+        : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
                 </td>
                 <td>
                   ${isPGSubmitted
-                    ? `<button type="button" class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; cursor:pointer; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:4px;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Bid Security absorbed in Performance Guarantee">🏦 PG Submitted</button>`
-                    : hasAttachedSecurity
-                    ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>`
-                    : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`
-                  }
+        ? `<button type="button" class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; cursor:pointer; font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:4px;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Bid Security absorbed in Performance Guarantee">🏦 PG Submitted</button>`
+        : hasAttachedSecurity
+          ? `<button type="button" class="badge badge-active" style="cursor:pointer; border:none;" onclick="openAttachedBidSecurityModal('${o.id}')" title="Click to view attached Bid Security details">🛡️ Attached</button>`
+          : `<button type="button" class="danger-btn" style="padding:2px 8px; font-size:0.72rem; cursor:pointer;" onclick="promptAttachBidSecurity('${o.id}', '${encodeURIComponent(o.tender_name || o.title)}', '${o.opportunity_number || ''}', ${parseFloat(o.estimated_value || 0)}, '${encodeURIComponent(o.customer_name || '')}')" title="Click to attach Bid Security">⚠️ Missing (+ Attach)</button>`
+      }
                 </td>
                 <td>
                   <div style="display:flex; flex-direction:column; gap:4px;">
@@ -3660,6 +3971,9 @@ async function renderOpportunitiesHTML() {
                     </button>
                     <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#3b82f6; color:#ffffff; font-weight:600; border-color:#2563eb;" onclick="openTenderDiaryModal('${o.id}')" title="Open Chronological Tender Diary & Timeline">
                       📜 Diary
+                    </button>
+                    <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#7c3aed; color:#ffffff; font-weight:700; border-color:#6d28d9;" onclick="window.ModularERP && ModularERP.openTenderIntelModal('${o.id}')" title="Mandatory PPRA Document Checklist & Competitor Post-Opening Bids">
+                      📋 Checklist & Bids
                     </button>
 
                     <button class="secondary-btn" style="padding:3px 7px; font-size:0.75rem; background:#0284c7; color:#ffffff; font-weight:700; border-color:#0284c7;" onclick="openPrintTenderModal('${o.id}')" title="Print Official Tender Bidding Dossier & BoQ via Template Engine">
@@ -3900,15 +4214,15 @@ async function renderQuotationsHTML() {
                 </td>
               </tr>
             ` : quotes.map(q => {
-              const isGovt = q.quotation_category === 'Government Departmental' || String(q.tender_source || '').toUpperCase() === 'GOVT QUOTATION';
-              const validityDays = q.quotation_validity_days || 30;
-              const issueDate = q.opening_date || q.created_at;
-              const leadTime = q.delivery_lead_time || 'Ex-Stock';
-              const payTerms = q.payment_terms || '30 Days Net';
-              const st = q.status || 'New';
-              const stClass = st.toLowerCase().replace(/\s+/g, '');
+    const isGovt = q.quotation_category === 'Government Departmental' || String(q.tender_source || '').toUpperCase() === 'GOVT QUOTATION';
+    const validityDays = q.quotation_validity_days || 30;
+    const issueDate = q.opening_date || q.created_at;
+    const leadTime = q.delivery_lead_time || 'Ex-Stock';
+    const payTerms = q.payment_terms || '30 Days Net';
+    const st = q.status || 'New';
+    const stClass = st.toLowerCase().replace(/\s+/g, '');
 
-              return `
+    return `
                 <tr data-category="${isGovt ? 'Government Departmental' : 'Private Commercial'}" data-search="${(q.opportunity_number || '') + ' ' + (q.external_tender_number || '') + ' ' + (q.rfq_reference || '') + ' ' + (q.title || q.tender_name || '') + ' ' + (q.customer_name || '')}">
                   <td>
                     <strong style="color:#0284c7; font-size:0.9rem;">${q.opportunity_number || 'QTN-2026-001'}</strong><br>
@@ -3936,8 +4250,8 @@ async function renderQuotationsHTML() {
                   </td>
                   <td class="amount-cell">
                     ${State.canSeeBiddingPrices()
-                      ? `<strong style="font-size:0.92rem; color:#0f172a;">${formatCurrency(q.estimated_value, q.currency || 'PKR')}</strong>`
-                      : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
+        ? `<strong style="font-size:0.92rem; color:#0f172a;">${formatCurrency(q.estimated_value, q.currency || 'PKR')}</strong>`
+        : `<span class="badge badge-hold" title="Price visibility masked for this employee">🔒 Masked</span>`}
                   </td>
                   <td>
                     <div style="display:flex; flex-direction:column; gap:4px;">
@@ -3979,7 +4293,7 @@ async function renderQuotationsHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -4121,7 +4435,7 @@ function addQuotationItemRow(data = {}) {
   const tr = document.createElement('tr');
 
   const products = window._cachedProducts || [];
-  const prodOptions = products.map(p => 
+  const prodOptions = products.map(p =>
     `<option value="${p.id}" data-name="${escapeHtml(p.name)}" data-cost="${p.cost_price || p.purchase_price || 0}" data-price="${p.selling_price || 0}" data-unit="${p.unit || 'PCS'}">${escapeHtml(p.name)} (${p.sku || 'SKU'})</option>`
   ).join('');
 
@@ -4875,22 +5189,22 @@ async function renderAwardsHTML() {
                 </td>
               </tr>
             ` : awards.map(a => {
-              const childPOs = pos.filter(p => p.award_letter_id === a.id || p.opportunity_id === a.opportunity_id);
-              const itemsCount = (a.items && a.items.length) ? a.items.length : 1;
-              const awardedItemsCount = (a.items && a.items.length) ? a.items.filter(i => i.is_awarded !== false).length : 1;
-              const oppGates = a.opportunity_workflow_gates || a.workflow_gates;
-              let gatesObj = oppGates;
-              if (typeof gatesObj === 'string') {
-                try { gatesObj = JSON.parse(gatesObj); } catch (_) { gatesObj = null; }
-              }
-              const isSdRequired = a.stamp_duty_required !== false && 
-                (gatesObj ? (gatesObj.requires_stamp_duty !== false && gatesObj.requires_stamp_duty !== 'false' && gatesObj.requires_stamp_duty !== 0) : true) && 
-                (a.stamp_duty_status !== 'Not Required') && 
-                (parseFloat(a.stamp_duty_amount || 0) > 0 || (a.stamp_duty_pct !== undefined && parseFloat(a.stamp_duty_pct) > 0));
-              const stampDutyAmt = isSdRequired ? (parseFloat(a.stamp_duty_amount) || Math.round((parseFloat(a.award_amount) || 0) * (parseFloat(a.stamp_duty_pct || 0.25) / 100))) : 0;
-              const isSdPaid = (a.stamp_duty_status === 'Paid');
+    const childPOs = pos.filter(p => p.award_letter_id === a.id || p.opportunity_id === a.opportunity_id);
+    const itemsCount = (a.items && a.items.length) ? a.items.length : 1;
+    const awardedItemsCount = (a.items && a.items.length) ? a.items.filter(i => i.is_awarded !== false).length : 1;
+    const oppGates = a.opportunity_workflow_gates || a.workflow_gates;
+    let gatesObj = oppGates;
+    if (typeof gatesObj === 'string') {
+      try { gatesObj = JSON.parse(gatesObj); } catch (_) { gatesObj = null; }
+    }
+    const isSdRequired = a.stamp_duty_required !== false &&
+      (gatesObj ? (gatesObj.requires_stamp_duty !== false && gatesObj.requires_stamp_duty !== 'false' && gatesObj.requires_stamp_duty !== 0) : true) &&
+      (a.stamp_duty_status !== 'Not Required') &&
+      (parseFloat(a.stamp_duty_amount || 0) > 0 || (a.stamp_duty_pct !== undefined && parseFloat(a.stamp_duty_pct) > 0));
+    const stampDutyAmt = isSdRequired ? (parseFloat(a.stamp_duty_amount) || Math.round((parseFloat(a.award_amount) || 0) * (parseFloat(a.stamp_duty_pct || 0.25) / 100))) : 0;
+    const isSdPaid = (a.stamp_duty_status === 'Paid');
 
-              return `
+    return `
                 <tr>
                   <td>
                     <strong>${a.award_number}</strong><br>
@@ -4947,7 +5261,7 @@ async function renderAwardsHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -5099,13 +5413,13 @@ async function renderPurchaseOrdersHTML() {
                 </td>
               </tr>
             ` : pos.map(po => {
-              const matchedDCs = dcs.filter(d => d.purchase_order_id === po.id || d.po_number === po.po_number);
-              const itemsCount = (po.items && po.items.length) ? po.items.length : 1;
-              const isQuotePO = po.is_quotation || String(po.award_number || '').startsWith('QTN-') || String(po.opportunity_number || '').startsWith('QTN-');
-              const scopeRef = po.opportunity_number || po.award_number || 'Direct PO';
-              const searchHaystack = `${po.po_number} ${scopeRef} ${po.opportunity_title || ''} ${po.customer_name || ''} ${po.delivery_location || ''}`.toLowerCase();
+    const matchedDCs = dcs.filter(d => d.purchase_order_id === po.id || d.po_number === po.po_number);
+    const itemsCount = (po.items && po.items.length) ? po.items.length : 1;
+    const isQuotePO = po.is_quotation || String(po.award_number || '').startsWith('QTN-') || String(po.opportunity_number || '').startsWith('QTN-');
+    const scopeRef = po.opportunity_number || po.award_number || 'Direct PO';
+    const searchHaystack = `${po.po_number} ${scopeRef} ${po.opportunity_title || ''} ${po.customer_name || ''} ${po.delivery_location || ''}`.toLowerCase();
 
-              return `
+    return `
                 <tr data-scope="${isQuotePO ? 'quotation' : 'award'}" data-search="${searchHaystack}">
                   <td>
                     <strong style="color:#0f172a; font-size:0.9rem;">${po.po_number}</strong><br>
@@ -5160,7 +5474,7 @@ async function renderPurchaseOrdersHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -5264,11 +5578,11 @@ async function renderDeliveryChallansHTML() {
                 </td>
               </tr>
             ` : dcs.map(dc => {
-              const isDropShip = dc.delivery_mode === 'Direct Drop-Shipment';
-              const itemsCount = (dc.items && dc.items.length) ? dc.items.length : 1;
-              const isDelivered = dc.status === 'Delivered' || dc.status === 'GRN Received';
+    const isDropShip = dc.delivery_mode === 'Direct Drop-Shipment';
+    const itemsCount = (dc.items && dc.items.length) ? dc.items.length : 1;
+    const isDelivered = dc.status === 'Delivered' || dc.status === 'GRN Received';
 
-              return `
+    return `
                 <tr>
                   <td>
                     <strong>${dc.dc_number}</strong><br>
@@ -5331,7 +5645,7 @@ async function renderDeliveryChallansHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -5405,21 +5719,21 @@ async function renderInvoicesHTML() {
                 </td>
               </tr>
             ` : pos.map(p => {
-              const poInvs = invoices.filter(inv => inv.purchase_order_id === p.id || inv.po_number === p.po_number);
-              const poInvoicedTotal = poInvs.reduce((s, i) => s + (parseFloat(i.total_amount) || 0), 0);
-              const poPaidTotal = poInvs.reduce((s, i) => s + (parseFloat(i.paid_amount) || 0), 0);
-              const poOutstanding = poInvoicedTotal - poPaidTotal;
+    const poInvs = invoices.filter(inv => inv.purchase_order_id === p.id || inv.po_number === p.po_number);
+    const poInvoicedTotal = poInvs.reduce((s, i) => s + (parseFloat(i.total_amount) || 0), 0);
+    const poPaidTotal = poInvs.reduce((s, i) => s + (parseFloat(i.paid_amount) || 0), 0);
+    const poOutstanding = poInvoicedTotal - poPaidTotal;
 
-              const poExps = expenses.filter(e => e.purchase_order_id === p.id || e.po_number === p.po_number || e.opportunity_id === p.opportunity_id);
-              const poDirectCost = poExps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-              const poVal = parseFloat(p.net_amount || p.total_amount || 0);
-              const poNetProfit = poPaidTotal - poDirectCost;
-              const poMarginPct = poPaidTotal > 0 ? ((poNetProfit / poPaidTotal) * 100).toFixed(1) : '0.0';
+    const poExps = expenses.filter(e => e.purchase_order_id === p.id || e.po_number === p.po_number || e.opportunity_id === p.opportunity_id);
+    const poDirectCost = poExps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+    const poVal = parseFloat(p.net_amount || p.total_amount || 0);
+    const poNetProfit = poPaidTotal - poDirectCost;
+    const poMarginPct = poPaidTotal > 0 ? ((poNetProfit / poPaidTotal) * 100).toFixed(1) : '0.0';
 
-              const billedPct = poVal > 0 ? Math.min(100, (poInvoicedTotal / poVal) * 100).toFixed(0) : 0;
-              const paidPct = poInvoicedTotal > 0 ? Math.min(100, (poPaidTotal / poInvoicedTotal) * 100).toFixed(0) : 0;
+    const billedPct = poVal > 0 ? Math.min(100, (poInvoicedTotal / poVal) * 100).toFixed(0) : 0;
+    const paidPct = poInvoicedTotal > 0 ? Math.min(100, (poPaidTotal / poInvoicedTotal) * 100).toFixed(0) : 0;
 
-              return `
+    return `
                 <tr>
                   <td>
                     <strong>${p.po_number}</strong><br>
@@ -5465,7 +5779,7 @@ async function renderInvoicesHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -5615,6 +5929,28 @@ let _receiveStockLineItems = [];
 
 function switchInventoryTab(tab) {
   _activeInventoryTab = tab;
+  const tabToView = {
+    'stock': 'inventory',
+    'add_item': 'inventory',
+    'warehouses': 'inventory-warehouses',
+    'transactions': 'inventory-movements',
+    'stock_adjustment': 'inventory-adjustments',
+    'requisitions': 'inventory-requisitions',
+    'procurements': 'inventory-procurements',
+    'grn_notes': 'inventory-grn',
+    'supplier_returns': 'inventory-returns',
+    'valuation_alerts': 'inventory-valuation',
+    'settings': 'inventory-settings'
+  };
+  const nextView = tabToView[tab] || 'inventory';
+  if (State.activeView !== nextView) {
+    State.activeView = nextView;
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+      if (item.dataset.view === nextView) item.classList.add('active');
+      else item.classList.remove('active');
+    });
+  }
   renderActiveView().then(() => {
     if (tab === 'add_item') {
       initSubTabAddItemForm();
@@ -5897,6 +6233,30 @@ async function renderInventoryHTML() {
     API.getProducts()
   ]);
 
+  let requisitions = [];
+  let grnNotes = [];
+  let supplierReturns = [];
+  let valuationData = null;
+  let reorderAlerts = null;
+  let inventorySettings = null;
+
+  if (_activeInventoryTab === 'requisitions') {
+    requisitions = await API.getPurchaseRequisitions();
+  } else if (_activeInventoryTab === 'grn_notes') {
+    grnNotes = await API.getGoodsReceiptNotes();
+  } else if (_activeInventoryTab === 'supplier_returns') {
+    supplierReturns = await API.getSupplierReturns();
+  } else if (_activeInventoryTab === 'valuation_alerts') {
+    const [valRes, alertRes] = await Promise.all([
+      API.getInventoryValuationReport(_activeInventoryWarehouseFilter),
+      API.getInventoryReorderAlerts()
+    ]);
+    valuationData = valRes;
+    reorderAlerts = alertRes;
+  } else if (_activeInventoryTab === 'settings') {
+    inventorySettings = await API.getInventorySettings();
+  }
+
   window._cachedWarehouses = warehouses || [];
   window._cachedWarehouseStock = stockItems || [];
   window._cachedProducts = products || [];
@@ -5949,41 +6309,23 @@ async function renderInventoryHTML() {
       </div>
     </div>
 
-    <!-- Navigation Sub-Tabs & Action Bar -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
-      <div style="display:inline-flex; background:#e2e8f0; padding:4px; border-radius:8px; gap:4px; flex-wrap:wrap;">
-        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'stock' ? 'active' : ''}" onclick="switchInventoryTab('stock')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'stock' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          📦 Stock Balances (${stockItems.length})
-        </button>
-        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'add_item' ? 'active' : ''}" onclick="switchInventoryTab('add_item')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'add_item' ? 'background:#059669; color:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#059669;'}">
-          ➕ Sub tab 1: Add New Item
-        </button>
-        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'stock_adjustment' ? 'active' : ''}" onclick="switchInventoryTab('stock_adjustment')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'stock_adjustment' ? 'background:#d97706; color:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#d97706;'}">
-          ⚖️ Sub tab 2: Stock Adjustment
-        </button>
-        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'transactions' ? 'active' : ''}" onclick="switchInventoryTab('transactions')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'transactions' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          📜 Stock Movements & Audit (${transactions.length})
-        </button>
-        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'warehouses' ? 'active' : ''}" onclick="switchInventoryTab('warehouses')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'warehouses' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          🏬 Facilities (${warehouses.length})
-        </button>
-        <button type="button" class="btn-tab-toggle ${_activeInventoryTab === 'procurements' ? 'active' : ''}" onclick="switchInventoryTab('procurements')" style="padding:7px 16px; font-size:0.85rem; font-weight:700; border-radius:6px; border:none; cursor:pointer; ${_activeInventoryTab === 'procurements' ? 'background:#fff; color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,0.1);' : 'background:transparent; color:#475569;'}">
-          🚢 Procurements (${procurements.length})
-        </button>
-      </div>
-
+    <!-- Action Bar (Screens are directly accessible from the Sidebar) -->
+    <div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
-          <button class="primary-btn" onclick="switchInventoryTab('add_item')" style="font-size:0.85rem; font-weight:700; background:#059669; display:flex; align-items:center; gap:6px;">
+          <button class="primary-btn" onclick="switchInventoryTab('add_item')" style="font-size:0.83rem; font-weight:700; background:#059669; display:flex; align-items:center; gap:6px;">
             <span>➕</span> + Add New Item
           </button>
-          <button class="primary-btn" onclick="switchInventoryTab('stock_adjustment')" style="font-size:0.85rem; font-weight:700; background:#d97706; display:flex; align-items:center; gap:6px;">
+          <button class="primary-btn" onclick="switchInventoryTab('stock_adjustment')" style="font-size:0.83rem; font-weight:700; background:#d97706; display:flex; align-items:center; gap:6px;">
             <span>⚖️</span> Stock Adjustment
           </button>
-          <button class="secondary-btn" onclick="openReceiveStockModal()" style="font-size:0.85rem; font-weight:600; display:flex; align-items:center; gap:6px;">
+          <button class="secondary-btn" onclick="openReceiveStockModal()" style="font-size:0.83rem; font-weight:600; display:flex; align-items:center; gap:6px;">
             <span>📥</span> Bulk Inward (GRN)
           </button>
-          <button class="secondary-btn" onclick="openNewWarehouseModal()" style="font-size:0.85rem; font-weight:600;">
+          <button class="secondary-btn" onclick="openStockReservationModal()" style="font-size:0.83rem; font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>🛡️</span> Reserve Stock
+          </button>
+          <button class="secondary-btn" onclick="openNewWarehouseModal()" style="font-size:0.83rem; font-weight:600;">
             🏬 + Add Facility
           </button>
         ` : ''}
@@ -6034,15 +6376,15 @@ async function renderInventoryHTML() {
                   </td>
                 </tr>
               ` : filteredStock.map(s => {
-                const onHand = parseFloat(s.quantity_on_hand || 0);
-                const reserved = parseFloat(s.quantity_reserved || 0);
-                const avail = Math.max(0, onHand - reserved);
-                const cost = parseFloat(s.cost_price || 0);
-                const val = onHand * cost;
-                const reorder = parseFloat(s.reorder_level || 10);
-                const isLow = avail <= reorder;
+    const onHand = parseFloat(s.quantity_on_hand || 0);
+    const reserved = parseFloat(s.quantity_reserved || 0);
+    const avail = Math.max(0, onHand - reserved);
+    const cost = parseFloat(s.cost_price || 0);
+    const val = onHand * cost;
+    const reorder = parseFloat(s.reorder_level || 10);
+    const isLow = avail <= reorder;
 
-                return `
+    return `
                   <tr>
                     <td>
                       <strong>${s.product_name}</strong><br>
@@ -6067,10 +6409,10 @@ async function renderInventoryHTML() {
                       <span style="font-size:0.75rem; color:#64748b; display:block;">${s.unit || 'PCS'}</span>
                     </td>
                     <td style="text-align:center;">
-                      ${reserved > 0 
-                        ? `<span class="badge badge-hold" style="font-weight:700;">🛡️ ${reserved % 1 === 0 ? reserved : reserved.toFixed(2)}</span>`
-                        : `<span style="color:#94a3b8; font-size:0.8rem;">0</span>`
-                      }
+                      ${reserved > 0
+        ? `<span class="badge badge-hold" style="font-weight:700;">🛡️ ${reserved % 1 === 0 ? reserved : reserved.toFixed(2)}</span>`
+        : `<span style="color:#94a3b8; font-size:0.8rem;">0</span>`
+      }
                     </td>
                     <td style="text-align:center;">
                       <span class="badge ${avail > 0 ? 'badge-won' : 'badge-withdraw'}" style="font-weight:700; font-size:0.85rem;">
@@ -6084,10 +6426,10 @@ async function renderInventoryHTML() {
                       <strong style="color:#0f172a;">${formatCurrency(val, 'PKR')}</strong>
                     </td>
                     <td style="text-align:center;">
-                      ${isLow 
-                        ? `<span class="badge badge-withdraw" title="Stock is at or below reorder threshold (${reorder})">⚠️ Low Stock</span>`
-                        : `<span class="badge badge-ready">🟢 Adequate</span>`
-                      }
+                      ${isLow
+        ? `<span class="badge badge-withdraw" title="Stock is at or below reorder threshold (${reorder})">⚠️ Low Stock</span>`
+        : `<span class="badge badge-ready">🟢 Adequate</span>`
+      }
                     </td>
                     <td class="sticky-action-col" style="text-align:center;">
                       ${!State.isReadOnly() && State.hasPermission('inventory', 'add') ? `
@@ -6101,7 +6443,7 @@ async function renderInventoryHTML() {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+  }).join('')}
             </tbody>
           </table>
         </div>
@@ -6197,7 +6539,7 @@ async function renderInventoryHTML() {
               </div>
               <div>
                 <label class="form-label" style="font-size:0.82rem; font-weight:700;">Opening Batch / Lot Number *</label>
-                <input type="text" class="form-input" id="subtab-item-batch" required value="LOT-${new Date().toISOString().slice(0,10).replace(/-/g,'')}" style="font-weight:700; font-size:0.85rem;">
+                <input type="text" class="form-input" id="subtab-item-batch" required value="LOT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}" style="font-weight:700; font-size:0.85rem;">
               </div>
               <div>
                 <label class="form-label" style="font-size:0.82rem; font-weight:700;">Opening Quantity on Hand *</label>
@@ -6412,15 +6754,15 @@ async function renderInventoryHTML() {
                   </td>
                 </tr>
               ` : transactions.map(t => {
-                const qty = parseFloat(t.quantity || 0);
-                const cost = parseFloat(t.unit_cost || 0);
-                const isPositive = ['STOCK_IN', 'PURCHASE_RECEIPT', 'RETURN'].includes(t.transaction_type);
+    const qty = parseFloat(t.quantity || 0);
+    const cost = parseFloat(t.unit_cost || 0);
+    const isPositive = ['STOCK_IN', 'PURCHASE_RECEIPT', 'RETURN'].includes(t.transaction_type);
 
-                return `
+    return `
                   <tr>
                     <td>
                       <span style="font-size:0.82rem; font-weight:600;">${formatDateDDMMYYYY(t.created_at)}</span><br>
-                      <span style="font-size:0.72rem; color:var(--text-muted);">${new Date(t.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                      <span style="font-size:0.72rem; color:var(--text-muted);">${new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </td>
                     <td>
                       <span class="badge ${isPositive ? 'badge-won' : 'badge-withdraw'}" style="font-weight:700;">
@@ -6444,7 +6786,7 @@ async function renderInventoryHTML() {
                     <td><span style="font-size:0.78rem; color:#475569;">${t.remarks || '—'}</span></td>
                   </tr>
                 `;
-              }).join('')}
+  }).join('')}
             </tbody>
           </table>
         </div>
@@ -6531,8 +6873,569 @@ async function renderInventoryHTML() {
         </div>
       </div>
     ` : ''}
+
+    ${_activeInventoryTab === 'requisitions' ? `
+      <!-- TAB 5: PURCHASE REQUISITIONS -->
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div class="card-title">📋 Purchase Requisitions & Material Indents</div>
+            <p style="margin:2px 0 0; font-size:0.78rem; color:#64748b;">Internal demand requests and material approvals before vendor procurement</p>
+          </div>
+          <button class="primary-btn" onclick="openNewRequisitionModal()">➕ + New Purchase Requisition</button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Requisition #</th>
+                <th>Date</th>
+                <th>Department</th>
+                <th>Priority</th>
+                <th>Items Count</th>
+                <th>Est. Total Value</th>
+                <th>Linked Tender / Opportunity</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${requisitions.length === 0 ? `
+                <tr><td colspan="9" style="text-align:center; padding:22px; color:#64748b;">No purchase requisitions logged yet. Click <strong>+ New Purchase Requisition</strong> to request material procurement.</td></tr>
+              ` : requisitions.map(r => `
+                <tr>
+                  <td style="font-weight:700; color:#0284c7;">${r.requisition_number}</td>
+                  <td>${formatDateDDMMYYYY(r.requisition_date)}</td>
+                  <td>${r.department_name || 'Procurement'}</td>
+                  <td>
+                    <span class="badge" style="background:${r.priority === 'Urgent' ? '#fee2e2' : r.priority === 'High' ? '#fef3c7' : '#f1f5f9'}; color:${r.priority === 'Urgent' ? '#b91c1c' : r.priority === 'High' ? '#92400e' : '#475569'}; font-weight:700;">
+                      ${r.priority || 'Medium'}
+                    </span>
+                  </td>
+                  <td><strong>${r.item_count || 1}</strong> SKU(s)</td>
+                  <td><strong>${formatCurrency(r.total_estimated_cost || 0, 'PKR')}</strong></td>
+                  <td>${r.opportunity_number ? `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 ${r.opportunity_number}</span>` : '—'}</td>
+                  <td>
+                    <span class="badge ${r.status === 'Approved' ? 'badge-won' : r.status === 'Converted_To_PO' ? 'badge-sec-attached' : 'badge-hold'}">
+                      ${r.status || 'Pending'}
+                    </span>
+                  </td>
+                  <td>
+                    ${r.status === 'Pending' ? `
+                      <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem; background:#059669;" onclick="updateRequisitionStatusAction('${r.id}', 'Approved')">✓ Approve</button>
+                    ` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'grn_notes' ? `
+      <!-- TAB 6: GOODS RECEIPT NOTES (GRN) -->
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div class="card-title">📥 Inward Goods Receipt Notes (GRN)</div>
+            <p style="margin:2px 0 0; font-size:0.78rem; color:#64748b;">Formal receiving inspection and landed inventory entry certificates</p>
+          </div>
+          <button class="primary-btn" style="background:#059669;" onclick="openReceiveStockModal()">📥 + Inward Stock Receipt (GRN)</button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>GRN #</th>
+                <th>Receipt Date</th>
+                <th>Receiving Warehouse</th>
+                <th>Supplier / Vendor</th>
+                <th>Procurement Ref</th>
+                <th>Items Count</th>
+                <th>Total Value Received</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${grnNotes.length === 0 ? `
+                <tr><td colspan="8" style="text-align:center; padding:22px; color:#64748b;">No Goods Receipt Notes on file yet. Receive inventory into warehouse to generate verified GRN certificates.</td></tr>
+              ` : grnNotes.map(g => `
+                <tr>
+                  <td style="font-weight:700; color:#059669; font-family:monospace;">${g.grn_number}</td>
+                  <td>${formatDateDDMMYYYY(g.grn_date)}</td>
+                  <td><strong>${g.warehouse_name}</strong></td>
+                  <td>${g.supplier_name || 'Direct / OEM'}</td>
+                  <td>${g.procurement_number ? `<span class="badge" style="background:#eff6ff; color:#1e40af;">🚢 ${g.procurement_number}</span>` : (g.reference_number || '—')}</td>
+                  <td><strong>${g.item_count || 1}</strong> Line(s)</td>
+                  <td style="font-weight:700; color:#0f172a;">${formatCurrency(g.total_received_value || 0, 'PKR')}</td>
+                  <td><span class="badge badge-won">${g.status || 'Completed'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'supplier_returns' ? `
+      <!-- TAB 7: SUPPLIER RETURNS (RTV) -->
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div class="card-title">🔄 Returns to Supplier / Vendor (RTV)</div>
+            <p style="margin:2px 0 0; font-size:0.78rem; color:#64748b;">Return defective, damaged, or excess material back to supplier with auto-relieved stock</p>
+          </div>
+          <button class="primary-btn" style="background:#b91c1c;" onclick="openSupplierReturnModal()">🔄 + New Return to Supplier (RTV)</button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>RTV Return #</th>
+                <th>Return Date</th>
+                <th>Dispatching Warehouse</th>
+                <th>Supplier / Vendor</th>
+                <th>Value Relieved</th>
+                <th>Return Reason</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${supplierReturns.length === 0 ? `
+                <tr><td colspan="7" style="text-align:center; padding:22px; color:#64748b;">No supplier return orders recorded.</td></tr>
+              ` : supplierReturns.map(rtv => `
+                <tr>
+                  <td style="font-weight:700; color:#b91c1c; font-family:monospace;">${rtv.return_number}</td>
+                  <td>${formatDateDDMMYYYY(rtv.return_date)}</td>
+                  <td><strong>${rtv.warehouse_name}</strong></td>
+                  <td>${rtv.supplier_name}</td>
+                  <td style="font-weight:700; color:#b91c1c;">${formatCurrency(rtv.total_return_value || 0, 'PKR')}</td>
+                  <td>${rtv.reason || 'Material defect / excess'}</td>
+                  <td><span class="badge" style="background:#fef2f2; color:#b91c1c; font-weight:700;">${rtv.status || 'Dispatched'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'valuation_alerts' ? `
+      <!-- TAB 8: VALUATION & REORDER ALERTS -->
+      <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+        <div class="kpi-card blue">
+          <div class="kpi-card-header"><span class="kpi-card-title">Total Inventory Valuation</span><div class="kpi-card-icon">💰</div></div>
+          <div class="kpi-card-value">${formatCurrency(valuationData?.summary?.total_asset_valuation || totalValuation, 'PKR')}</div>
+          <div class="kpi-card-sub">Weighted average asset value</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-card-header"><span class="kpi-card-title">Retail Potential Value</span><div class="kpi-card-icon">🏷️</div></div>
+          <div class="kpi-card-value">${formatCurrency(valuationData?.summary?.total_retail_potential || 0, 'PKR')}</div>
+          <div class="kpi-card-sub">Estimated gross sales value</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid #ef4444;">
+          <div class="kpi-card-header"><span class="kpi-card-title">Reorder Alerts</span><div class="kpi-card-icon">🚨</div></div>
+          <div class="kpi-card-value" style="color:#b91c1c;">${reorderAlerts?.count || 0} Items</div>
+          <div class="kpi-card-sub">Stock below reorder threshold</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
+          <div class="kpi-card-header"><span class="kpi-card-title">Total Available Units</span><div class="kpi-card-icon">📦</div></div>
+          <div class="kpi-card-value">${(valuationData?.summary?.total_available || totalAvailableUnits).toLocaleString()}</div>
+          <div class="kpi-card-sub">Free stock unreserved for orders</div>
+        </div>
+      </div>
+
+      <!-- Reorder Alerts Table -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><div class="card-title">🚨 Low-Stock Reorder Alerts & Recommended Procurement Quantities</div></div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Item & SKU</th>
+                <th>Category</th>
+                <th>Current Stock</th>
+                <th>Reorder Level</th>
+                <th>Stock Health</th>
+                <th>Suggested Order Qty</th>
+                <th>Preferred Supplier</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${!reorderAlerts || !reorderAlerts.alerts || reorderAlerts.alerts.length === 0 ? `
+                <tr><td colspan="8" style="text-align:center; padding:18px; color:#059669; font-weight:700;">✓ All items in catalog are sufficiently stocked above minimum thresholds.</td></tr>
+              ` : reorderAlerts.alerts.map(a => `
+                <tr>
+                  <td><strong>${a.name}</strong><br><code>${a.sku}</code></td>
+                  <td>${a.category_name || 'General'}</td>
+                  <td><strong style="color:#b91c1c;">${a.current_stock} ${a.unit}</strong></td>
+                  <td>${a.reorder_level} ${a.unit}</td>
+                  <td>
+                    <span class="badge" style="background:#fee2e2; color:#b91c1c; font-weight:700;">
+                      ${a.stock_status === 'OUT_OF_STOCK' ? '🔴 Out of Stock' : '⚠️ Low Stock'}
+                    </span>
+                  </td>
+                  <td><strong style="color:#0284c7;">+ ${a.suggested_order_qty} ${a.unit}</strong></td>
+                  <td>${a.supplier_name || '—'}</td>
+                  <td>
+                    <button class="primary-btn" style="padding:3px 8px; font-size:0.75rem;" onclick="openReceiveStockModal('${a.product_id}')">📥 Inward GRN</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_activeInventoryTab === 'settings' ? `
+      <!-- TAB 9: INVENTORY SETTINGS -->
+      <div class="card" style="max-width:800px; margin:0 auto;">
+        <div class="card-header">
+          <div class="card-title">⚙️ Inventory & Costing Configuration</div>
+        </div>
+        <div class="card-body" style="padding:24px;">
+          <form onsubmit="event.preventDefault(); saveInventorySettingsForm();">
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" style="font-weight:700;">Default Valuation Method</label>
+              <select class="form-select" id="inv-cfg-val-method">
+                <option value="WEIGHTED_AVG" ${inventorySettings?.default_valuation_method !== 'FIFO' ? 'selected' : ''}>Weighted Average Costing (AVCO) — Standard IAS 2</option>
+                <option value="FIFO" ${inventorySettings?.default_valuation_method === 'FIFO' ? 'selected' : ''}>First-In, First-Out (FIFO Batch Tracking)</option>
+              </select>
+              <span style="font-size:0.75rem; color:#64748b;">Determines how landed costs are recalculated upon inward goods receipt.</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" style="font-weight:700;">Negative Stock Policy</label>
+              <select class="form-select" id="inv-cfg-neg-stock">
+                <option value="false" ${inventorySettings?.allow_negative_stock === false ? 'selected' : ''}>🛑 Strictly Disallow Negative Stock (Safe Default)</option>
+                <option value="true" ${inventorySettings?.allow_negative_stock === true ? 'selected' : ''}>⚠️ Allow Negative Stock with Warning</option>
+              </select>
+              <span style="font-size:0.75rem; color:#64748b;">Controls whether stock issues and delivery challans can exceed recorded warehouse on-hand balances.</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" style="font-weight:700;">Financial General Ledger Auto-Posting</label>
+              <select class="form-select" id="inv-cfg-gl-post">
+                <option value="true" ${inventorySettings?.auto_post_gl !== false ? 'selected' : ''}>✓ Auto-Post Balanced Double-Entry Journal Vouchers (When mod_finance is active)</option>
+                <option value="false" ${inventorySettings?.auto_post_gl === false ? 'selected' : ''}>Disabled (Stock quantities tracked without GL posting)</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin-bottom:24px;">
+              <label class="form-label" style="font-weight:700;">Low-Stock Alert Threshold (%)</label>
+              <input type="number" class="form-control" id="inv-cfg-low-pct" value="${inventorySettings?.low_stock_threshold_percent || 20}" min="1" max="100">
+              <span style="font-size:0.75rem; color:#64748b;">Triggers automated warnings when on-hand stock falls below reorder percentage.</span>
+            </div>
+
+            <button type="submit" class="primary-btn" style="padding:10px 22px; font-weight:700;">💾 Save Configuration Settings</button>
+          </form>
+        </div>
+      </div>
+    ` : ''}
   `;
 }
+
+// --------------------------------------------------------------------------
+// INVENTORY EXTENSION ACTIONS: REQUISITIONS, RTV, IMPORT, SETTINGS
+// --------------------------------------------------------------------------
+
+async function updateRequisitionStatusAction(reqId, newStatus) {
+  try {
+    const res = await API.updateRequisitionStatus(reqId, newStatus);
+    if (res.success) {
+      showToast(res.message || 'Requisition status updated.', 'success');
+      renderActiveView();
+    } else {
+      showToast(res.message || 'Failed to update requisition status.', 'danger');
+    }
+  } catch (err) {
+    showToast(err.message, 'danger');
+  }
+}
+window.updateRequisitionStatusAction = updateRequisitionStatusAction;
+
+function openNewRequisitionModal() {
+  const prods = window._cachedProducts || [];
+  const prodOptions = prods.map(p => `<option value="${p.id}" data-cost="${p.cost_price || 0}">[${escapeHtml(p.sku || '')}] ${escapeHtml(p.name)} (${p.unit || 'PCS'})</option>`).join('');
+
+  if (window.ModularERP && typeof window.ModularERP.showDynamicModal === 'function') {
+    ModularERP.showDynamicModal('📋 Create Purchase Requisition (Material Indent)', `
+      <form onsubmit="event.preventDefault(); submitNewRequisitionForm();">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Department / Unit *</label>
+            <input type="text" class="form-control" id="req-dept" value="Procurement & Tenders" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Required By Date *</label>
+            <input type="date" class="form-control" id="req-date" value="${new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Priority</label>
+            <select class="form-select" id="req-priority">
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Urgent">🚨 Urgent</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin: 16px 0 8px; font-weight: 700; font-size: 0.9rem;">Requested Material Lines</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label">Product / SKU *</label>
+            <select class="form-select" id="req-item-prod" required>${prodOptions}</select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Quantity Needed *</label>
+            <input type="number" class="form-control" id="req-item-qty" value="10" min="1" step="any" required>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Est. Unit Rate (PKR)</label>
+            <input type="number" class="form-control" id="req-item-cost" value="1000" min="0" step="any">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top:12px;">
+          <label class="form-label">Procurement Justification / Notes</label>
+          <textarea class="form-control" id="req-notes" rows="2" placeholder="State reason for material purchase (e.g. tender compliance, low buffer stock)..."></textarea>
+        </div>
+
+        <div style="margin-top:20px; text-align:right;">
+          <button type="submit" class="primary-btn" style="padding:9px 20px;">✓ Submit Requisition for Approval</button>
+        </div>
+      </form>
+    `);
+  }
+}
+window.openNewRequisitionModal = openNewRequisitionModal;
+
+async function submitNewRequisitionForm() {
+  const dept = document.getElementById('req-dept')?.value;
+  const reqDate = document.getElementById('req-date')?.value;
+  const priority = document.getElementById('req-priority')?.value;
+  const prodId = document.getElementById('req-item-prod')?.value;
+  const qty = parseFloat(document.getElementById('req-item-qty')?.value || 1);
+  const cost = parseFloat(document.getElementById('req-item-cost')?.value || 0);
+  const notes = document.getElementById('req-notes')?.value;
+
+  if (!prodId || qty <= 0) {
+    showToast('Please select a product and valid quantity.', 'warning');
+    return;
+  }
+
+  const res = await API.createPurchaseRequisition({
+    department_name: dept,
+    required_by_date: reqDate,
+    priority,
+    notes,
+    items: [{ product_id: prodId, requested_quantity: qty, estimated_unit_cost: cost }]
+  });
+
+  if (res.success) {
+    showToast(res.message || 'Requisition submitted.', 'success');
+    document.getElementById('custom-dynamic-modal')?.remove();
+    _activeInventoryTab = 'requisitions';
+    renderActiveView();
+  } else {
+    showToast(res.message || 'Failed to submit requisition.', 'danger');
+  }
+}
+window.submitNewRequisitionForm = submitNewRequisitionForm;
+
+function openSupplierReturnModal() {
+  const whs = window._cachedWarehouses || [];
+  const sups = window._cachedSuppliers || [];
+  const prods = window._cachedProducts || [];
+
+  const whOpts = whs.map(w => `<option value="${w.id}">${escapeHtml(w.warehouse_name)} (${escapeHtml(w.city || '')})</option>`).join('');
+  const supOpts = sups.map(s => `<option value="${s.id}">${escapeHtml(s.supplier_name)}</option>`).join('');
+  const prodOpts = prods.map(p => `<option value="${p.id}" data-cost="${p.cost_price || 0}">[${escapeHtml(p.sku || '')}] ${escapeHtml(p.name)}</option>`).join('');
+
+  if (window.ModularERP && typeof window.ModularERP.showDynamicModal === 'function') {
+    ModularERP.showDynamicModal('🔄 Return Goods to Supplier / Vendor (RTV)', `
+      <form onsubmit="event.preventDefault(); submitSupplierReturnForm();">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Dispatching Warehouse *</label>
+            <select class="form-select" id="rtv-wh" required>${whOpts}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Recipient Supplier *</label>
+            <select class="form-select" id="rtv-sup" required>${supOpts}</select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label">Returned Product / SKU *</label>
+            <select class="form-select" id="rtv-prod" required>${prodOpts}</select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Return Qty *</label>
+            <input type="number" class="form-control" id="rtv-qty" value="1" min="0.001" step="any" required>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Unit Cost (PKR)</label>
+            <input type="number" class="form-control" id="rtv-cost" value="0" min="0" step="any">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top:12px;">
+          <label class="form-label">Reason for Return *</label>
+          <input type="text" class="form-control" id="rtv-reason" placeholder="e.g. Broken seal, failed lab clearance, incorrect specifications" required>
+        </div>
+
+        <div style="margin-top:20px; text-align:right;">
+          <button type="submit" class="primary-btn" style="background:#b91c1c; padding:9px 20px;">✓ Dispatch Return to Supplier</button>
+        </div>
+      </form>
+    `);
+  }
+}
+window.openSupplierReturnModal = openSupplierReturnModal;
+
+async function submitSupplierReturnForm() {
+  const whId = document.getElementById('rtv-wh')?.value;
+  const supId = document.getElementById('rtv-sup')?.value;
+  const prodId = document.getElementById('rtv-prod')?.value;
+  const qty = parseFloat(document.getElementById('rtv-qty')?.value || 0);
+  const cost = parseFloat(document.getElementById('rtv-cost')?.value || 0);
+  const reason = document.getElementById('rtv-reason')?.value;
+
+  if (!whId || !supId || !prodId || qty <= 0) {
+    showToast('All fields and positive return quantity are required.', 'warning');
+    return;
+  }
+
+  const res = await API.createSupplierReturn({
+    warehouse_id: whId,
+    supplier_id: supId,
+    reason,
+    items: [{ product_id: prodId, quantity: qty, unit_cost: cost, reason }]
+  });
+
+  if (res.success) {
+    showToast(res.message || 'Return order dispatched to supplier.', 'success');
+    document.getElementById('custom-dynamic-modal')?.remove();
+    _activeInventoryTab = 'supplier_returns';
+    renderActiveView();
+  } else {
+    showToast(res.message || 'Failed to dispatch return.', 'danger');
+  }
+}
+window.submitSupplierReturnForm = submitSupplierReturnForm;
+
+function openProductImportModal() {
+  if (window.ModularERP && typeof window.ModularERP.showDynamicModal === 'function') {
+    ModularERP.showDynamicModal('📥 Bulk Import Products & Master Catalog', `
+      <div>
+        <p style="font-size:0.83rem; color:#64748b; margin-top:0;">Paste comma-separated (CSV) records below to bulk-import items into your product catalog with automated duplicate detection.</p>
+        <div style="margin-bottom:8px;">
+          <button type="button" class="secondary-btn" style="font-size:0.75rem; padding:3px 8px;" onclick="document.getElementById('csv-import-area').value = 'SKU,Product Name,Unit,Cost Price,Selling Price,Current Stock\\nSKU-TEST-001,High Voltage Fuse 11kV,PCS,4500,6200,50\\nSKU-TEST-002,Silica Gel Breather,PCS,2800,3900,20'">Load Sample Template</button>
+        </div>
+        <textarea id="csv-import-area" class="form-control" rows="8" style="font-family:monospace; font-size:0.8rem;" placeholder="SKU,Product Name,Unit,Cost Price,Selling Price,Current Stock&#10;SKU-101,Sample Transformer Cable,MTR,1200,1800,100"></textarea>
+
+        <div style="margin-top:16px; display:flex; justify-content:space-between; align-items:center;">
+          <a href="/api/masters/products-export" target="_blank" style="font-size:0.8rem; color:#0284c7; text-decoration:none;">📥 Download Current Catalog (CSV)</a>
+          <button type="button" class="primary-btn" onclick="submitCsvImport();">Process & Import Items</button>
+        </div>
+      </div>
+    `);
+  }
+}
+window.openProductImportModal = openProductImportModal;
+
+async function submitCsvImport() {
+  const text = document.getElementById('csv-import-area')?.value;
+  if (!text || !text.trim()) {
+    showToast('Please paste CSV data to import.', 'warning');
+    return;
+  }
+
+  const lines = text.trim().split('\n').filter(l => l.trim().length > 0);
+  if (lines.length < 2) {
+    showToast('CSV must include header row and at least 1 data row.', 'warning');
+    return;
+  }
+
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  const items = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    const item = {};
+    headers.forEach((h, idx) => {
+      item[h] = cols[idx] || '';
+    });
+    item.name = item['Product Name'] || item.name || cols[1] || '';
+    item.sku = item['SKU'] || item.sku || cols[0] || '';
+    item.unit = item['Unit'] || item.unit || cols[2] || 'PCS';
+    item.cost_price = parseFloat(item['Cost Price'] || item.cost_price || cols[3] || 0);
+    item.selling_price = parseFloat(item['Selling Price'] || item.selling_price || cols[4] || 0);
+    item.current_stock = parseFloat(item['Current Stock'] || item.current_stock || cols[5] || 0);
+    items.push(item);
+  }
+
+  const res = await API.importProducts(items);
+  if (res.success) {
+    showToast(res.message || 'Import completed.', 'success');
+    document.getElementById('custom-dynamic-modal')?.remove();
+    renderActiveView();
+  } else {
+    showToast(res.message || 'Import failed.', 'danger');
+  }
+}
+window.submitCsvImport = submitCsvImport;
+
+async function saveInventorySettingsForm() {
+  const valMethod = document.getElementById('inv-cfg-val-method')?.value;
+  const negStock = document.getElementById('inv-cfg-neg-stock')?.value === 'true';
+  const glPost = document.getElementById('inv-cfg-gl-post')?.value === 'true';
+  const lowPct = parseFloat(document.getElementById('inv-cfg-low-pct')?.value || 20);
+
+  const res = await API.updateInventorySettings({
+    default_valuation_method: valMethod,
+    allow_negative_stock: negStock,
+    auto_post_gl: glPost,
+    low_stock_threshold_percent: lowPct
+  });
+
+  if (res.success) {
+    showToast('Inventory settings saved successfully.', 'success');
+  } else {
+    showToast(res.message || 'Failed to save settings.', 'danger');
+  }
+}
+window.saveInventorySettingsForm = saveInventorySettingsForm;
+
+async function archiveProductItem(prodId, prodName) {
+  if (!confirm(`Are you sure you want to archive product "${decodeURIComponent(prodName)}"? It will be hidden from active catalog.`)) {
+    return;
+  }
+  const res = await API.archiveProduct(prodId);
+  if (res.success) {
+    showToast(res.message || 'Product archived.', 'success');
+    renderActiveView();
+  } else {
+    showToast(res.message || 'Failed to archive product.', 'danger');
+  }
+}
+window.archiveProductItem = archiveProductItem;
+
+async function restoreProductItem(prodId, prodName) {
+  const res = await API.restoreProduct(prodId);
+  if (res.success) {
+    showToast(res.message || 'Product restored.', 'success');
+    renderActiveView();
+  } else {
+    showToast(res.message || 'Failed to restore product.', 'danger');
+  }
+}
+window.restoreProductItem = restoreProductItem;
 
 // --------------------------------------------------------------------------
 // INWARD GOODS RECEIPT (GRN) MODAL LOGIC (REAL DATABASE INTERACTION)
@@ -6573,7 +7476,7 @@ async function openReceiveStockModal(preSelectedProductId = null, preSelectedWar
           whSelect.value = '';
         }
       }
-      whSelect.onchange = function() {
+      whSelect.onchange = function () {
         if (this.value) {
           this.style.borderColor = '';
           this.style.boxShadow = '';
@@ -6623,9 +7526,9 @@ function addReceiveStockRow(initial = null) {
   const qtyVal = initial?.quantity || 1;
   const unitVal = initial?.unit || (selectedProd ? selectedProd.unit || 'PCS' : 'PCS');
   const brandVal = initial?.brand_name || selectedProd?.brand_name || '';
-  const batchVal = initial?.batch_number || selectedProd?.batch_number || ('LOT-' + new Date().toISOString().slice(0,10).replace(/-/g,''));
-  const domVal = initial?.manufacturing_date || (selectedProd?.manufacturing_date ? String(selectedProd.manufacturing_date).slice(0,10) : '');
-  const doeVal = initial?.expiry_date || (selectedProd?.expiry_date ? String(selectedProd.expiry_date).slice(0,10) : '');
+  const batchVal = initial?.batch_number || selectedProd?.batch_number || ('LOT-' + new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+  const domVal = initial?.manufacturing_date || (selectedProd?.manufacturing_date ? String(selectedProd.manufacturing_date).slice(0, 10) : '');
+  const doeVal = initial?.expiry_date || (selectedProd?.expiry_date ? String(selectedProd.expiry_date).slice(0, 10) : '');
 
   const rowHtml = `
     <tr id="${rowId}" data-index="${rowIndex}">
@@ -7034,8 +7937,8 @@ async function renderExpensesHTML() {
   const tier4Cats = categories.filter(c => c.tier === 'Tier 4 - Customer Direct');
   const tier3Cats = categories.filter(c => c.tier === 'Tier 3 - General Overheads');
 
-  const filteredCategories = _activeExpenseCatFilterTier === 'all' 
-    ? categories 
+  const filteredCategories = _activeExpenseCatFilterTier === 'all'
+    ? categories
     : categories.filter(c => c.tier === _activeExpenseCatFilterTier);
 
   return `
@@ -7264,64 +8167,64 @@ async function renderExpensesHTML() {
                   </td>
                 </tr>
               ` : expenses.map(e => {
-                const isTier1 = tier1Expenses.includes(e);
-                const isTier2 = tier2Expenses.includes(e);
-                const isTier4 = tier4Expenses.includes(e);
+    const isTier1 = tier1Expenses.includes(e);
+    const isTier2 = tier2Expenses.includes(e);
+    const isTier4 = tier4Expenses.includes(e);
 
-                let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
-                if (isTier1) {
-                  tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
-                } else if (isTier2) {
-                  tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
-                } else if (isTier4) {
-                  tierBadge = `<span class="badge" style="background:#ede9fe; color:#6d28d9;">👥 Tier 4: Customer Direct</span>`;
-                }
+    let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
+    if (isTier1) {
+      tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
+    } else if (isTier2) {
+      tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
+    } else if (isTier4) {
+      tierBadge = `<span class="badge" style="background:#ede9fe; color:#6d28d9;">👥 Tier 4: Customer Direct</span>`;
+    }
 
-                const matchedOpp = (_cachedExpenseOpportunities || []).find(o => o.id === e.opportunity_id) ||
-                                   (State.opportunities || []).find(o => o.id === e.opportunity_id);
-                const tenderTitle = e.tender_name || e.opportunity_title || matchedOpp?.tender_name || matchedOpp?.title || '';
-                const tenderRef = e.opportunity_number || matchedOpp?.opportunity_number || '';
-                let attributionDisplay = '';
-                if (isTier4 || (e.customer_name && !tenderTitle && !e.po_number)) {
-                  attributionDisplay = `
+    const matchedOpp = (_cachedExpenseOpportunities || []).find(o => o.id === e.opportunity_id) ||
+      (State.opportunities || []).find(o => o.id === e.opportunity_id);
+    const tenderTitle = e.tender_name || e.opportunity_title || matchedOpp?.tender_name || matchedOpp?.title || '';
+    const tenderRef = e.opportunity_number || matchedOpp?.opportunity_number || '';
+    let attributionDisplay = '';
+    if (isTier4 || (e.customer_name && !tenderTitle && !e.po_number)) {
+      attributionDisplay = `
                     <div style="line-height:1.35;">
                       <strong style="color:#7c3aed; font-size:0.88rem; font-weight:700;">👤 ${escapeHtml(e.customer_name || 'Direct Customer Expense')}</strong>
                       <br><span class="badge" style="background:#ede9fe; color:#6d28d9; font-size:0.72rem; font-weight:600;">Client Direct Attribution</span>
                     </div>
                   `;
-                } else if (tenderTitle) {
-                  attributionDisplay = `
+    } else if (tenderTitle) {
+      attributionDisplay = `
                     <div style="line-height:1.35;">
                       <strong style="color:#0f172a; font-size:0.88rem; font-weight:700;">${escapeHtml(tenderTitle)}</strong>
                       ${tenderRef ? `<br><span style="font-size:0.73rem; color:var(--primary); font-weight:600;">${escapeHtml(tenderRef)}</span>` : ''}
                       ${e.customer_name ? `<br><span style="font-size:0.71rem; color:#64748b;">👤 ${escapeHtml(e.customer_name)}</span>` : ''}
                     </div>
                   `;
-                } else if (e.po_number) {
-                  attributionDisplay = `
+    } else if (e.po_number) {
+      attributionDisplay = `
                     <div style="line-height:1.35;">
                       <strong style="color:#059669; font-size:0.86rem; font-weight:700;">PO: ${escapeHtml(e.po_number)}</strong>
                       ${e.customer_name ? `<br><span style="font-size:0.72rem; color:var(--text-muted);">👤 ${escapeHtml(e.customer_name)}</span>` : ''}
                     </div>
                   `;
-                } else if (isTier1) {
-                  attributionDisplay = `
+    } else if (isTier1) {
+      attributionDisplay = `
                     <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem;">🎯 Tender Direct (General / Unassigned)</span>
                   `;
-                } else {
-                  attributionDisplay = `<span style="color:#64748b; font-size:0.82rem; font-style:italic;">General Overhead (No Tender/Client)</span>`;
-                }
+    } else {
+      attributionDisplay = `<span style="color:#64748b; font-size:0.82rem; font-style:italic;">General Overhead (No Tender/Client)</span>`;
+    }
 
-                let classificationHtml = tierBadge;
-                if (e.po_number || e.purchase_order_id) {
-                  classificationHtml += `<br><span style="font-size:0.72rem; color:#059669; font-weight:600;">PO: ${escapeHtml(e.po_number || 'PO Ref')}</span>`;
-                } else if (e.contract_number) {
-                  classificationHtml += `<br><span style="font-size:0.72rem; color:#2563eb; font-weight:600;">CNT: ${escapeHtml(e.contract_number)}</span>`;
-                } else if (isTier4 && e.customer_name) {
-                  classificationHtml += `<br><span style="font-size:0.72rem; color:#7c3aed; font-weight:600;">Client: ${escapeHtml(e.customer_name)}</span>`;
-                }
+    let classificationHtml = tierBadge;
+    if (e.po_number || e.purchase_order_id) {
+      classificationHtml += `<br><span style="font-size:0.72rem; color:#059669; font-weight:600;">PO: ${escapeHtml(e.po_number || 'PO Ref')}</span>`;
+    } else if (e.contract_number) {
+      classificationHtml += `<br><span style="font-size:0.72rem; color:#2563eb; font-weight:600;">CNT: ${escapeHtml(e.contract_number)}</span>`;
+    } else if (isTier4 && e.customer_name) {
+      classificationHtml += `<br><span style="font-size:0.72rem; color:#7c3aed; font-weight:600;">Client: ${escapeHtml(e.customer_name)}</span>`;
+    }
 
-                return `
+    return `
                   <tr>
                     <td>${attributionDisplay}</td>
                     <td>
@@ -7343,7 +8246,7 @@ async function renderExpensesHTML() {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+  }).join('')}
             </tbody>
           </table>
         </div>
@@ -7438,17 +8341,17 @@ async function renderExpensesHTML() {
             </thead>
             <tbody>
               ${filteredCategories.map(c => {
-                const catExpenses = expenses.filter(e => e.category === c.name || (e.expense_tier === c.tier && e.expense_name === c.name));
-                const catTotal = catExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+    const catExpenses = expenses.filter(e => e.category === c.name || (e.expense_tier === c.tier && e.expense_name === c.name));
+    const catTotal = catExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
 
-                let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
-                if (c.tier === 'Tier 1 - Tender Direct') {
-                  tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
-                } else if (c.tier === 'Tier 2 - PO Execution') {
-                  tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
-                }
+    let tierBadge = `<span class="badge" style="background:#f1f5f9; color:#475569;">🏢 Tier 3: Overhead</span>`;
+    if (c.tier === 'Tier 1 - Tender Direct') {
+      tierBadge = `<span class="badge" style="background:#e0f2fe; color:#0369a1;">🎯 Tier 1: Tender Direct</span>`;
+    } else if (c.tier === 'Tier 2 - PO Execution') {
+      tierBadge = `<span class="badge" style="background:#fef3c7; color:#92400e;">🚚 Tier 2: PO Logistics</span>`;
+    }
 
-                return `
+    return `
                   <tr>
                     <td>${tierBadge}</td>
                     <td>
@@ -7477,7 +8380,7 @@ async function renderExpensesHTML() {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+  }).join('')}
             </tbody>
           </table>
         </div>
@@ -7491,7 +8394,7 @@ async function renderExpensesHTML() {
 // --------------------------------------------------------------------------
 // 11. EXECUTIVE MANAGEMENT REPORTS ENGINE (WITH INTERACTIVE VECTOR CHARTS & AUTO-FIT PRINT)
 // --------------------------------------------------------------------------
-let _activeReportTab = 'securities'; // 'securities', 'expenses', 'receivables', 'payables', 'supply', 'profitability', 'more'
+let _activeReportTab = 'catalogue'; // 'catalogue', 'securities', 'expenses', 'receivables', 'payables', 'supply', 'profitability', 'more'
 let _reportDatePreset = 'this_month'; // 'today', 'this_month', 'last_month', 'this_quarter', 'this_year', 'all', 'custom'
 let _reportStartDate = '';
 let _reportEndDate = '';
@@ -7502,6 +8405,184 @@ let _reportExpenseQuotationId = 'all';
 let _reportShowHeader = true;
 let _reportShowFooter = true;
 let _reportSearchQuery = '';
+
+// Multi-Module Report Catalogue & Execution Engine State
+let _catalogueSelectedReportKey = 'trial_balance';
+let _catalogueSelectedModule = 'all';
+let _catalogueReportData = null;
+let _catalogueReportLoading = false;
+let _catalogueReportError = null;
+let _catalogueSavedPresets = [];
+
+async function onCatalogueModuleChange(mod) {
+  _catalogueSelectedModule = mod;
+  renderActiveView();
+}
+window.onCatalogueModuleChange = onCatalogueModuleChange;
+
+async function onCatalogueReportChange(reportKey) {
+  _catalogueSelectedReportKey = reportKey;
+  _catalogueReportData = null;
+  await executeCatalogueReport(reportKey);
+  renderActiveView();
+}
+window.onCatalogueReportChange = onCatalogueReportChange;
+
+async function executeCatalogueReport(reportKey = _catalogueSelectedReportKey) {
+  _catalogueReportLoading = true;
+  _catalogueReportError = null;
+  try {
+    const filters = {
+      startDate: _reportStartDate,
+      endDate: _reportEndDate,
+      scope: _reportScope
+    };
+    const res = await API.executeReport({ report_key: reportKey, filters });
+    if (res && res.success) {
+      _catalogueReportData = res.data;
+    } else {
+      _catalogueReportError = res?.message || 'Report execution error';
+    }
+  } catch (err) {
+    _catalogueReportError = err.message;
+  } finally {
+    _catalogueReportLoading = false;
+  }
+}
+window.executeCatalogueReport = executeCatalogueReport;
+
+async function saveCurrentReportPreset() {
+  const name = prompt('Enter a title for this report configuration preset:');
+  if (!name || !name.trim()) return;
+  try {
+    const res = await API.saveReportPreset({
+      report_key: _catalogueSelectedReportKey,
+      preset_name: name.trim(),
+      filters: {
+        startDate: _reportStartDate,
+        endDate: _reportEndDate,
+        scope: _reportScope,
+        datePreset: _reportDatePreset
+      }
+    });
+    if (res && res.success) {
+      showToast('✓ Saved report configuration preset!', 'success');
+      renderActiveView();
+    } else {
+      showToast(res?.message || 'Failed to save preset', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+window.saveCurrentReportPreset = saveCurrentReportPreset;
+
+async function loadReportPreset(presetId) {
+  if (!presetId || presetId === 'none') return;
+  try {
+    const presets = await API.getSavedReportPresets(_catalogueSelectedReportKey);
+    const p = presets.find(x => x.id === presetId);
+    if (p && p.filters) {
+      if (p.filters.startDate) _reportStartDate = p.filters.startDate;
+      if (p.filters.endDate) _reportEndDate = p.filters.endDate;
+      if (p.filters.scope) _reportScope = p.filters.scope;
+      if (p.filters.datePreset) _reportDatePreset = p.filters.datePreset;
+      showToast(`✓ Applied preset: "${p.preset_name}"`, 'success');
+      await executeCatalogueReport(_catalogueSelectedReportKey);
+      renderActiveView();
+    }
+  } catch (err) {
+    showToast('Error loading preset: ' + err.message, 'error');
+  }
+}
+window.loadReportPreset = loadReportPreset;
+
+async function viewReportExecutionLogs() {
+  try {
+    const logs = await API.getReportExecutionLogs();
+    const rowsHtml = (!logs || logs.length === 0)
+      ? `<tr><td colspan="6" style="text-align:center; padding:20px; color:#64748b;">No report executions logged yet.</td></tr>`
+      : logs.map(l => `
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 12px; font-weight:700; color:#0f172a;">${escapeHtml(l.report_name || l.report_key)}</td>
+          <td style="padding:10px 12px; font-size:0.8rem; color:#475569;">${escapeHtml(l.executed_by_name || 'System / Admin')}</td>
+          <td style="padding:10px 12px; font-size:0.8rem; color:#64748b;">${new Date(l.executed_at).toLocaleString()}</td>
+          <td style="padding:10px 12px; text-align:center; font-weight:600; color:#0369a1;">${l.rows_count || 0} rows</td>
+          <td style="padding:10px 12px; text-align:center; font-size:0.8rem; color:#64748b;">${l.execution_time_ms || 0} ms</td>
+          <td style="padding:10px 12px; text-align:center;">
+            <span class="badge" style="background:${l.status === 'SUCCESS' ? '#dcfce7' : '#fee2e2'}; color:${l.status === 'SUCCESS' ? '#15803d' : '#b91c1c'}; font-size:0.7rem; padding:2px 8px;">
+              ${l.status}
+            </span>
+          </td>
+        </tr>
+      `).join('');
+
+    const modalHtml = `
+      <div class="modal-backdrop" id="modal-report-logs" style="display:flex;">
+        <div class="modal-card modal-lg" style="max-width:850px; max-height:85vh; display:flex; flex-direction:column;">
+          <div class="modal-header" style="background:#0f172a; color:white;">
+            <h3 style="font-size:1.1rem; font-weight:800; color:white; margin:0;">🕒 Report Execution History & Diagnostics</h3>
+            <button class="modal-close-btn" style="color:white;" onclick="closeModal('modal-report-logs')">&times;</button>
+          </div>
+          <div class="modal-body" style="padding:20px; overflow-y:auto;">
+            <table class="data-table" style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+              <thead>
+                <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; color:#475569;">
+                  <th style="padding:10px 12px;">Report</th>
+                  <th style="padding:10px 12px;">User</th>
+                  <th style="padding:10px 12px;">Executed At</th>
+                  <th style="padding:10px 12px; text-align:center;">Rows</th>
+                  <th style="padding:10px 12px; text-align:center;">Latency</th>
+                  <th style="padding:10px 12px; text-align:center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    let existing = document.getElementById('modal-report-logs');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    if (typeof openModal === 'function') openModal('modal-report-logs');
+  } catch (err) {
+    showToast('Failed to load execution logs: ' + err.message, 'error');
+  }
+}
+window.viewReportExecutionLogs = viewReportExecutionLogs;
+
+function exportCatalogueReportToCSV() {
+  if (!_catalogueReportData || !_catalogueReportData.rows || _catalogueReportData.rows.length === 0) {
+    return showToast('No report data available to export', 'warning');
+  }
+  const cols = _catalogueReportData.columns || [];
+  const rows = _catalogueReportData.rows || [];
+  let csv = cols.map(c => `"${c.label.replace(/"/g, '""')}"`).join(',') + '\n';
+  rows.forEach(r => {
+    csv += cols.map(c => `"${String(r[c.key] !== undefined ? r[c.key] : '').replace(/"/g, '""')}"`).join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(_catalogueReportData.report_key || 'report')}_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('✓ Report exported to CSV', 'success');
+}
+window.exportCatalogueReportToCSV = exportCatalogueReportToCSV;
+
+function printCatalogueReport() {
+  const printableArea = document.getElementById('catalogue-report-results-wrapper');
+  if (!printableArea) return showToast('No printable report visible', 'warning');
+  TemplatesEngine.openPrintWindow(_catalogueReportData?.report_name || 'Management Report', printableArea.innerHTML);
+}
+window.printCatalogueReport = printCatalogueReport;
 
 function onReportExpenseCustomerChange(customerId) {
   _reportExpenseCustomerId = customerId || 'all';
@@ -7716,9 +8797,9 @@ function buildExecutiveReportPieChartHTML({ title, subtitle, slices, centerKPI, 
         <!-- Slices Legend Breakdown -->
         <div style="flex:1; min-width:240px; display:flex; flex-direction:column; gap:8px;">
           ${slices.map(itm => {
-            const amt = parseFloat(itm.amount) || 0;
-            const pct = total > 0 ? Math.round((amt / total) * 100) : 0;
-            return `
+    const amt = parseFloat(itm.amount) || 0;
+    const pct = total > 0 ? Math.round((amt / total) * 100) : 0;
+    return `
               <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f8fafc; border:1px solid #f1f5f9; padding:7px 12px; border-radius:6px; font-size:0.8rem;">
                 <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
                   <span style="width:10px; height:10px; border-radius:50%; background:${itm.color}; flex-shrink:0;"></span>
@@ -7731,7 +8812,7 @@ function buildExecutiveReportPieChartHTML({ title, subtitle, slices, centerKPI, 
                 </div>
               </div>
             `;
-          }).join('')}
+  }).join('')}
         </div>
       </div>
     </div>
@@ -7747,10 +8828,10 @@ function buildExecutiveReportHeaderHTML(reportTitle, filterSummary) {
   const logoUrl = currentComp.logo_url || '';
   const bizName = currentComp.business_name || 'MASHRUE ENTERPRISE';
 
-  const dateScope = (_reportStartDate && _reportEndDate) 
-    ? `${_reportStartDate} to ${_reportEndDate}` 
+  const dateScope = (_reportStartDate && _reportEndDate)
+    ? `${_reportStartDate} to ${_reportEndDate}`
     : (_reportDatePreset === 'all' ? 'All Time Historical' : 'Current Active Period');
-  
+
   const scopeBadge = _reportScope === 'tender' ? '🏛️ Tenders Only' : (_reportScope === 'quotation' ? '💼 Quotations Only' : 'All Scope');
 
   let expenseFilterBadge = '';
@@ -8398,7 +9479,11 @@ async function renderReportsHTML() {
   let availableTenders = [];
   let availableQuotations = [];
 
-  if (_activeReportTab === 'expenses') {
+  if (_activeReportTab === 'catalogue') {
+    if (!_catalogueReportData && !_catalogueReportLoading) {
+      await executeCatalogueReport(_catalogueSelectedReportKey);
+    }
+  } else if (_activeReportTab === 'expenses') {
     try {
       const [custList, tendersList, quotesList] = await Promise.all([
         API.getCustomers().catch(() => []),
@@ -8459,20 +9544,21 @@ async function renderReportsHTML() {
         <!-- Tab Navigation Buttons -->
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="tab-btn ${_activeReportTab === 'securities' ? 'active' : ''}" onclick="switchReportTab('securities')">🏦 1. Bid Securities & Guarantees</button>
+            <button class="tab-btn ${_activeReportTab === 'catalogue' ? 'active' : ''}" style="background:${_activeReportTab === 'catalogue' ? '#0f172a' : '#f0f9ff'}; color:${_activeReportTab === 'catalogue' ? '#fff' : '#0369a1'}; font-weight:800; border:1px solid #bae6fd;" onclick="switchReportTab('catalogue')">📊 Multi-Module Report Catalogue</button>
+            <button class="tab-btn ${_activeReportTab === 'securities' ? 'active' : ''}" onclick="switchReportTab('securities')">🏦 1. Bid Securities</button>
             <button class="tab-btn ${_activeReportTab === 'expenses' ? 'active' : ''}" onclick="switchReportTab('expenses')">💳 2. Expense Reports</button>
             <button class="tab-btn ${_activeReportTab === 'receivables' ? 'active' : ''}" onclick="switchReportTab('receivables')">⏳ 3. Receivable Payments</button>
             <button class="tab-btn ${_activeReportTab === 'payables' ? 'active' : ''}" onclick="switchReportTab('payables')">📤 4. Accounts Payable</button>
-            <button class="tab-btn ${_activeReportTab === 'supply' ? 'active' : ''}" onclick="switchReportTab('supply')">🚚 5. Supply Status (PO vs DC)</button>
-            <button class="tab-btn ${_activeReportTab === 'profitability' ? 'active' : ''}" onclick="switchReportTab('profitability')">📊 6. Profitability</button>
+            <button class="tab-btn ${_activeReportTab === 'supply' ? 'active' : ''}" onclick="switchReportTab('supply')">🚚 5. Supply Status</button>
+            <button class="tab-btn ${_activeReportTab === 'profitability' ? 'active' : ''}" onclick="switchReportTab('profitability')">📈 6. Profitability</button>
             <button class="tab-btn ${_activeReportTab === 'more' ? 'active' : ''}" onclick="switchReportTab('more')">🌐 More Intelligence</button>
           </div>
           
           <div style="display:flex; gap:8px; align-items:center;">
-            <button class="secondary-btn" style="padding:6px 12px; font-size:0.82rem; display:flex; align-items:center; gap:5px;" onclick="exportReportTableToCSV('${_activeReportTab}_Report.csv')">
+            <button class="secondary-btn" style="padding:6px 12px; font-size:0.82rem; display:flex; align-items:center; gap:5px;" onclick="_activeReportTab === 'catalogue' ? exportCatalogueReportToCSV() : exportReportTableToCSV('${_activeReportTab}_Report.csv')">
               <span>📥</span> Export CSV
             </button>
-            <button class="primary-btn" style="padding:6px 14px; font-size:0.82rem; background:#0284c7; display:flex; align-items:center; gap:5px;" onclick="printExecutiveReport()">
+            <button class="primary-btn" style="padding:6px 14px; font-size:0.82rem; background:#0284c7; display:flex; align-items:center; gap:5px;" onclick="_activeReportTab === 'catalogue' ? printCatalogueReport() : printExecutiveReport()">
               <span>🖨️</span> Print / Export PDF
             </button>
           </div>
@@ -8618,6 +9704,7 @@ async function renderReportsHTML() {
       <!-- AUTO-FIT PRINTABLE REPORT WORKSPACE -->
       <div id="executive-report-printable-area">
 
+        ${_activeReportTab === 'catalogue' ? renderCatalogueReportHTML() : ''}
         ${_activeReportTab === 'securities' ? renderBidSecuritiesReportHTML(reportData) : ''}
         ${_activeReportTab === 'expenses' ? renderExpensesReportHTML(reportData) : ''}
         ${_activeReportTab === 'receivables' ? renderReceivablesReportHTML(reportData) : ''}
@@ -8626,6 +9713,218 @@ async function renderReportsHTML() {
         ${_activeReportTab === 'profitability' ? renderProfitabilityReportHTML() : ''}
         ${_activeReportTab === 'more' ? renderMoreIntelligenceReportHTML() : ''}
 
+      </div>
+    </div>
+  `;
+}
+
+// -----------------------------------------------------------------------------
+// TAB 0: MULTI-MODULE ENTERPRISE REPORT CATALOGUE & EXECUTION ENGINE
+// -----------------------------------------------------------------------------
+function renderCatalogueReportHTML() {
+  const reportsList = [
+    { key: 'trial_balance', name: 'Trial Balance Ledger', module: 'finance', category: 'General Ledger', icon: '⚖️', desc: 'Double-entry audit verification showing total debit and credit balances per account code.' },
+    { key: 'receivables_aging', name: 'Accounts Receivable Aging', module: 'finance', category: 'Receivables', icon: '⏳', desc: 'Unpaid client invoices categorized into 0-30, 31-60, 61-90, and 90+ days aging buckets.' },
+    { key: 'tax_withholding_fbr', name: 'FBR Withholding & Sales Tax', module: 'finance', category: 'Compliance', icon: '📑', desc: 'Statutory Sales Tax (GST 18%) and Income Tax Withholding (Sec 153) deduction schedule.' },
+    { key: 'stock_valuation', name: 'Stock Valuation Ledger', module: 'inventory', category: 'Valuation', icon: '📦', desc: 'Comprehensive item SKU on-hand inventory balances with unit cost prices and total valuation.' },
+    { key: 'low_stock_reorder', name: 'Low Stock & Reorder Alert', module: 'inventory', category: 'Alerts', icon: '⚠️', desc: 'Items where available warehouse stock has reached or fallen below safety buffer thresholds.' },
+    { key: 'bid_securities_register', name: 'Bid Securities & CDR Register', module: 'tender', category: 'Securities', icon: '🏦', desc: 'Audit log of Call Deposit Receipts (CDRs) and Bank Guarantees with expiry dates.' },
+    { key: 'tender_winloss_analytics', name: 'Tender Win / Loss Analytics', module: 'tender', category: 'Analytics', icon: '🎯', desc: 'Tender bidding conversion rates, won vs. lost opportunities, and total won contract value.' },
+    { key: 'crm_lead_pipeline', name: 'CRM Commercial Lead Funnel', module: 'crm', category: 'Sales Pipeline', icon: '🤝', desc: 'Active commercial leads, customer stages, estimated contract values, and probabilities.' },
+    { key: 'payroll_monthly_summary', name: 'Monthly Payroll & Tax Register', module: 'payroll', category: 'Payroll', icon: '💵', desc: 'Employee gross compensation, statutory FBR Sec 149 salary tax deductions, and net take-home.' },
+    { key: 'mfg_work_order_summary', name: 'Manufacturing Work Orders', module: 'manufacturing', category: 'Production', icon: '⚙️', desc: 'Production batches, target vs completed quantities, work center routing, and batch statuses.' }
+  ];
+
+  const filteredReports = (_catalogueSelectedModule === 'all')
+    ? reportsList
+    : reportsList.filter(r => r.module === _catalogueSelectedModule);
+
+  const activeRep = reportsList.find(r => r.key === _catalogueSelectedReportKey) || reportsList[0];
+
+  const rData = _catalogueReportData;
+  const cols = rData?.columns || [];
+  const rows = rData?.rows || [];
+  const sum = rData?.summary || {};
+
+  // Build KPI Cards for summary
+  let kpiCardsHTML = '';
+  if (rData && sum) {
+    const kpiItems = [];
+    if (sum.is_balanced !== undefined) {
+      kpiItems.push({ label: 'GL Balanced Status', val: sum.is_balanced ? '✓ BALANCED' : '⚠️ OUT OF BALANCE', color: sum.is_balanced ? '#15803d' : '#b91c1c' });
+      kpiItems.push({ label: 'Total GL Debits', val: 'Rs. ' + (sum.debit || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 }), color: '#0369a1' });
+      kpiItems.push({ label: 'Total GL Credits', val: 'Rs. ' + (sum.credit || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 }), color: '#0369a1' });
+      kpiItems.push({ label: 'Accounts Count', val: sum.total_accounts || rows.length, color: '#475569' });
+    } else if (sum.valuation_pkr !== undefined) {
+      kpiItems.push({ label: 'Total Inventory Valuation', val: 'Rs. ' + (sum.valuation_pkr || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 }), color: '#15803d' });
+      kpiItems.push({ label: 'Total Units on Hand', val: (sum.current_stock || 0).toLocaleString(), color: '#0369a1' });
+      kpiItems.push({ label: 'Active SKUs', val: sum.total_skus || rows.length, color: '#475569' });
+    } else if (sum.current_due !== undefined) {
+      kpiItems.push({ label: 'Current Receivables (0-30d)', val: 'Rs. ' + (sum.current_due || 0).toLocaleString('en-PK'), color: '#15803d' });
+      kpiItems.push({ label: 'Overdue (31-60d)', val: 'Rs. ' + (sum.days_31_60 || 0).toLocaleString('en-PK'), color: '#d97706' });
+      kpiItems.push({ label: 'Overdue (61-90d)', val: 'Rs. ' + (sum.days_61_90 || 0).toLocaleString('en-PK'), color: '#ea580c' });
+      kpiItems.push({ label: 'Critical Overdue (90d+)', val: 'Rs. ' + (sum.days_over_90 || 0).toLocaleString('en-PK'), color: '#b91c1c' });
+    } else if (sum.taxable_value !== undefined) {
+      kpiItems.push({ label: 'Taxable Invoiced Base', val: 'Rs. ' + (sum.taxable_value || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 }), color: '#0369a1' });
+      kpiItems.push({ label: 'Sales Tax (GST 18%)', val: 'Rs. ' + (sum.sales_tax_amount || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 }), color: '#b45309' });
+      kpiItems.push({ label: 'Gross Invoiced Value', val: 'Rs. ' + (sum.total_amount || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 }), color: '#15803d' });
+    } else if (sum.win_rate_pct !== undefined) {
+      kpiItems.push({ label: 'Tender Win Rate', val: `${sum.win_rate_pct}%`, color: '#15803d' });
+      kpiItems.push({ label: 'Total Pipeline Value', val: 'Rs. ' + (sum.estimated_value || 0).toLocaleString('en-PK'), color: '#0369a1' });
+      kpiItems.push({ label: 'Total Contracts Won', val: 'Rs. ' + (sum.won_value || 0).toLocaleString('en-PK'), color: '#15803d' });
+    } else if (sum.gross_salary !== undefined) {
+      kpiItems.push({ label: 'Gross Payroll Liability', val: 'Rs. ' + (sum.gross_salary || 0).toLocaleString('en-PK'), color: '#0369a1' });
+      kpiItems.push({ label: 'FBR Sec 149 Tax Withheld', val: 'Rs. ' + (sum.income_tax_deducted || 0).toLocaleString('en-PK'), color: '#b45309' });
+      kpiItems.push({ label: 'Net Disbursed Take-Home', val: 'Rs. ' + (sum.net_salary || 0).toLocaleString('en-PK'), color: '#15803d' });
+    }
+
+    if (kpiItems.length > 0) {
+      kpiCardsHTML = `
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
+          ${kpiItems.map(k => `
+            <div class="card" style="padding:14px 16px; border:1px solid #e2e8f0; border-radius:8px; background:white; border-left:4px solid ${k.color};">
+              <div style="font-size:0.75rem; color:#64748b; font-weight:700; text-transform:uppercase; margin-bottom:4px;">${k.label}</div>
+              <div style="font-size:1.15rem; font-weight:800; color:${k.color};">${k.val}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  return `
+    <div style="margin-bottom:20px;">
+      
+      <!-- Module Selector Pills -->
+      <div class="no-print" style="background:white; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          <span style="font-size:0.8rem; font-weight:800; color:#0f172a; margin-right:4px;">Filter by Module:</span>
+          <button class="tab-btn ${_catalogueSelectedModule === 'all' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('all')">🏢 All Modules (${reportsList.length})</button>
+          <button class="tab-btn ${_catalogueSelectedModule === 'finance' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('finance')">💰 Finance</button>
+          <button class="tab-btn ${_catalogueSelectedModule === 'inventory' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('inventory')">📦 Inventory</button>
+          <button class="tab-btn ${_catalogueSelectedModule === 'tender' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('tender')">📑 Tender & BoQ</button>
+          <button class="tab-btn ${_catalogueSelectedModule === 'crm' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('crm')">🤝 CRM</button>
+          <button class="tab-btn ${_catalogueSelectedModule === 'payroll' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('payroll')">💵 HR & Payroll</button>
+          <button class="tab-btn ${_catalogueSelectedModule === 'manufacturing' ? 'active' : ''}" style="padding:4px 10px; font-size:0.78rem;" onclick="onCatalogueModuleChange('manufacturing')">⚙️ Manufacturing</button>
+        </div>
+
+        <button class="secondary-btn" style="padding:5px 12px; font-size:0.78rem; display:flex; align-items:center; gap:5px;" onclick="viewReportExecutionLogs()">
+          <span>🕒</span> Execution Logs & Diagnostics
+        </button>
+      </div>
+
+      <!-- Report Catalogue Cards Carousel / Grid -->
+      <div class="no-print" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-bottom:20px;">
+        ${filteredReports.map(r => {
+    const isSelected = r.key === _catalogueSelectedReportKey;
+    return `
+            <div class="card" style="padding:12px 14px; border:1px solid ${isSelected ? '#0284c7' : '#e2e8f0'}; border-radius:8px; cursor:pointer; background:${isSelected ? '#f0f9ff' : '#ffffff'}; transition:all 0.15s; display:flex; flex-direction:column; justify-content:space-between;" 
+                 onclick="onCatalogueReportChange('${r.key}')" onmouseover="if(!${isSelected}) this.style.background='#f8fafc';" onmouseout="if(!${isSelected}) this.style.background='#ffffff';">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <span style="font-size:1.1rem;">${r.icon}</span>
+                  <span class="badge" style="background:#e2e8f0; color:#475569; font-size:0.68rem; font-weight:700;">${r.category}</span>
+                </div>
+                <div style="font-weight:800; font-size:0.9rem; color:#0f172a; margin-bottom:4px;">${r.name}</div>
+                <div style="font-size:0.75rem; color:#64748b; line-height:1.4;">${r.desc}</div>
+              </div>
+              <div style="margin-top:10px; padding-top:6px; border-top:1px solid ${isSelected ? '#bae6fd' : '#f1f5f9'}; font-size:0.75rem; font-weight:700; color:${isSelected ? '#0284c7' : '#64748b'}; text-align:right;">
+                ${isSelected ? '● Active Report' : 'Select to Run →'}
+              </div>
+            </div>
+          `;
+  }).join('')}
+      </div>
+
+      <!-- Report Header & Controls Bar -->
+      <div class="no-print" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:1.2rem;">${activeRep.icon}</span>
+          <div>
+            <h3 style="font-size:1.05rem; font-weight:800; color:#0f172a; margin:0;">${activeRep.name}</h3>
+            <div style="font-size:0.75rem; color:#64748b;">${activeRep.desc}</div>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="secondary-btn" style="padding:6px 12px; font-size:0.78rem;" onclick="saveCurrentReportPreset()">
+            💾 Save as Preset
+          </button>
+          <button class="primary-btn" style="padding:6px 16px; font-size:0.78rem; background:#0284c7;" onclick="executeCatalogueReport('${activeRep.key}')">
+            ▶ Run Report
+          </button>
+        </div>
+      </div>
+
+      <!-- Report Results Workspace -->
+      <div id="catalogue-report-results-wrapper">
+        ${kpiCardsHTML}
+
+        ${_catalogueReportLoading ? `
+          <div style="text-align:center; padding:60px 20px; background:white; border:1px solid #e2e8f0; border-radius:8px;">
+            <div class="spinner" style="margin:0 auto 14px auto;"></div>
+            <div style="font-size:0.9rem; font-weight:700; color:#0f172a;">Executing "${activeRep.name}"...</div>
+            <div style="font-size:0.78rem; color:#64748b;">Querying tenant-isolated database records...</div>
+          </div>
+        ` : _catalogueReportError ? `
+          <div style="text-align:center; padding:40px 20px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#b91c1c;">
+            <div style="font-size:2rem; margin-bottom:8px;">⚠️</div>
+            <div style="font-weight:700;">Report Execution Failed</div>
+            <div style="font-size:0.85rem; margin-top:4px;">${escapeHtml(_catalogueReportError)}</div>
+          </div>
+        ` : (!rows || rows.length === 0) ? `
+          <div style="text-align:center; padding:50px 20px; background:white; border:1px dashed #cbd5e1; border-radius:8px;">
+            <div style="font-size:2.5rem; margin-bottom:8px;">📄</div>
+            <div style="font-weight:700; color:#0f172a;">No Records Found for the Selected Scope</div>
+            <div style="font-size:0.8rem; color:#64748b; margin-top:4px;">Try expanding your date range bounds or scope filters.</div>
+          </div>
+        ` : `
+          <!-- Result Table -->
+          <div class="card" style="padding:0; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+            <div style="padding:10px 16px; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; font-size:0.78rem; color:#64748b;">
+              <span>Showing <strong>${rows.length}</strong> records &bull; Execution time: <strong>${rData.execution_time_ms || 0}ms</strong></span>
+              <span class="badge" style="background:#dcfce7; color:#15803d; font-size:0.7rem;">Verified Tenant Scoped</span>
+            </div>
+
+            <div style="overflow-x:auto;">
+              <table class="data-table" style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+                <thead>
+                  <tr style="background:#0f172a; color:white;">
+                    <th style="padding:10px 12px; text-align:center; width:4%;">#</th>
+                    ${cols.map(c => `
+                      <th style="padding:10px 12px; text-align:${c.align || 'left'}; width:${c.width || 'auto'}; color:white; font-weight:700;">
+                        ${c.label}
+                      </th>
+                    `).join('')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map((row, idx) => `
+                    <tr style="border-bottom:1px solid #f1f5f9; background:${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                      <td style="padding:8px 12px; text-align:center; color:#94a3b8; font-size:0.75rem;">${idx + 1}</td>
+                      ${cols.map(c => {
+    const val = row[c.key];
+    let formatted = (val !== null && val !== undefined) ? String(val) : '-';
+    if (c.isNumeric && typeof val === 'number') {
+      formatted = (c.key.includes('pct') || c.key.includes('rate'))
+        ? `${val.toFixed(1)}%`
+        : (c.key.includes('stock') || c.key.includes('qty') || c.key.includes('count'))
+          ? val.toLocaleString()
+          : 'Rs. ' + val.toLocaleString('en-PK', { minimumFractionDigits: 2 });
+    }
+    return `
+                          <td style="padding:8px 12px; text-align:${c.align || 'left'}; color:#334155; ${c.isNumeric ? 'font-variant-numeric: tabular-nums; font-weight:600;' : ''}">
+                            ${formatted}
+                          </td>
+                        `;
+  }).join('')}
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `}
       </div>
     </div>
   `;
@@ -8716,21 +10015,21 @@ function renderBidSecuritiesReportHTML(apiRes) {
             ${rows.length === 0 ? `
               <tr class="no-search"><td colspan="8" style="text-align:center; padding:28px; color:#94a3b8;">No securities found for selected date range and filter criteria.</td></tr>
             ` : rows.map(r => {
-              const days = r.days_to_expiry;
-              let alertBadge = `<span style="font-size:0.75rem; color:#64748b;">${r.expiry_date || 'No Expiry'}</span>`;
-              if (r.status !== 'Released' && r.status !== 'Returned') {
-                if (days !== null && days < 0) {
-                  alertBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.7rem;">Expired (${Math.abs(days)}d ago)</span>`;
-                } else if (days !== null && days <= 15) {
-                  alertBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.7rem;">⚠️ ${days} Days Left</span>`;
-                } else if (days !== null && days <= 30) {
-                  alertBadge = `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.7rem;">⏳ ${days} Days Left</span>`;
-                }
-              }
+    const days = r.days_to_expiry;
+    let alertBadge = `<span style="font-size:0.75rem; color:#64748b;">${r.expiry_date || 'No Expiry'}</span>`;
+    if (r.status !== 'Released' && r.status !== 'Returned') {
+      if (days !== null && days < 0) {
+        alertBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.7rem;">Expired (${Math.abs(days)}d ago)</span>`;
+      } else if (days !== null && days <= 15) {
+        alertBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.7rem;">⚠️ ${days} Days Left</span>`;
+      } else if (days !== null && days <= 30) {
+        alertBadge = `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.7rem;">⏳ ${days} Days Left</span>`;
+      }
+    }
 
-              const isRecovered = r.status === 'Released' || r.status === 'Returned';
+    const isRecovered = r.status === 'Released' || r.status === 'Returned';
 
-              return `
+    return `
                 <tr style="border-bottom:1px solid #f1f5f9;">
                   <td>
                     <strong>${escapeHtml(r.instrument_number)}</strong><br>
@@ -8766,7 +10065,7 @@ function renderBidSecuritiesReportHTML(apiRes) {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -8967,15 +10266,15 @@ function renderReceivablesReportHTML(apiRes) {
             ${rows.length === 0 ? `
               <tr class="no-search"><td colspan="9" style="text-align:center; padding:28px; color:#94a3b8;">No pending invoices found for this criteria.</td></tr>
             ` : rows.map(b => {
-              const days = b.days_outstanding || 1;
-              let agingBadge = `<span class="badge badge-won">0–30d</span>`;
-              if (days > 60) {
-                agingBadge = `<span class="badge badge-withdraw" style="background:#fee2e2; color:#b91c1c;">${days}d (Critical)</span>`;
-              } else if (days > 30) {
-                agingBadge = `<span class="badge badge-hold" style="background:#fef3c7; color:#92400e;">${days}d (Overdue)</span>`;
-              }
+    const days = b.days_outstanding || 1;
+    let agingBadge = `<span class="badge badge-won">0–30d</span>`;
+    if (days > 60) {
+      agingBadge = `<span class="badge badge-withdraw" style="background:#fee2e2; color:#b91c1c;">${days}d (Critical)</span>`;
+    } else if (days > 30) {
+      agingBadge = `<span class="badge badge-hold" style="background:#fef3c7; color:#92400e;">${days}d (Overdue)</span>`;
+    }
 
-              return `
+    return `
                 <tr style="border-bottom:1px solid #f1f5f9;">
                   <td><strong>${escapeHtml(b.invoice_number)}</strong></td>
                   <td>
@@ -8998,7 +10297,7 @@ function renderReceivablesReportHTML(apiRes) {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -9201,11 +10500,11 @@ function renderSupplyStatusReportHTML(apiRes) {
             ${rows.length === 0 ? `
               <tr class="no-search"><td colspan="7" style="text-align:center; padding:28px; color:#94a3b8;">No purchase orders found for this criteria.</td></tr>
             ` : rows.map(po => {
-              const dcs = po.delivery_challans || [];
-              const items = po.items || [];
-              const pct = parseFloat(po.fulfillment_pct || 0);
+    const dcs = po.delivery_challans || [];
+    const items = po.items || [];
+    const pct = parseFloat(po.fulfillment_pct || 0);
 
-              return `
+    return `
                 <tr style="border-bottom:1px solid #f1f5f9;">
                   <td>
                     <strong>${escapeHtml(po.po_number)}</strong><br>
@@ -9255,7 +10554,7 @@ function renderSupplyStatusReportHTML(apiRes) {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -9452,7 +10751,7 @@ async function renderCustomersHTML() {
       const uRes = await API.getUsersWithStats();
       const allUsers = uRes?.data || State.getStoredUsers() || [];
       clientAdmins = allUsers.filter(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin');
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const selectedFilter = window._adminSelectedClientFilter || 'all';
@@ -9494,7 +10793,10 @@ async function renderCustomersHTML() {
         </span>
       </td>
       <td>
-        <div style="display:flex; gap:6px; align-items:center;">
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem; background:#e0f2fe; color:#0369a1; border-color:#7dd3fc; white-space:nowrap;" onclick="if(window.ModularERP) ModularERP.openCrmCustomer360Modal('${c.id}')" title="Open 360° Customer Profile (Contacts, Addresses, Notes, Deals & Invoices)">
+            🔍 360° Profile
+          </button>
           ${State.hasPermission('expenses', 'add') ? `
             <button class="primary-btn" style="padding:4px 8px; font-size:0.75rem; background:#7c3aed; white-space:nowrap;" onclick="openExpenseModal('Tier 4 - Customer Direct', '', '', '', '${c.id}')" title="Log direct expense against this customer">
               💳 + Expense
@@ -9577,10 +10879,10 @@ async function renderCustomersHTML() {
           <select class="form-select" style="font-size:0.82rem; font-weight:600; min-width:240px; border:1px solid #7dd3fc; background:#fff; padding:6px 10px; border-radius:6px;" onchange="setAdminClientFilter(this.value)">
             <option value="all" ${selectedFilter === 'all' ? 'selected' : ''}>🌐 All Client Admins (Grouped View)</option>
             ${clientAdmins.map(ca => {
-              const cTid = ca.tenant?.id || ca.tenant_id;
-              const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
-              return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
-            }).join('')}
+    const cTid = ca.tenant?.id || ca.tenant_id;
+    const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
+    return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
+  }).join('')}
           </select>
         </div>
       </div>
@@ -9606,9 +10908,14 @@ async function renderCustomersHTML() {
     </div>
 
     <div class="card">
-      <div class="card-header">
-        <div class="card-title">👥 Customer Accounts Directory</div>
-        ${State.hasPermission('customers', 'add') ? '<button class="primary-btn" onclick="openNewCustomerModal()">+ Register Customer</button>' : ''}
+      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div class="card-title">👥 Customer Accounts Directory (Unified Master & 360° CRM)</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="secondary-btn" onclick="if(window.ModularERP) ModularERP.openCrmDuplicateDetectionModal()">🔍 Scan & Merge Duplicates</button>
+          <button class="secondary-btn" onclick="if(window.ModularERP) ModularERP.openCrmImportCustomersModal()">📥 Import CSV</button>
+          <button class="secondary-btn" onclick="if(window.ModularERP) ModularERP.exportCrmCustomersCSV()">📤 Export CSV</button>
+          ${State.hasPermission('customers', 'add') ? '<button class="primary-btn" onclick="openNewCustomerModal()">+ Register Customer</button>' : ''}
+        </div>
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -9647,7 +10954,7 @@ async function renderSuppliersHTML() {
       const uRes = await API.getUsersWithStats();
       const allUsers = uRes?.data || State.getStoredUsers() || [];
       clientAdmins = allUsers.filter(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin');
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const selectedFilter = window._adminSelectedClientFilter || 'all';
@@ -9785,10 +11092,10 @@ async function renderSuppliersHTML() {
           <select class="form-select" style="font-size:0.82rem; font-weight:600; min-width:240px; border:1px solid #7dd3fc; background:#fff; padding:6px 10px; border-radius:6px;" onchange="setAdminClientFilter(this.value)">
             <option value="all" ${selectedFilter === 'all' ? 'selected' : ''}>🌐 All Client Admins (Grouped View)</option>
             ${clientAdmins.map(ca => {
-              const cTid = ca.tenant?.id || ca.tenant_id;
-              const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
-              return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
-            }).join('')}
+    const cTid = ca.tenant?.id || ca.tenant_id;
+    const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
+    return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
+  }).join('')}
           </select>
         </div>
       </div>
@@ -9861,7 +11168,7 @@ async function renderProductsHTML() {
       const uRes = await API.getUsersWithStats();
       const allUsers = uRes?.data || State.getStoredUsers() || [];
       clientAdmins = allUsers.filter(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin');
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // Filter if super admin selected a specific client
@@ -9944,6 +11251,7 @@ async function renderProductsHTML() {
         <td class="sticky-action-col">
           <div style="display:flex; gap:6px; align-items:center;">
             <button class="edit-btn" onclick="openEditProductModal('${p.id}')" title="Edit Item Details">✏️ Edit</button>
+            <button class="secondary-btn" style="padding:4px 8px; font-size:0.75rem;" onclick="archiveProductItem('${p.id}', '${encodeURIComponent(p.name)}')" title="Archive Item">📦 Archive</button>
             <button class="danger-btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; padding:4px 10px; font-weight:700; border-radius:4px; font-size:0.75rem; cursor:pointer;" onclick="deleteProductItem('${p.id}', '${encodeURIComponent(p.name)}')" title="Delete Item">🗑️ Delete</button>
           </div>
         </td>
@@ -10023,10 +11331,10 @@ async function renderProductsHTML() {
           <select class="form-select" style="font-size:0.82rem; font-weight:600; min-width:240px; border:1px solid #7dd3fc; background:#fff; padding:6px 10px; border-radius:6px;" onchange="setAdminClientFilter(this.value)">
             <option value="all" ${selectedFilter === 'all' ? 'selected' : ''}>🌐 All Client Admins (Grouped View)</option>
             ${clientAdmins.map(ca => {
-              const cTid = ca.tenant?.id || ca.tenant_id;
-              const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
-              return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
-            }).join('')}
+    const cTid = ca.tenant?.id || ca.tenant_id;
+    const orgName = ca.tenant?.company_name || ca.tenant?.organization_name || ca.tenant_name || 'Client Workspace';
+    return `<option value="${cTid}" ${selectedFilter === cTid ? 'selected' : ''}>👤 ${ca.full_name || ca.username} (${orgName})</option>`;
+  }).join('')}
           </select>
         </div>
       </div>
@@ -10057,9 +11365,13 @@ async function renderProductsHTML() {
     </div>
 
     <div class="card">
-      <div class="card-header">
+      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <div class="card-title">📦 Master Product & Item SKU Catalog</div>
-        <button class="primary-btn" onclick="openNewProductModal()">+ Add Master Item</button>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="secondary-btn" style="font-size:0.8rem; font-weight:600; display:flex; align-items:center; gap:4px;" onclick="window.open('/api/masters/products-export', '_blank')"><span>📤</span> Export CSV</button>
+          <button class="secondary-btn" style="font-size:0.8rem; font-weight:600; display:flex; align-items:center; gap:4px;" onclick="openProductImportModal()"><span>📥</span> Import CSV</button>
+          <button class="primary-btn" onclick="openNewProductModal()">+ Add Master Item</button>
+        </div>
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -10264,13 +11576,13 @@ async function renderUsersHTML() {
                   </td>
                 </tr>
               ` : tenants.map((t, idx) => {
-                const tenantCompanies = t.companies || [];
-                const clientAdmin = (t.tenant_users || []).find(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') || (t.tenant_users || [])[0];
-                const adminName = clientAdmin ? (clientAdmin.full_name || clientAdmin.username) : (t.company_name || 'Client Admin');
-                const adminUsername = clientAdmin?.username || '';
-                const compExpId = `comp-grid-exp-${t.id || idx}`;
+      const tenantCompanies = t.companies || [];
+      const clientAdmin = (t.tenant_users || []).find(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') || (t.tenant_users || [])[0];
+      const adminName = clientAdmin ? (clientAdmin.full_name || clientAdmin.username) : (t.company_name || 'Client Admin');
+      const adminUsername = clientAdmin?.username || '';
+      const compExpId = `comp-grid-exp-${t.id || idx}`;
 
-                return `
+      return `
                   <tr style="background:#ffffff;">
                     <td>
                       <button class="secondary-btn" style="padding:2px 7px; font-size:0.75rem; font-weight:700; border-radius:4px; min-width:32px;" onclick="toggleTenantExpand('${compExpId}', this)" title="Expand / Collapse Companies">
@@ -10349,7 +11661,7 @@ async function renderUsersHTML() {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -10391,15 +11703,15 @@ async function renderUsersHTML() {
                   </td>
                 </tr>
               ` : tenants.map((t, idx) => {
-                const tenantUsers = t.tenant_users || userList.filter(u => String(u.tenant_id) === String(t.id));
-                const clientAdmin = tenantUsers.find(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') || tenantUsers[0];
-                const adminName = clientAdmin ? (clientAdmin.full_name || clientAdmin.username) : (t.company_name || 'Client Admin');
-                const adminUsername = clientAdmin?.username || '';
-                const adminEmail = clientAdmin?.email || '—';
-                const subUsers = tenantUsers.filter(u => !clientAdmin || String(u.id) !== String(clientAdmin.id));
-                const userExpId = `user-grid-exp-${t.id || idx}`;
+      const tenantUsers = t.tenant_users || userList.filter(u => String(u.tenant_id) === String(t.id));
+      const clientAdmin = tenantUsers.find(u => u.role === 'ClientAdmin' || u.role === 'CompanyAdmin') || tenantUsers[0];
+      const adminName = clientAdmin ? (clientAdmin.full_name || clientAdmin.username) : (t.company_name || 'Client Admin');
+      const adminUsername = clientAdmin?.username || '';
+      const adminEmail = clientAdmin?.email || '—';
+      const subUsers = tenantUsers.filter(u => !clientAdmin || String(u.id) !== String(clientAdmin.id));
+      const userExpId = `user-grid-exp-${t.id || idx}`;
 
-                return `
+      return `
                   <tr style="background:#ffffff;">
                     <td>
                       <button class="secondary-btn" style="padding:2px 7px; font-size:0.75rem; font-weight:700; border-radius:4px; min-width:32px;" onclick="toggleTenantExpand('${userExpId}', this)" title="Expand / Collapse Users">
@@ -10461,8 +11773,8 @@ async function renderUsersHTML() {
                             </thead>
                             <tbody>
                               ${subUsers.map(u => {
-                                const canDelete = (String(u.id) !== String(currentUserId)) && (u.role !== 'SuperAdmin');
-                                return `
+        const canDelete = (String(u.id) !== String(currentUserId)) && (u.role !== 'SuperAdmin');
+        return `
                                   <tr>
                                     <td><strong>${u.full_name || u.username}</strong></td>
                                     <td><code>${u.username}</code></td>
@@ -10489,7 +11801,7 @@ async function renderUsersHTML() {
                                     </td>
                                   </tr>
                                 `;
-                              }).join('')}
+      }).join('')}
                             </tbody>
                           </table>
                         `}
@@ -10497,7 +11809,7 @@ async function renderUsersHTML() {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -10510,15 +11822,47 @@ async function renderUsersHTML() {
   const paidEmployeeSeats = Math.max(0, totalOrgUsers - freeSeatLimit);
   const additionalSeatFee = res?.seatStats?.additionalMonthlyFee || 1500.00;
 
-  const companyCount = res?.seatStats?.companyCount !== undefined 
-    ? res.seatStats.companyCount 
+  const companyCount = res?.seatStats?.companyCount !== undefined
+    ? res.seatStats.companyCount
     : (State.businessProfiles?.length || 1);
   const freeCompanyLimit = res?.seatStats?.freeCompanyLimit || State.currentUser?.tenant?.freeCompanyLimit || 2;
 
-  const isCurrentUserPrimaryAdmin = (typeof State.isPrimaryAdmin === 'function') 
-    ? State.isPrimaryAdmin() 
+  window._lastLoadedUsersList = userList;
+  const isCurrentUserPrimaryAdmin = (typeof State.isPrimaryAdmin === 'function')
+    ? State.isPrimaryAdmin()
     : ((typeof State.isCreatedBySuperAdmin === 'function') ? State.isCreatedBySuperAdmin() : false);
-  const canAddUsers = isSuper || isCurrentUserPrimaryAdmin;
+  const canAddUsers = isSuper || isCurrentUserPrimaryAdmin || State.isClientAdmin();
+
+  const renderUserModuleBadges = (u) => {
+    if (u.role === 'ClientAdmin' || u.role === 'CompanyAdmin' || u.role === 'SuperAdmin') {
+      return '<span class="badge" style="background:#dcfce7; color:#166534; font-weight:700; font-size:0.72rem;">👑 All Subscribed Modules</span>';
+    }
+    const p = u.permissions || {};
+    const MODULE_CHIPS = [
+      { key: 'opportunities', label: '📑 Tenders', lic: 'mod_tenders' },
+      { key: 'tender-radar', label: '📡 Radar', lic: 'mod_notifications' },
+      { key: 'crm', label: '🎯 CRM', lic: 'mod_crm' },
+      { key: 'inventory', label: '🏬 Inventory', lic: 'mod_inventory' },
+      { key: 'accounting', label: '📒 Accounts', lic: 'mod_finance' },
+      { key: 'tax-compliance', label: '🏛️ TaxGuard', lic: 'mod_tax_compliance' },
+      { key: 'hrm', label: '👥 HRM', lic: 'mod_hrm' },
+      { key: 'payroll', label: '💳 Payroll', lic: 'mod_payroll' },
+      { key: 'manufacturing', label: '🏭 Mfg', lic: 'mod_manufacturing' }
+    ];
+    const allowed = MODULE_CHIPS.filter(m => {
+      if (typeof State.isModuleActiveForTenant === 'function' && !State.isModuleActiveForTenant(m.lic)) return false;
+      const altKey = m.key.replace(/-/g, '_');
+      const mp = p[m.key] || p[altKey];
+      if (!mp) return true; // default view=true if not restricted yet
+      return Boolean(mp.view);
+    });
+    if (allowed.length === 0) {
+      return '<span class="badge" style="background:#fef2f2; color:#dc2626; font-size:0.7rem;">🚫 No Modules Assigned</span>';
+    }
+    return `<div style="display:flex; flex-wrap:wrap; gap:4px; max-width:260px;">` +
+      allowed.map(m => `<span style="font-size:0.68rem; padding:2px 6px; border-radius:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:600;">${m.label}</span>`).join('') +
+      `</div>`;
+  };
 
   // CLIENT ADMIN VIEW: Tenant Employee Management & Granular RBAC
   return `
@@ -10538,14 +11882,14 @@ async function renderUsersHTML() {
       </div>
       ${canAddUsers ? `
         <button class="primary-btn" onclick="openCreateUserModal('ClientEmployee')">
-          👤 + Add Employee User
+          👤 + Add Employee &amp; Assign Modules
         </button>
       ` : ''}
     </div>
 
     <div class="card">
       <div class="card-header">
-        <div class="card-title">👥 Organization Users &amp; Access Control (${userList.length})</div>
+        <div class="card-title">👥 Organization Users, Module Assignment &amp; Access Control (${userList.length})</div>
       </div>
       <div class="table-responsive">
         <table class="data-table">
@@ -10553,8 +11897,8 @@ async function renderUsersHTML() {
             <tr>
               <th>Employee Name</th>
               <th>Username</th>
-              <th>Email</th>
               <th>Role / Rights</th>
+              <th>Assigned Modules</th>
               <th>Bidding Prices</th>
               <th>Company Access</th>
               <th>Status</th>
@@ -10566,43 +11910,41 @@ async function renderUsersHTML() {
               <tr>
                 <td colspan="8" style="text-align:center; padding:36px 20px; color:#64748b;">
                   👥 <strong>No employee users added yet.</strong><br>
-                  <span style="font-size:0.85rem;">Click the <strong>+ Add Employee User</strong> button above to invite your team members (${freeSeatLimit} Free Seats included).</span>
+                  <span style="font-size:0.85rem;">Click the <strong>+ Add Employee &amp; Assign Modules</strong> button above to invite your team members (${freeSeatLimit} Free Seats included).</span>
                 </td>
               </tr>
             ` : userList.map(u => {
-              const compAccessNames = (u.business_access && u.business_access.length > 0)
-                ? u.business_access.map(b => b.name).join(', ')
-                : 'All Assigned Companies';
+    const compAccessNames = (u.business_access && u.business_access.length > 0)
+      ? u.business_access.map(b => b.name).join(', ')
+      : 'All Assigned Companies';
 
-              const roleBadge = (u.role === 'ClientAdmin' || u.role === 'CompanyAdmin')
-                ? '<span class="badge badge-won">👑 Tenant Admin</span>'
-                : (u.role === 'ReadOnly'
-                  ? '<span class="badge" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe;">👁️ Read-Only</span>'
-                  : '<span class="badge badge-ready">⚙️ Configurable</span>');
+    const roleBadge = (u.role === 'ClientAdmin' || u.role === 'CompanyAdmin')
+      ? '<span class="badge badge-won">👑 Tenant Admin</span>'
+      : (u.role === 'ReadOnly'
+        ? '<span class="badge" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe;">👁️ Read-Only</span>'
+        : '<span class="badge badge-ready">⚙️ Configurable</span>');
 
-              const fullNameDisplay = u.full_name || u.fullName || u.name || u.username || '—';
-              const isSelf = String(u.id) === String(currentUserId);
+    const fullNameDisplay = u.full_name || u.fullName || u.name || u.username || '—';
+    const isSelf = String(u.id) === String(currentUserId);
 
-              // Strict RBAC:
-              // - Only the user created by Super Admin (or SuperAdmin) can edit other users
-              // - He CANNOT edit himself
-              // - Sub-users cannot edit any users or change passwords
-              // - Primary Tenant Admin (e.g. Ahmed) can NEVER be edited, reset, or deleted by any user in the tenant
-              const isTargetPrimaryAdmin = Boolean(u.is_primary_admin || u.isPrimaryAdmin || (u.role === 'ClientAdmin' && u.is_created_by_super_admin));
-              const canEdit = !isSelf && (isSuper || (isCurrentUserPrimaryAdmin && !isTargetPrimaryAdmin));
-              const canResetPass = !isSelf && (isSuper || (isCurrentUserPrimaryAdmin && !isTargetPrimaryAdmin));
-              const canDelete = !isSelf && u.role !== 'SuperAdmin' && (isSuper || (isCurrentUserPrimaryAdmin && !isTargetPrimaryAdmin));
-              const hasActions = canEdit || canResetPass || canDelete;
+    const isTargetPrimaryAdmin = Boolean(u.is_primary_admin || u.isPrimaryAdmin || (u.role === 'ClientAdmin' && u.is_created_by_super_admin));
+    const canEdit = !isSelf && (isSuper || ((isCurrentUserPrimaryAdmin || State.isClientAdmin()) && !isTargetPrimaryAdmin));
+    const canResetPass = !isSelf && (isSuper || ((isCurrentUserPrimaryAdmin || State.isClientAdmin()) && !isTargetPrimaryAdmin));
+    const canDelete = !isSelf && u.role !== 'SuperAdmin' && (isSuper || ((isCurrentUserPrimaryAdmin || State.isClientAdmin()) && !isTargetPrimaryAdmin));
+    const hasActions = canEdit || canResetPass || canDelete;
 
-              return `
+    return `
                 <tr>
-                  <td><strong>${fullNameDisplay}</strong></td>
+                  <td>
+                    <strong>${fullNameDisplay}</strong>
+                    <div style="font-size:0.75rem; color:#64748b;">${u.email || 'No email'}</div>
+                  </td>
                   <td><code>${u.username || '—'}</code></td>
-                  <td>${u.email || '<span style="color:#94a3b8; font-style:italic;">No email</span>'}</td>
                   <td>${roleBadge}</td>
+                  <td>${renderUserModuleBadges(u)}</td>
                   <td>
                     <span class="badge ${u.can_see_bidding_prices !== false ? 'badge-won' : 'badge-hold'}">
-                      ${u.can_see_bidding_prices !== false ? '🔓 Visible' : '🔒 Masked (Hidden)'}
+                      ${u.can_see_bidding_prices !== false ? '🔓 Visible' : '🔒 Masked'}
                     </span>
                   </td>
                   <td><span style="font-size: 0.82rem; color: #475569;">${compAccessNames}</span></td>
@@ -10610,10 +11952,10 @@ async function renderUsersHTML() {
                   <td>
                     ${hasActions ? `
                       <div class="action-buttons-group">
-                        ${canEdit ? `<button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Edit Screen Rights & Permissions">✏️ Edit</button>` : ''}
+                        ${canEdit ? `<button class="edit-btn" onclick="openEditUserModal('${u.id}')" title="Assign Specific Subscribed Modules & CRUD Rights">🔐 Modules &amp; Rights</button>` : ''}
                         ${canResetPass ? `<button class="secondary-btn" style="padding:4px 8px; font-size:0.78rem;" onclick="openResetPasswordModal('${u.id}', '${fullNameDisplay}')" title="Reset Password">🔑 Pass</button>` : ''}
                         ${canDelete ? `
-                          <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${fullNameDisplay}')" title="Delete User">🗑️ Delete</button>
+                          <button class="delete-btn" style="padding:4px 8px; font-size:0.78rem; background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:4px; cursor:pointer;" onclick="deleteUserAction('${u.id}', '${fullNameDisplay}')" title="Delete User">🗑️</button>
                         ` : ''}
                       </div>
                     ` : (isTargetPrimaryAdmin ? `
@@ -10624,7 +11966,7 @@ async function renderUsersHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -10659,8 +12001,8 @@ async function renderSettingsHTML() {
 
   // Determine active company for FBR configuration
   if (!_selectedFbrCompanyId || !profiles.some(p => p.id === _selectedFbrCompanyId)) {
-    _selectedFbrCompanyId = (State.currentBusinessProfileId && State.currentBusinessProfileId !== 'all') 
-      ? State.currentBusinessProfileId 
+    _selectedFbrCompanyId = (State.currentBusinessProfileId && State.currentBusinessProfileId !== 'all')
+      ? State.currentBusinessProfileId
       : profiles[0].id;
   }
 
@@ -11426,7 +12768,7 @@ function recalculateCostSheet() {
   }
 
   if (dispBigSubtext) {
-    dispBigSubtext.innerHTML = isLoss 
+    dispBigSubtext.innerHTML = isLoss
       ? `⚠️ <strong>Negative Margin Alert:</strong> Total Cost exceeds Revenue by <strong>${Math.abs(marginPct).toFixed(1)}%</strong>`
       : `✓ Net Profit Margin: <strong>${marginPct >= 0 ? '+' : ''}${marginPct.toFixed(1)}%</strong> | Cost-to-Revenue: <strong>${costRatio.toFixed(1)}%</strong>`;
     dispBigSubtext.style.color = isLoss ? '#fca5a5' : '#94a3b8';
@@ -11493,7 +12835,7 @@ async function onCostingTenderChanged(tenderId) {
   try {
     const res = await API.getOpportunityById(tenderId);
     if (res && res.data) target = res.data;
-  } catch (e) {}
+  } catch (e) { }
 
   if (!target) {
     const opps = await API.getOpportunities(State.currentBusinessProfileId || 'all');
@@ -11534,7 +12876,7 @@ async function onCostingTenderChanged(tenderId) {
     const prof = profiles.find(p => String(p.id) === String(target.business_profile_id));
     if (cust) customerName = cust.business_name;
     if (prof) profileName = prof.business_name;
-  } catch (e) {}
+  } catch (e) { }
   if (!customerName) customerName = target.customer_name || 'Customer Organization';
   if (!profileName) profileName = target.business_name || 'Submitting Entity';
 
@@ -11545,13 +12887,13 @@ async function onCostingTenderChanged(tenderId) {
     if (Array.isArray(bids) && bids.length > 0) {
       savedCosting = bids[0];
     }
-  } catch (e) {}
+  } catch (e) { }
 
   // Check for bid securities
   let securities = [];
   try {
     securities = (await API.getBidSecurities(State.currentBusinessProfileId || 'all', target.id)) || [];
-  } catch (e) {}
+  } catch (e) { }
   const activeSec = securities.find(s => s.status === 'Active' || s.status === 'Submitted') || securities[0];
   const secAmount = activeSec ? parseFloat(activeSec.amount || 0) : 0;
 
@@ -11659,28 +13001,28 @@ async function onCostingTenderChanged(tenderId) {
                   </thead>
                   <tbody>
                     ${items.map((itm, idx) => {
-                      const q = parseFloat(itm.quantity || 1);
-                      const uc = parseFloat(itm.unit_cost || 0);
-                      const up = parseFloat(itm.estimated_unit_price || itm.unit_price || 0);
-                      const tot = parseFloat(itm.estimated_total_price || (q * up)) || 0;
-                      const whName = itm.warehouse_name || (itm.warehouse_id ? 'Warehouse Stock' : 'Direct Procure');
-                      const isReserved = Boolean(itm.stock_reserved);
-                      const avail = parseFloat(itm.warehouse_stock_available || itm.stock_at_time_of_tender || 0);
-                      
-                      let stockBadge = '';
-                      if (isReserved) {
-                        stockBadge = `<span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.68rem; padding:1px 5px; font-weight:700;">🔒 Reserved (${q})</span>`;
-                      } else if (itm.warehouse_id && avail >= q) {
-                        stockBadge = `<span class="badge" style="background:#dcfce7; color:#166534; font-size:0.68rem; padding:1px 5px; font-weight:700;">✓ In Stock (${avail})</span>`;
-                      } else if (itm.warehouse_id && avail > 0) {
-                        stockBadge = `<span class="badge" style="background:#fef9c3; color:#854d0e; font-size:0.68rem; padding:1px 5px; font-weight:700;">⚠️ Partial (${avail})</span>`;
-                      } else if (itm.warehouse_id) {
-                        stockBadge = `<span class="badge" style="background:#fee2e2; color:#991b1b; font-size:0.68rem; padding:1px 5px; font-weight:700;">✕ No Stock</span>`;
-                      } else {
-                        stockBadge = `<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.68rem; padding:1px 5px;">Procure</span>`;
-                      }
+      const q = parseFloat(itm.quantity || 1);
+      const uc = parseFloat(itm.unit_cost || 0);
+      const up = parseFloat(itm.estimated_unit_price || itm.unit_price || 0);
+      const tot = parseFloat(itm.estimated_total_price || (q * up)) || 0;
+      const whName = itm.warehouse_name || (itm.warehouse_id ? 'Warehouse Stock' : 'Direct Procure');
+      const isReserved = Boolean(itm.stock_reserved);
+      const avail = parseFloat(itm.warehouse_stock_available || itm.stock_at_time_of_tender || 0);
 
-                      return `
+      let stockBadge = '';
+      if (isReserved) {
+        stockBadge = `<span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.68rem; padding:1px 5px; font-weight:700;">🔒 Reserved (${q})</span>`;
+      } else if (itm.warehouse_id && avail >= q) {
+        stockBadge = `<span class="badge" style="background:#dcfce7; color:#166534; font-size:0.68rem; padding:1px 5px; font-weight:700;">✓ In Stock (${avail})</span>`;
+      } else if (itm.warehouse_id && avail > 0) {
+        stockBadge = `<span class="badge" style="background:#fef9c3; color:#854d0e; font-size:0.68rem; padding:1px 5px; font-weight:700;">⚠️ Partial (${avail})</span>`;
+      } else if (itm.warehouse_id) {
+        stockBadge = `<span class="badge" style="background:#fee2e2; color:#991b1b; font-size:0.68rem; padding:1px 5px; font-weight:700;">✕ No Stock</span>`;
+      } else {
+        stockBadge = `<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:0.68rem; padding:1px 5px;">Procure</span>`;
+      }
+
+      return `
                         <tr>
                           <td style="color:#64748b;">${idx + 1}</td>
                           <td>
@@ -11702,7 +13044,7 @@ async function onCostingTenderChanged(tenderId) {
                           <td style="text-align:right; font-weight:700;">${tot > 0 ? tot.toLocaleString() : '-'}</td>
                         </tr>
                       `;
-                    }).join('')}
+    }).join('')}
                   </tbody>
                 </table>
               </div>
@@ -11901,41 +13243,41 @@ async function renderApprovalsHTML() {
                 </td>
               </tr>
             ` : bids.map(b => {
-              const rawStatus = b.approval_status || 'Submitted';
-              let normStatus = 'Submitted';
-              let badgeColor = '#d97706';
-              let borderColor = '#f59e0b';
-              let bgPill = '#fef3c7';
+    const rawStatus = b.approval_status || 'Submitted';
+    let normStatus = 'Submitted';
+    let badgeColor = '#d97706';
+    let borderColor = '#f59e0b';
+    let bgPill = '#fef3c7';
 
-              if (rawStatus === 'Won' || rawStatus === 'won' || rawStatus === 'Approved') {
-                normStatus = 'Won';
-                badgeColor = '#059669';
-                borderColor = '#10b981';
-                bgPill = '#ecfdf5';
-              } else if (rawStatus === 'Loose' || rawStatus === 'loose' || rawStatus === 'Lost' || rawStatus === 'Rejected') {
-                normStatus = 'Loose';
-                badgeColor = '#dc2626';
-                borderColor = '#ef4444';
-                bgPill = '#fef2f2';
-              } else if (rawStatus === 'Withdraw' || rawStatus === 'withdraw' || rawStatus === 'Withdrawn') {
-                normStatus = 'Withdraw';
-                badgeColor = '#475569';
-                borderColor = '#64748b';
-                bgPill = '#f1f5f9';
-              }
+    if (rawStatus === 'Won' || rawStatus === 'won' || rawStatus === 'Approved') {
+      normStatus = 'Won';
+      badgeColor = '#059669';
+      borderColor = '#10b981';
+      bgPill = '#ecfdf5';
+    } else if (rawStatus === 'Loose' || rawStatus === 'loose' || rawStatus === 'Lost' || rawStatus === 'Rejected') {
+      normStatus = 'Loose';
+      badgeColor = '#dc2626';
+      borderColor = '#ef4444';
+      bgPill = '#fef2f2';
+    } else if (rawStatus === 'Withdraw' || rawStatus === 'withdraw' || rawStatus === 'Withdrawn') {
+      normStatus = 'Withdraw';
+      badgeColor = '#475569';
+      borderColor = '#64748b';
+      bgPill = '#f1f5f9';
+    }
 
-              const oppId = b.opportunity_id || b.id;
-              const tenderTitle = (b.tender_name || b.opportunity_title || 'Tender Project');
-              const encodedTitle = encodeURIComponent(tenderTitle);
+    const oppId = b.opportunity_id || b.id;
+    const tenderTitle = (b.tender_name || b.opportunity_title || 'Tender Project');
+    const encodedTitle = encodeURIComponent(tenderTitle);
 
-              const directCost = (parseFloat(b.supplier_cost_total || 0) + parseFloat(b.logistics_cost_total || 0) + parseFloat(b.labor_cost_total || 0) + parseFloat(b.overhead_cost_total || 0) + parseFloat(b.tender_expense_total || 0));
-              const markup = parseFloat(b.desired_markup_pct || 20);
-              const finalPrice = parseFloat(b.final_bid_price || (directCost + (directCost * markup / 100)));
-              const grossMargin = parseFloat(b.gross_margin_pct || (finalPrice > 0 ? ((finalPrice - directCost) / finalPrice * 100) : (markup < 0 ? markup : 0)));
-              const isBidLoss = (finalPrice < directCost || grossMargin < 0 || markup < 0);
-              const lossVal = directCost - finalPrice;
+    const directCost = (parseFloat(b.supplier_cost_total || 0) + parseFloat(b.logistics_cost_total || 0) + parseFloat(b.labor_cost_total || 0) + parseFloat(b.overhead_cost_total || 0) + parseFloat(b.tender_expense_total || 0));
+    const markup = parseFloat(b.desired_markup_pct || 20);
+    const finalPrice = parseFloat(b.final_bid_price || (directCost + (directCost * markup / 100)));
+    const grossMargin = parseFloat(b.gross_margin_pct || (finalPrice > 0 ? ((finalPrice - directCost) / finalPrice * 100) : (markup < 0 ? markup : 0)));
+    const isBidLoss = (finalPrice < directCost || grossMargin < 0 || markup < 0);
+    const lossVal = directCost - finalPrice;
 
-              return `
+    return `
                 <tr class="${isBidLoss ? 'loss-row' : ''}">
                   <td>
                     <strong>${b.bid_number || 'BID-' + b.id}</strong><br>
@@ -11984,7 +13326,7 @@ async function renderApprovalsHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -12103,8 +13445,8 @@ async function handleQuickAddCompletion(entityType, createdItem) {
 
   // Retrieve and pop matching context from stack to preserve parent quick-add contexts
   let ctx = null;
-  const ctxIdx = _quickAddContextStack.findLastIndex 
-    ? _quickAddContextStack.findLastIndex(c => c.entityType === entityType || (entityType === 'product' && c.entityType === 'item')) 
+  const ctxIdx = _quickAddContextStack.findLastIndex
+    ? _quickAddContextStack.findLastIndex(c => c.entityType === entityType || (entityType === 'product' && c.entityType === 'item'))
     : -1;
   if (ctxIdx !== -1) {
     ctx = _quickAddContextStack.splice(ctxIdx, 1)[0];
@@ -12113,8 +13455,8 @@ async function handleQuickAddCompletion(entityType, createdItem) {
   } else {
     ctx = _quickAddContext;
   }
-  _quickAddContext = _quickAddContextStack.length > 0 
-    ? _quickAddContextStack[_quickAddContextStack.length - 1] 
+  _quickAddContext = _quickAddContextStack.length > 0
+    ? _quickAddContextStack[_quickAddContextStack.length - 1]
     : ctx;
 
   const targetSelectId = ctx?.targetSelectId;
@@ -12145,7 +13487,7 @@ async function handleQuickAddCompletion(entityType, createdItem) {
       const isTarget = (sel.id === targetSelectId || sel.id === 'tender-customer');
       const curVal = isTarget ? createdItem.id : (sel.value || '');
 
-      sel.innerHTML = `<option value="">-- Select Customer / Department --</option>` + 
+      sel.innerHTML = `<option value="">-- Select Customer / Department --</option>` +
         customers.map(c => {
           const cName = c.business_name || c.name || 'Registered Customer';
           const cType = c.customer_type || c.org_type || 'Customer';
@@ -12178,7 +13520,7 @@ async function handleQuickAddCompletion(entityType, createdItem) {
     const products = await API.getProducts();
     window._cachedProducts = products;
     State.products = products;
-    
+
     // Update all product select dropdowns across the application and in tender line items
     document.querySelectorAll('select.tnd-item-product, select[id*="item-select"], select[id*="product-select"], .tender-item-sku-select').forEach(sel => {
       const prevVal = sel.value;
@@ -12273,7 +13615,7 @@ function openModal(id) {
       return;
     }
   }
-  if (id === 'modal-create-tenant') {
+  if (id === 'modal-create-tenant' && !window._isOpeningNewTenantModal) {
     if (typeof openNewTenantModal === 'function') {
       openNewTenantModal();
       return;
@@ -12315,7 +13657,7 @@ function openModal(id) {
       if (typeof autoEnhanceDataTablesWithUniversalSearch === 'function') {
         autoEnhanceDataTablesWithUniversalSearch();
       }
-    } catch (e) {}
+    } catch (e) { }
     const resetScroll = () => {
       el.scrollTop = 0;
       el.scrollLeft = 0;
@@ -12364,7 +13706,7 @@ function closeModal(id) {
     try {
       const forms = el.querySelectorAll('form');
       forms.forEach(f => {
-        try { f.reset(); } catch (_) {}
+        try { f.reset(); } catch (_) { }
       });
 
       // Clear hidden edit-id inputs
@@ -12408,8 +13750,8 @@ function closeModal(id) {
       const top = window._quickAddContextStack[window._quickAddContextStack.length - 1];
       if (top && (top.entityType === entity || (entity === 'product' && top.entityType === 'item'))) {
         window._quickAddContextStack.pop();
-        window._quickAddContext = window._quickAddContextStack.length > 0 
-          ? window._quickAddContextStack[window._quickAddContextStack.length - 1] 
+        window._quickAddContext = window._quickAddContextStack.length > 0
+          ? window._quickAddContextStack[window._quickAddContextStack.length - 1]
           : null;
       }
     }
@@ -12587,8 +13929,8 @@ async function openNewTenderModal() {
     const currSelect = document.getElementById('tender-currency');
 
     if (custSelect) {
-      custSelect.innerHTML = customers.length === 0 
-        ? '<option value="">-- No Customers Registered --</option>' 
+      custSelect.innerHTML = customers.length === 0
+        ? '<option value="">-- No Customers Registered --</option>'
         : customers.map(c => `<option value="${c.id}">${c.business_name || c.name} (${c.customer_type || c.org_type || 'Customer'})</option>`).join('');
     }
     if (profSelect) {
@@ -12636,7 +13978,7 @@ async function openNewTenderModal() {
     if (typeof recalculateTenderItemsSum === 'function') recalculateTenderItemsSum();
     if (typeof calculateTenderBidSecurityFromPct === 'function') calculateTenderBidSecurityFromPct();
     if (typeof initCustomDateTimePickers === 'function') {
-      try { initCustomDateTimePickers(); } catch (e) {}
+      try { initCustomDateTimePickers(); } catch (e) { }
     }
 
     openModal('modal-add-tender');
@@ -12723,11 +14065,11 @@ async function openEditTenderModal(id) {
       nameEl.style.cursor = 'not-allowed';
       nameEl.title = 'Tender Name is fixed in edit mode to preserve audit trail and contract references.';
     }
-    
+
     const srcSelect = document.getElementById('tender-source');
     const otherContainer = document.getElementById('tender-source-other-container');
     const otherInput = document.getElementById('tender-source-other');
-    
+
     const standardSources = ['PPRA (Federal)', 'PPRA (Punjab)', 'DGP', 'RFQ', 'LPQ', 'OTHER', 'DIRECT SALES'];
     if (standardSources.includes(o.tender_source)) {
       if (srcSelect) srcSelect.value = o.tender_source;
@@ -12743,7 +14085,7 @@ async function openEditTenderModal(id) {
 
     const extNoEl = document.getElementById('tender-ext-no');
     if (extNoEl) extNoEl.value = o.external_tender_number || '';
-    
+
     const currSelect = document.getElementById('tender-currency');
     if (currSelect) {
       currSelect.value = o.currency || 'PKR';
@@ -12767,7 +14109,7 @@ async function openEditTenderModal(id) {
 
     const closingDateVal = (o.closing_date && o.closing_date !== 'N/A') ? formatDateDDMMYYYY(o.closing_date) : '';
     const openingDateVal = (o.opening_date && o.opening_date !== 'N/A') ? formatDateDDMMYYYY(o.opening_date) : '';
-    
+
     const closingEl = document.getElementById('tender-closing-date');
     if (closingEl) closingEl.value = (closingDateVal === 'N/A' ? '' : closingDateVal);
 
@@ -12817,7 +14159,7 @@ async function openEditTenderModal(id) {
     _tenderLineItems = [];
     const tbody = document.getElementById('tender-items-tbody');
     if (tbody) tbody.innerHTML = '';
-    
+
     const items = o.items || o.tender_items || [];
     if (Array.isArray(items) && items.length > 0) {
       items.forEach(itm => {
@@ -12832,9 +14174,9 @@ async function openEditTenderModal(id) {
       });
     }
 
-    try { recalculateTenderItemsSum(); } catch (e) {}
-    try { calculateTenderBidSecurityFromPct(); } catch (e) {}
-    try { initCustomDateTimePickers(); } catch (e) {}
+    try { recalculateTenderItemsSum(); } catch (e) { }
+    try { calculateTenderBidSecurityFromPct(); } catch (e) { }
+    try { initCustomDateTimePickers(); } catch (e) { }
 
     switchTenderWizardStep(1);
     openModal('modal-add-tender');
@@ -12882,22 +14224,22 @@ function addTenderItemRow(initialData = null) {
         <select class="form-select tnd-item-product" style="font-size:0.78rem; padding:4px 6px;" onchange="onTenderProductSelect(${rowIndex}, this.value)">
           <option value="">-- Custom Scope Item --</option>
           ${products.map(p => {
-            const stockVal = parseFloat(p.current_stock || 0);
-            const stockText = stockVal % 1 === 0 ? stockVal : stockVal.toFixed(2);
-            return `<option value="${p.id}" ${(initialData && (String(initialData.product_service_id) === String(p.id) || String(initialData.product_id) === String(p.id))) ? 'selected' : ''} data-name="${p.name}" data-brand="${p.brand_name || ''}" data-batch="${p.batch_number || ''}" data-dom="${p.manufacturing_date || ''}" data-doe="${p.expiry_date || ''}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} ${p.brand_name ? `[${p.brand_name}]` : ''} (Stock: ${stockText})</option>`;
-          }).join('')}
+    const stockVal = parseFloat(p.current_stock || 0);
+    const stockText = stockVal % 1 === 0 ? stockVal : stockVal.toFixed(2);
+    return `<option value="${p.id}" ${(initialData && (String(initialData.product_service_id) === String(p.id) || String(initialData.product_id) === String(p.id))) ? 'selected' : ''} data-name="${p.name}" data-brand="${p.brand_name || ''}" data-batch="${p.batch_number || ''}" data-dom="${p.manufacturing_date || ''}" data-doe="${p.expiry_date || ''}" data-spec="${p.specifications || p.size || ''}" data-desc="${p.description || ''}" data-unit="${p.unit || 'PCS'}" data-selling="${p.selling_price || 0}" data-cost="${p.cost_price || 0}">${p.name} ${p.brand_name ? `[${p.brand_name}]` : ''} (Stock: ${stockText})</option>`;
+  }).join('')}
         </select>
       </td>
       <td class="tnd-warehouse-cell" style="vertical-align:top; min-width: 150px;">
         <select class="form-select tnd-item-warehouse" style="font-size:0.75rem; padding:3px 5px;" onchange="onTenderWarehouseSelect(${rowIndex}, this.value)">
           <option value="">-- Direct Procure / No Stock --</option>
           ${warehouses.map(w => {
-            const isSel = (currentWhId && currentWhId === String(w.id)) ? 'selected' : '';
-            const whLabel = escapeHtml(w.warehouse_name || w.name || w.facility_name || 'Warehouse');
-            const locText = w.city || w.location || w.warehouse_code || '';
-            const optDisplay = locText ? `${whLabel} (${escapeHtml(locText)})` : whLabel;
-            return `<option value="${w.id}" ${isSel}>${optDisplay}</option>`;
-          }).join('')}
+    const isSel = (currentWhId && currentWhId === String(w.id)) ? 'selected' : '';
+    const whLabel = escapeHtml(w.warehouse_name || w.name || w.facility_name || 'Warehouse');
+    const locText = w.city || w.location || w.warehouse_code || '';
+    const optDisplay = locText ? `${whLabel} (${escapeHtml(locText)})` : whLabel;
+    return `<option value="${w.id}" ${isSel}>${optDisplay}</option>`;
+  }).join('')}
         </select>
         <div class="tnd-stock-badge-container" id="tnd-stock-badge-${rowIndex}" style="margin-top:3px; font-size:0.72rem;">
           <!-- Live stock badge injected here -->
@@ -13303,8 +14645,8 @@ async function submitNewTenderForm() {
 
   try {
     const existingOpps = await API.getOpportunities(bizId || 'all');
-    const isDup = existingOpps.some(o => 
-      o.tender_name?.toLowerCase().trim() === tenderName.toLowerCase() && 
+    const isDup = existingOpps.some(o =>
+      o.tender_name?.toLowerCase().trim() === tenderName.toLowerCase() &&
       (!custId || String(o.customer_id) === String(custId)) &&
       String(o.id) !== String(editId || '')
     );
@@ -13429,7 +14771,7 @@ async function submitNewTenderForm() {
 
       const createdId = res.data.id;
       const createdNo = res.data.opportunity_number || oppNo || 'TND-2026';
-      
+
       // Prompt mandatory Bid Security modal with verified database UUID
       promptAttachBidSecurity(createdId, encodeURIComponent(tenderName), createdNo, estVal, '');
       await renderActiveView();
@@ -13460,13 +14802,13 @@ async function handleTenderSecuritySearch(query) {
   const missingSecurityOpps = allOpps.filter(o => !o.active_bid_securities_count || o.active_bid_securities_count === 0);
 
   const cleanQuery = (query || '').toLowerCase().trim();
-  const matched = cleanQuery 
-    ? missingSecurityOpps.filter(o => 
-        (o.tender_name && o.tender_name.toLowerCase().includes(cleanQuery)) ||
-        (o.title && o.title.toLowerCase().includes(cleanQuery)) ||
-        (o.opportunity_number && o.opportunity_number.toLowerCase().includes(cleanQuery)) ||
-        (o.customer_name && o.customer_name.toLowerCase().includes(cleanQuery))
-      )
+  const matched = cleanQuery
+    ? missingSecurityOpps.filter(o =>
+      (o.tender_name && o.tender_name.toLowerCase().includes(cleanQuery)) ||
+      (o.title && o.title.toLowerCase().includes(cleanQuery)) ||
+      (o.opportunity_number && o.opportunity_number.toLowerCase().includes(cleanQuery)) ||
+      (o.customer_name && o.customer_name.toLowerCase().includes(cleanQuery))
+    )
     : missingSecurityOpps;
 
   if (matched.length === 0) {
@@ -13498,12 +14840,12 @@ async function handleTenderSecuritySearch(query) {
 function selectTenderForSecurity(oppId, tenderNameEnc, oppNo, estVal, customerNameEnc) {
   const tenderName = decodeURIComponent(tenderNameEnc || '');
   const customerName = decodeURIComponent(customerNameEnc || '');
-  
+
   const idEl = document.getElementById('sec-opportunity-id');
   const titleEl = document.getElementById('sec-opp-title');
   if (idEl) idEl.value = oppId;
   if (titleEl) titleEl.value = oppNo ? `[${oppNo}] ${tenderName}` : tenderName;
-  
+
   // Suggested 2% earnest money
   if (estVal > 0) {
     const suggestedAmt = Math.round(estVal * 0.02);
@@ -13606,7 +14948,7 @@ function openNewBidSecurityModal(oppId = null, tenderNameDecoded = '', oppNo = '
     const suggestionsBox = document.getElementById('sec-opp-suggestions');
     if (suggestionsBox) suggestionsBox.style.display = 'none';
 
-    try { initCustomDateTimePickers(); } catch (e) {}
+    try { initCustomDateTimePickers(); } catch (e) { }
     openModal('modal-add-bid-security');
   } finally {
     window._isOpeningBidSecurityWithContext = false;
@@ -13632,7 +14974,7 @@ async function openAttachedBidSecurityModal(oppId) {
     const localSecurities = State.getTenantEntityList('bidSecurities');
     matched = localSecurities.filter(s => s.opportunity_id === oppId || String(s.opportunity_id) === String(oppId));
   }
-  
+
   const content = document.getElementById('view-bid-security-content');
   if (!content) return;
 
@@ -13820,7 +15162,7 @@ async function processInstrumentFile(file) {
         const dateEl = document.getElementById('sec-expiry-date');
         if (dateEl) {
           dateEl.value = d.date;
-          try { initCustomDateTimePickers(); } catch (e) {}
+          try { initCustomDateTimePickers(); } catch (e) { }
         }
       }
       if (d.beneficiary) {
@@ -13868,7 +15210,7 @@ async function submitBidSecurityForm() {
     try {
       const allOpps = await API.getOpportunities(State.currentBusinessProfileId);
       const cleanTitle = oppTitleInput.toLowerCase().trim();
-      const matched = allOpps.find(o => 
+      const matched = allOpps.find(o =>
         (o.opportunity_number && cleanTitle.includes(o.opportunity_number.toLowerCase())) ||
         (o.tender_name && cleanTitle.includes(o.tender_name.toLowerCase())) ||
         (o.title && cleanTitle.includes(o.title.toLowerCase()))
@@ -13876,7 +15218,7 @@ async function submitBidSecurityForm() {
       if (matched) {
         oppId = matched.id;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   let bizProfileId = document.getElementById('sec-business-profile-id')?.value;
@@ -13990,7 +15332,7 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
   let name = tenderNameDecoded || '';
   try {
     name = decodeURIComponent(tenderNameDecoded);
-  } catch (_) {}
+  } catch (_) { }
   document.getElementById('award-opp-id').value = oppId;
 
   // Fetch live line items & tender details for this opportunity
@@ -14022,7 +15364,7 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
       if (Array.isArray(allOpps)) {
         targetOpp = allOpps.find(o => String(o.id) === String(oppId) || String(o.opportunity_number) === String(oppId));
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   const bids = State.getTenantEntityList('bids') || [];
@@ -14033,7 +15375,7 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
       if (Array.isArray(allBids)) {
         targetBid = allBids.find(b => String(b.opportunity_id) === String(oppId) || String(b.id) === String(oppId));
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   if (!oppNumber && targetOpp) oppNumber = targetOpp.opportunity_number || '';
@@ -14073,17 +15415,17 @@ async function promptAwardLetterModal(oppId, tenderNameDecoded) {
   const cleanCode = (oppNumber || name).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 25);
   document.getElementById('award-no').value = `LOA-${cleanCode || 'GOVT'}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
   document.getElementById('award-date').value = new Date().toISOString().slice(0, 10);
-  
+
   const d = new Date();
   d.setDate(d.getDate() + 10);
   document.getElementById('award-deadline').value = d.toISOString().slice(0, 10);
 
   const fallbackVal = parseFloat(
-    targetOpp?.estimated_value || 
-    targetOpp?.budget_amount || 
-    targetBid?.final_bid_price || 
-    targetBid?.final_price || 
-    targetBid?.supplier_cost_total || 
+    targetOpp?.estimated_value ||
+    targetOpp?.budget_amount ||
+    targetBid?.final_bid_price ||
+    targetBid?.final_price ||
+    targetBid?.supplier_cost_total ||
     0
   );
 
@@ -14543,7 +15885,7 @@ async function processPBGInstrumentFile(file) {
         const dateEl = document.getElementById('pg-expiry');
         if (dateEl) {
           dateEl.value = d.date;
-          try { initCustomDateTimePickers(); } catch (e) {}
+          try { initCustomDateTimePickers(); } catch (e) { }
         }
       }
       if (d.beneficiary) {
@@ -14632,12 +15974,12 @@ async function handlePBGTargetSearch(query) {
   });
 
   const cleanQuery = (query || '').toLowerCase().trim();
-  const matched = cleanQuery 
-    ? candidates.filter(c => 
-        c.refNo.toLowerCase().includes(cleanQuery) ||
-        c.title.toLowerCase().includes(cleanQuery) ||
-        c.customerName.toLowerCase().includes(cleanQuery)
-      )
+  const matched = cleanQuery
+    ? candidates.filter(c =>
+      c.refNo.toLowerCase().includes(cleanQuery) ||
+      c.title.toLowerCase().includes(cleanQuery) ||
+      c.customerName.toLowerCase().includes(cleanQuery)
+    )
     : candidates;
 
   if (matched.length === 0) {
@@ -14732,15 +16074,15 @@ function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '
   clearPBGInstrumentFile();
 
   const contractIdEl = document.getElementById('pg-contract-id');
-  const awardIdEl    = document.getElementById('pg-award-id');
-  const oppIdEl      = document.getElementById('pg-opportunity-id');
+  const awardIdEl = document.getElementById('pg-award-id');
+  const oppIdEl = document.getElementById('pg-opportunity-id');
   const bizProfileIdEl = document.getElementById('pg-business-profile-id');
-  const titleEl      = document.getElementById('pg-target-title');
+  const titleEl = document.getElementById('pg-target-title');
 
   // CRITICAL: Clear contractIdEl first — awardId is NOT a contract_id!
   if (contractIdEl) contractIdEl.value = '';
-  if (awardIdEl)    awardIdEl.value    = awardId || '';
-  if (oppIdEl)      oppIdEl.value      = oppId   || '';
+  if (awardIdEl) awardIdEl.value = awardId || '';
+  if (oppIdEl) oppIdEl.value = oppId || '';
   if (bizProfileIdEl) bizProfileIdEl.value = '';
 
   // Look up matching award in state/cache to resolve contract, opp, and bizProfile IDs
@@ -14767,7 +16109,7 @@ function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '
         const matchedContract = contracts.find(c => String(c.award_letter_id) === String(awardId));
         if (matchedContract) contractIdEl.value = matchedContract.id;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // Only pre-fill the Award / Tender title field — everything else is left blank
@@ -14787,7 +16129,7 @@ function promptAttachPBGForAward(awardId, awardNo = '', pbgAmount = 0, oppId = '
       : 'Based on award / contract value';
   }
 
-  try { initCustomDateTimePickers(); } catch (e) {}
+  try { initCustomDateTimePickers(); } catch (e) { }
   openModal('modal-add-guarantee');
 }
 window.promptAttachPBGForAward = promptAttachPBGForAward;
@@ -14809,7 +16151,7 @@ async function submitPerformanceGuaranteeForm() {
     try {
       const awards = State.getTenantEntityList('awards') || [];
       const cleanTitle = targetTitle.toLowerCase().trim();
-      const matchedAward = awards.find(a => 
+      const matchedAward = awards.find(a =>
         (a.award_number && cleanTitle.includes(a.award_number.toLowerCase())) ||
         (a.opportunity_number && cleanTitle.includes(a.opportunity_number.toLowerCase())) ||
         (a.tender_name && cleanTitle.includes(a.tender_name.toLowerCase()))
@@ -14820,7 +16162,7 @@ async function submitPerformanceGuaranteeForm() {
         bizProfileId = bizProfileId || matchedAward.business_profile_id;
         if (matchedAward.contract_id) contractId = matchedAward.contract_id;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const accountTitle = document.getElementById('pg-account-title')?.value;
@@ -14926,16 +16268,16 @@ async function openNewPOModal(preselectedId, isQuotation = false) {
   if (form) form.reset();
 
   // Clear all IDs and display elements
-  ['po-award-id','po-opp-id','po-cust-id','po-number','po-date',
-   'po-deadline','po-delivery-location','po-department','po-remarks',
-   'po-subtotal-amount','po-gst-amount','po-total-amount'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
+  ['po-award-id', 'po-opp-id', 'po-cust-id', 'po-number', 'po-date',
+    'po-deadline', 'po-delivery-location', 'po-department', 'po-remarks',
+    'po-subtotal-amount', 'po-gst-amount', 'po-total-amount'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
 
-  const refEl  = document.getElementById('po-award-ref-display');
+  const refEl = document.getElementById('po-award-ref-display');
   const custEl = document.getElementById('po-cust-name-display');
   const badgeEl = document.getElementById('po-scope-type-badge');
-  if (refEl)  refEl.innerText = '';
+  if (refEl) refEl.innerText = '';
   if (custEl) custEl.innerText = '';
   if (badgeEl) {
     badgeEl.innerText = 'Linked Scope';
@@ -15225,23 +16567,23 @@ async function selectAwardForPO(selectedAward) {
   _cachedPOAward = selectedAward;
 
   let targetCustId = selectedAward.customer_id || '';
-  let targetBizId  = selectedAward.business_profile_id || '';
+  let targetBizId = selectedAward.business_profile_id || '';
   if (!targetCustId && selectedAward.opportunity_id) {
-    const allOpps    = State.getTenantEntityList('opportunities');
+    const allOpps = State.getTenantEntityList('opportunities');
     const matchedOpp = allOpps.find(o => String(o.id) === String(selectedAward.opportunity_id));
     if (matchedOpp) {
-      if (matchedOpp.customer_id)         targetCustId = matchedOpp.customer_id;
-      if (matchedOpp.business_profile_id) targetBizId  = matchedOpp.business_profile_id;
+      if (matchedOpp.customer_id) targetCustId = matchedOpp.customer_id;
+      if (matchedOpp.business_profile_id) targetBizId = matchedOpp.business_profile_id;
     }
   }
 
   document.getElementById('po-award-id').value = selectedAward.id;
-  document.getElementById('po-opp-id').value   = selectedAward.opportunity_id || '';
-  document.getElementById('po-cust-id').value  = targetCustId;
+  document.getElementById('po-opp-id').value = selectedAward.opportunity_id || '';
+  document.getElementById('po-cust-id').value = targetCustId;
 
-  const refEl  = document.getElementById('po-award-ref-display');
+  const refEl = document.getElementById('po-award-ref-display');
   const custEl = document.getElementById('po-cust-name-display');
-  if (refEl)  refEl.innerText  = `${selectedAward.award_number} (${selectedAward.tender_name || 'Project'})`;
+  if (refEl) refEl.innerText = `${selectedAward.award_number} (${selectedAward.tender_name || 'Project'})`;
   if (custEl) custEl.innerText = `Customer: ${selectedAward.customer_name || 'Government Client'}`;
 
   const infoPanel = document.getElementById('po-award-info-panel');
@@ -15249,15 +16591,15 @@ async function selectAwardForPO(selectedAward) {
 
   // Compute PO sequence from existing POs for this award
   const existingPOs = State.getTenantEntityList('purchaseOrders');
-  const childPOs    = existingPOs.filter(p =>
+  const childPOs = existingPOs.filter(p =>
     p.award_letter_id === selectedAward.id ||
-    p.opportunity_id  === selectedAward.opportunity_id
+    p.opportunity_id === selectedAward.opportunity_id
   );
   const nextPoSeq = childPOs.length + 1;
 
   // Only pre-fill PO number (auto-sequence) — all other fields left blank for manual entry
-  document.getElementById('po-number').value   = `PO-${String(nextPoSeq).padStart(3, '0')}`;
-  document.getElementById('po-date').value     = '';
+  document.getElementById('po-number').value = `PO-${String(nextPoSeq).padStart(3, '0')}`;
+  document.getElementById('po-date').value = '';
   document.getElementById('po-deadline').value = '';
 
   const gstRateInput = document.getElementById('po-gst-rate');
@@ -15287,9 +16629,9 @@ async function selectAwardForPO(selectedAward) {
         }
       });
 
-      const maxRemaining    = Math.max(0, (parseFloat(it.awarded_quantity || it.quantity || 1) - priorAllocated));
+      const maxRemaining = Math.max(0, (parseFloat(it.awarded_quantity || it.quantity || 1) - priorAllocated));
       const defaultAllocate = maxRemaining > 0 ? maxRemaining : 0;
-      const rate            = parseFloat(it.awarded_unit_price || it.unit_price || 0);
+      const rate = parseFloat(it.awarded_unit_price || it.unit_price || 0);
 
       return `
         <tr>
@@ -15846,7 +17188,7 @@ async function renderDCItemBatchTable(idx) {
       html += `
         <tr class="dc-batch-input-row-${idx}" id="dc-batch-row-${idx}-${bIdx}" style="border-bottom:1px solid #f1f5f9;">
           <td style="padding:4px 8px;">
-            <input type="text" class="form-input dc-batch-num-input" value="${b.batch_number || 'LOT-' + (bIdx+1)}" style="padding:2px 6px; font-size:0.75rem; font-weight:700;">
+            <input type="text" class="form-input dc-batch-num-input" value="${b.batch_number || 'LOT-' + (bIdx + 1)}" style="padding:2px 6px; font-size:0.75rem; font-weight:700;">
           </td>
           <td style="padding:4px 8px;">
             <input type="date" class="form-input dc-batch-dom-input" value="${b.manufacturing_date ? String(b.manufacturing_date).slice(0, 10) : ''}" style="padding:2px 4px; font-size:0.72rem;">
@@ -16379,7 +17721,7 @@ async function handleInvoicePOChanged(poId) {
   const dcSelect = document.getElementById('inv-dc-select');
   if (dcSelect) {
     dcSelect.innerHTML = `<option value="">-- Direct PO Invoicing (No DC Attached) --</option>` +
-      linkedDCs.map(d => `<option value="${d.id}">${d.dc_number} (${d.status || 'Dispatched'} - ${d.delivery_date ? d.delivery_date.slice(0,10) : 'Date'})</option>`).join('');
+      linkedDCs.map(d => `<option value="${d.id}">${d.dc_number} (${d.status || 'Dispatched'} - ${d.delivery_date ? d.delivery_date.slice(0, 10) : 'Date'})</option>`).join('');
     dcSelect.value = '';
   }
 
@@ -16532,7 +17874,7 @@ async function openNewPaymentModal(preselectedInvoiceId = null, invoiceNumber = 
 
     const invSelect = document.getElementById('pay-invoice-select');
     const invoices = State.getTenantEntityList('invoices') || (await API.getInvoices(State.currentBusinessProfileId)) || [];
-    
+
     // Unpaid invoices
     const unpaidInvoices = (invoices || []).filter(inv => {
       const out = parseFloat(inv.outstanding_amount ?? inv.total_amount ?? 0);
@@ -16681,7 +18023,7 @@ async function openEditCustomerModal(id) {
   document.getElementById('cust-contact').value = c.contact_person || '';
   document.getElementById('cust-phone').value = c.phone || '';
   document.getElementById('cust-email').value = c.email || '';
-  
+
   const terms = c.payment_terms || 'Net 30 Days';
   const termsSelect = document.getElementById('cust-terms');
   const otherTermsInput = document.getElementById('cust-other-terms');
@@ -16737,7 +18079,7 @@ async function submitNewCustomerForm() {
   const contact = document.getElementById('cust-contact')?.value?.trim();
   const phone = document.getElementById('cust-phone')?.value?.trim();
   const email = document.getElementById('cust-email')?.value?.trim();
-  
+
   const rawTerms = document.getElementById('cust-terms')?.value;
   const otherTerms = document.getElementById('cust-other-terms')?.value?.trim();
   const terms = (rawTerms === 'Other' && otherTerms) ? otherTerms : (rawTerms || 'Net 30 Days');
@@ -16762,8 +18104,8 @@ async function submitNewCustomerForm() {
   try {
     // Pre-flight duplicate check
     const existing = await API.getCustomers();
-    const isDup = existing.some(c => 
-      c.business_name?.toLowerCase().trim() === name.toLowerCase() && 
+    const isDup = existing.some(c =>
+      c.business_name?.toLowerCase().trim() === name.toLowerCase() &&
       String(c.id) !== String(editId || '')
     );
     if (isDup) {
@@ -16862,7 +18204,7 @@ function handleSupplierTypeChanged(type) {
   const countrySelect = document.getElementById('sup-country');
   const currencySelect = document.getElementById('sup-currency');
   const portInput = document.getElementById('sup-origin-port');
-  
+
   if (type === 'Local Supplier') {
     if (countrySelect) countrySelect.value = 'Pakistan';
     if (currencySelect) currencySelect.value = 'PKR';
@@ -16978,8 +18320,8 @@ async function submitNewSupplierForm() {
   try {
     // Pre-flight duplicate check
     const existing = await API.getSuppliers();
-    const isDup = existing.some(s => 
-      s.supplier_name?.toLowerCase().trim() === name.toLowerCase() && 
+    const isDup = existing.some(s =>
+      s.supplier_name?.toLowerCase().trim() === name.toLowerCase() &&
       String(s.id) !== String(editId || '')
     );
     if (isDup) {
@@ -17365,7 +18707,7 @@ async function loadProductModalDropdowns() {
     const uomSelect = document.getElementById('prod-uom-select');
     if (uomSelect && Array.isArray(_cachedItemUOMs)) {
       const currentVal = uomSelect.value;
-      uomSelect.innerHTML = _cachedItemUOMs.map(u => 
+      uomSelect.innerHTML = _cachedItemUOMs.map(u =>
         `<option value="${u.uom_code}">${u.uom_code} - ${u.uom_name} (${u.uom_type || 'General'})</option>`
       ).join('');
       if (currentVal) {
@@ -17427,7 +18769,7 @@ async function submitQuickAddUomForm() {
 
     const uomSelect = document.getElementById('prod-uom-select');
     if (uomSelect) {
-      uomSelect.innerHTML = _cachedItemUOMs.map(u => 
+      uomSelect.innerHTML = _cachedItemUOMs.map(u =>
         `<option value="${u.uom_code}">${u.uom_code} - ${u.uom_name} (${u.uom_type || 'General'})</option>`
       ).join('');
       uomSelect.value = code;
@@ -17449,7 +18791,7 @@ function addCategorySubCatTag() {
   if (!input) return;
   const val = input.value.trim();
   if (!val) return;
-  
+
   const items = val.split(',').map(s => s.trim()).filter(Boolean);
   items.forEach(it => {
     if (!_categorySubCategories.includes(it)) {
@@ -17498,10 +18840,10 @@ function openQuickAddCategoryModal() {
   if (batchEl) batchEl.checked = false;
   const expEl = document.getElementById('cat-req-expiry');
   if (expEl) expEl.checked = false;
-  
+
   _categorySubCategories = [];
   renderCategorySubCatTags();
-  
+
   openModal('modal-add-category');
 }
 window.openQuickAddCategoryModal = openQuickAddCategoryModal;
@@ -17583,7 +18925,7 @@ async function openQuickAddSubCategoryModal() {
     if (!_cachedItemCategories || _cachedItemCategories.length === 0) {
       try {
         _cachedItemCategories = await API.getCategories();
-      } catch (e) {}
+      } catch (e) { }
     }
     const cats = Array.isArray(_cachedItemCategories) ? _cachedItemCategories : [];
     parentSelect.innerHTML = `<option value="">-- Select Parent Category --</option>` +
@@ -18138,7 +19480,7 @@ async function submitNewProductForm() {
   try {
     // Pre-flight duplicate check (skip self if editing)
     const existing = await API.getProducts();
-    const isDup = existing.some(p => 
+    const isDup = existing.some(p =>
       String(p.id) !== String(editId || '') && (
         (p.sku && sku && p.sku.toLowerCase().trim() === sku.toLowerCase().trim()) ||
         (p.name && name && p.name.toLowerCase().trim() === name.toLowerCase().trim() && (p.specifications || '') === spec)
@@ -18477,7 +19819,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
         bpSelect.value = profiles[0].id;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   try {
     await loadExpenseCategories();
@@ -18504,7 +19846,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
         `).join('');
       if (presetCustomerId) custSelect.value = presetCustomerId;
     }
-  } catch (e) {}
+  } catch (e) { }
 
   // Populate Tender / Quotation dropdown
   const oppSelect = document.getElementById('exp-opportunity-select');
@@ -18526,7 +19868,7 @@ async function openExpenseModal(presetTier = 'Tier 3 - General Overheads', prese
       poSelect.innerHTML = `<option value="">-- Select Purchase Order (PO) --</option>` +
         pos.map(p => `<option value="${p.id}" ${p.id === presetPoId ? 'selected' : ''}>${p.po_number} - ${p.customer_name || 'Customer'} (PKR ${parseFloat(p.net_amount || p.total_amount || 0).toLocaleString()})</option>`).join('');
     }
-  } catch (e) {}
+  } catch (e) { }
 
   handleExpenseTierChange(presetTier, presetCategory);
 
@@ -18549,7 +19891,7 @@ function handleExpenseTierChange(tier, presetCategory = '') {
 
   // Populate categories dynamically from database cache
   let categories = (_cachedExpenseCategories || []).filter(c => c.tier === selectedTier && c.is_active !== false);
-  
+
   // Fallback to static if cache not loaded yet
   if (categories.length === 0 && EXPENSE_CATEGORIES_BY_TIER[selectedTier]) {
     categories = EXPENSE_CATEGORIES_BY_TIER[selectedTier].map(name => ({ name, tier: selectedTier }));
@@ -18563,7 +19905,7 @@ function handleExpenseTierChange(tier, presetCategory = '') {
     `).join('');
     optionsHtml += `<option value="__ADD_NEW__" style="font-weight:700; color:var(--primary);">➕ + Add New Custom Category...</option>`;
     catSelect.innerHTML = optionsHtml;
-    
+
     if (presetCategory) {
       catSelect.value = presetCategory;
     }
@@ -18704,7 +20046,7 @@ function filterLinkedOpportunities(query = '') {
   let list = _cachedExpenseOpportunities || [];
 
   if (q) {
-    list = list.filter(o => 
+    list = list.filter(o =>
       (o.opportunity_number && o.opportunity_number.toLowerCase().includes(q)) ||
       (o.tender_name && o.tender_name.toLowerCase().includes(q)) ||
       (o.title && o.title.toLowerCase().includes(q)) ||
@@ -18764,7 +20106,7 @@ function handleExpenseOpportunitySelected(val) {
 window.handleExpenseOpportunitySelected = handleExpenseOpportunitySelected;
 
 // Close searchable dropdown when clicking outside
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
   const wrapper = document.getElementById('exp-searchable-wrapper');
   const menuEl = document.getElementById('exp-linked-dropdown');
   if (wrapper && menuEl && !wrapper.contains(e.target)) {
@@ -18812,7 +20154,7 @@ async function submitGeneralExpenseForm() {
     try {
       const pos = await API.getPurchaseOrders(State.currentBusinessProfileId);
       linkedPO = pos.find(p => p.id === poId);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const bpSelectVal = document.getElementById('exp-business-profile')?.value;
@@ -19010,7 +20352,7 @@ async function submitNewCompanyForm() {
     }
 
     const res = await API.createBusinessProfile(payload);
-    
+
     if (res && res.requires_payment_confirmation) {
       pendingPaidCompanyPayload = payload;
       const warningMsgEl = document.getElementById('paid-company-warning-msg');
@@ -19354,19 +20696,21 @@ const ENTITY_SCHEMAS = {
     fields: [
       { name: 'expense_type', label: 'Expenditure Type *', type: 'select', options: ['General Expense', 'Tender Expense', 'Quotation Expense', 'Customer Expense'], required: true },
       { name: 'expense_name', label: 'Expense Name / Purpose *', type: 'text', required: true },
-      { name: 'category', label: 'Expense Category *', type: 'select', options: [
-        'Samples', 'Courier & Logistics', 'Gifting', 'Other Direct Costs', 'Taxes & Duties',
-        'Salaries', 'Fuel', 'Maintenance', 'Overheads', 'Utility Bills', 'Warehouse Rent',
-        'Refreshments', 'Administrative Expenses', 'Client Relationship & Entertainment', 'Other Direct Customer Expense'
-      ], required: true },
+      {
+        name: 'category', label: 'Expense Category *', type: 'select', options: [
+          'Samples', 'Courier & Logistics', 'Gifting', 'Other Direct Costs', 'Taxes & Duties',
+          'Salaries', 'Fuel', 'Maintenance', 'Overheads', 'Utility Bills', 'Warehouse Rent',
+          'Refreshments', 'Administrative Expenses', 'Client Relationship & Entertainment', 'Other Direct Customer Expense'
+        ], required: true
+      },
       { name: 'amount', label: 'Amount (PKR) *', type: 'number', required: true },
       { name: 'expense_date', label: 'Expense Date *', type: 'date', required: true },
       { name: 'paid_to', label: 'Paid To / Vendor', type: 'text' },
       { name: 'payment_mode', label: 'Payment Mode', type: 'select', options: ['Cash', 'Online', 'Cheque', 'Company Card'] },
-      { 
-        name: 'opportunity_id', 
-        label: 'Linked Tender / Quotation (Optional)', 
-        type: 'select', 
+      {
+        name: 'opportunity_id',
+        label: 'Linked Tender / Quotation (Optional)',
+        type: 'select',
         options: async () => {
           const opps = await API.getOpportunities();
           return [
@@ -19377,12 +20721,12 @@ const ENTITY_SCHEMAS = {
             }))
           ];
         },
-        colSpan: 2 
+        colSpan: 2
       },
-      { 
-        name: 'customer_id', 
-        label: 'Linked Customer / Client (For Direct Customer Expense)', 
-        type: 'select', 
+      {
+        name: 'customer_id',
+        label: 'Linked Customer / Client (For Direct Customer Expense)',
+        type: 'select',
         options: async () => {
           const custs = await API.getCustomers();
           return [
@@ -19393,7 +20737,7 @@ const ENTITY_SCHEMAS = {
             }))
           ];
         },
-        colSpan: 2 
+        colSpan: 2
       },
       { name: 'remarks', label: 'Remarks / Description', type: 'textarea', colSpan: 2 }
     ]
@@ -19454,10 +20798,12 @@ const ENTITY_SCHEMAS = {
       { name: 'strn', label: 'Sales Tax Registration (STRN) *', type: 'text', required: true },
       { name: 'city', label: 'City', type: 'text' },
       { name: 'invoice_prefix', label: 'Invoice Prefix', type: 'text' },
-      { name: 'fbr_enabled', label: 'Enable FBR PRAL Gateway', type: 'select', options: [
-        { value: 'true', label: 'Yes (Active)' },
-        { value: 'false', label: 'No (Skip FBR)' }
-      ] }
+      {
+        name: 'fbr_enabled', label: 'Enable FBR PRAL Gateway', type: 'select', options: [
+          { value: 'true', label: 'Yes (Active)' },
+          { value: 'false', label: 'No (Skip FBR)' }
+        ]
+      }
     ]
   },
   user: {
@@ -19579,14 +20925,14 @@ function printInvoice(inv) {
     return isNaN(d.getTime()) ? v : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
   };
 
-  const totalAmt   = parseFloat(inv.total_amount || 0);
-  const taxAmt     = parseFloat(inv.tax_amount || inv.gst_amount || 0);
-  const subtotal   = parseFloat(inv.subtotal || inv.subtotal_amount || (totalAmt - taxAmt) || 0);
-  const paidAmt    = parseFloat(inv.paid_amount || 0);
+  const totalAmt = parseFloat(inv.total_amount || 0);
+  const taxAmt = parseFloat(inv.tax_amount || inv.gst_amount || 0);
+  const subtotal = parseFloat(inv.subtotal || inv.subtotal_amount || (totalAmt - taxAmt) || 0);
+  const paidAmt = parseFloat(inv.paid_amount || 0);
   const outstanding = inv.outstanding_amount !== undefined
     ? parseFloat(inv.outstanding_amount)
     : (totalAmt - paidAmt);
-  const gstRate    = subtotal > 0 ? ((taxAmt / subtotal) * 100).toFixed(0) : '18';
+  const gstRate = subtotal > 0 ? ((taxAmt / subtotal) * 100).toFixed(0) : '18';
 
   const statusBg = { Paid: '#059669', Submitted: '#0284c7', Pending: '#d97706', Hold: '#dc2626', Reinvoicing: '#7c3aed' };
   const sColor = statusBg[inv.status] || '#64748b';
@@ -19911,9 +21257,9 @@ function printInvoice(inv) {
     <div class="fbr-banner">
       <span>🏛️ <strong>Federal Board of Revenue (FBR) — PRAL Digital Tax Invoice</strong> &nbsp;|&nbsp; Sales Tax Act 1990</span>
       <span>${inv.fbr_status === 'FBR Validated'
-        ? '<span class="fbr-validated">✓ FBR Validated</span>'
-        : '<span style="color:#fca5a5;">⚠ Pending Validation</span>'
-      }</span>
+      ? '<span class="fbr-validated">✓ FBR Validated</span>'
+      : '<span style="color:#fca5a5;">⚠ Pending Validation</span>'
+    }</span>
     </div>
 
     <!-- ── BILL TO + INVOICE META ── -->
@@ -20253,9 +21599,48 @@ async function submitUniversalEdit() {
 // RBAC USER & EMPLOYEE ACTION HANDLERS
 // --------------------------------------------------------------------------
 
+function syncRbacMatrixWithTenantLicenses() {
+  const rows = document.querySelectorAll('#permissions-matrix-tbody tr[data-lic-key]');
+  const isSuper = State.isSuperAdmin && State.isSuperAdmin();
+  rows.forEach(tr => {
+    const licKey = tr.getAttribute('data-lic-key');
+    const isLicensed = isSuper || !licKey || (typeof State.isModuleActiveForTenant === 'function' ? State.isModuleActiveForTenant(licKey) : true);
+    const firstTd = tr.querySelector('td');
+    if (firstTd) {
+      const existingBadge = firstTd.querySelector('.lic-status-badge');
+      if (existingBadge) existingBadge.remove();
+      if (!isLicensed) {
+        const badge = document.createElement('span');
+        badge.className = 'lic-status-badge';
+        badge.style.cssText = 'margin-left:6px; font-size:0.68rem; padding:1px 6px; border-radius:4px; background:#fef2f2; color:#dc2626; border:1px solid #fecaca; font-weight:700;';
+        badge.textContent = '🔒 Not in Tenant Plan';
+        firstTd.appendChild(badge);
+      }
+    }
+    tr.style.opacity = isLicensed ? '1' : '0.45';
+    tr.querySelectorAll('.perm-toggle').forEach(cb => {
+      cb.disabled = !isLicensed;
+      if (!isLicensed) cb.checked = false;
+    });
+  });
+}
+
 function applyRbacPreset(presetType) {
+  syncRbacMatrixWithTenantLicenses();
+  const PRESET_MODULES = {
+    bidding: ['opportunities', 'tender-radar', 'bid-securities', 'costing', 'approvals', 'awards', 'customers', 'suppliers', 'reports'],
+    sales_crm: ['crm', 'customers', 'opportunities', 'purchase-orders', 'delivery-challans', 'invoices', 'reports'],
+    accounts: ['invoices', 'payments', 'expenses', 'accounting', 'tax-compliance', 'purchase-orders', 'customers', 'suppliers', 'reports'],
+    hr_payroll: ['hrm', 'payroll', 'expenses', 'reports'],
+    store_factory: ['inventory', 'stock-transfers', 'delivery-challans', 'purchase-orders', 'manufacturing', 'suppliers']
+  };
   const toggles = document.querySelectorAll('.perm-toggle');
   toggles.forEach(t => {
+    if (t.disabled) {
+      t.checked = false;
+      return;
+    }
+    const mod = t.dataset.module;
     const act = t.dataset.action;
     if (presetType === 'full') {
       t.checked = true;
@@ -20263,9 +21648,13 @@ function applyRbacPreset(presetType) {
       t.checked = (act === 'view');
     } else if (presetType === 'revoke') {
       t.checked = false;
+    } else if (PRESET_MODULES[presetType]) {
+      const inDept = PRESET_MODULES[presetType].includes(mod);
+      t.checked = inDept && (act === 'view' || act === 'add' || act === 'edit');
     }
   });
 }
+window.applyRbacPreset = applyRbacPreset;
 
 function handleEqualRightsToggle(checked) {
   if (checked) {
@@ -20344,7 +21733,7 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
     };
   }
   if (titleEl) {
-    titleEl.innerText = defaultRole === 'SuperAdmin' && State.isSuperAdmin() ? '👑 Add Super Admin User' : '👤 Add New User / Employee';
+    titleEl.innerText = defaultRole === 'SuperAdmin' && State.isSuperAdmin() ? '👑 Add Super Admin User' : '👤 Add New User / Employee & Assign Modules';
   }
 
   // Populate company checkboxes
@@ -20361,7 +21750,8 @@ function openCreateUserModal(defaultRole = 'ClientEmployee') {
     }
   }
 
-  // Apply default full access
+  // Apply default full access for subscribed modules
+  syncRbacMatrixWithTenantLicenses();
   applyRbacPreset(defaultRole === 'ReadOnly' ? 'readonly' : 'full');
   handleUserRoleSelection(defaultRole);
   openModal('modal-create-user');
@@ -20372,13 +21762,13 @@ function openEditUserModal(userId) {
     alert('⚠️ Security Rule: Administrators cannot edit their own account or permissions from User Management.');
     return;
   }
-  if (!State.isSuperAdmin() && !State.isCreatedBySuperAdmin()) {
-    alert('⚠️ Forbidden: Only the organization administrator created by Super Admin has permission to edit users.');
+  if (!State.isSuperAdmin() && !State.isClientAdmin() && !State.isCreatedBySuperAdmin()) {
+    alert('⚠️ Forbidden: Only an Organization Administrator has permission to edit users and assign module rights.');
     return;
   }
 
   const users = State.getStoredUsers ? State.getStoredUsers() : [];
-  const u = users.find(user => user.id === userId) || { id: userId };
+  const u = (window._lastLoadedUsersList || users).find(user => String(user.id) === String(userId)) || users.find(user => String(user.id) === String(userId)) || { id: userId };
 
   if (!State.isSuperAdmin() && (u.is_primary_admin || u.isPrimaryAdmin || (u.role === 'ClientAdmin' && u.is_created_by_super_admin))) {
     alert('⚠️ Security Policy: The Primary Organization Administrator created by Super Admin cannot be edited.');
@@ -20412,8 +21802,8 @@ function openEditUserModal(userId) {
   }
   if (passLabel) passLabel.innerText = 'New Password (Leave blank to keep unchanged)';
   if (passGuide) passGuide.style.display = 'block';
-  if (saveBtn) saveBtn.innerText = '💾 Update User Rights & Permissions';
-  
+  if (saveBtn) saveBtn.innerText = '💾 Update User Modules & Permissions';
+
   if (roleSelect) {
     if (State.isSuperAdmin && State.isSuperAdmin()) {
       roleSelect.innerHTML = `
@@ -20435,13 +21825,13 @@ function openEditUserModal(userId) {
     roleSelect.value = (targetRole === 'SuperAdmin' && !State.isSuperAdmin()) ? 'ClientEmployee' : targetRole;
   }
   if (titleEl) {
-    titleEl.innerText = `✏️ Edit Rights & Permissions: ${u.full_name || u.username || 'User'}`;
+    titleEl.innerText = `🔐 Assign Modules & Screen Rights: ${u.full_name || u.username || 'User'}`;
   }
 
   // Populate company checkboxes
   if (companyContainer) {
     if (State.businessProfiles && State.businessProfiles.length > 0) {
-      const assignedIds = Array.isArray(u.business_access) 
+      const assignedIds = Array.isArray(u.business_access)
         ? u.business_access.map(b => typeof b === 'object' ? b.id : b)
         : (Array.isArray(u.business_profile_ids) ? u.business_profile_ids : []);
 
@@ -20459,13 +21849,21 @@ function openEditUserModal(userId) {
     }
   }
 
+  syncRbacMatrixWithTenantLicenses();
+
   // Populate matrix checkboxes from user permissions
   const toggles = document.querySelectorAll('.perm-toggle');
   toggles.forEach(t => {
+    if (t.disabled) {
+      t.checked = false;
+      return;
+    }
     const mod = t.dataset.module;
     const act = t.dataset.action;
-    if (u.permissions && u.permissions[mod] && u.permissions[mod][act] !== undefined) {
-      t.checked = Boolean(u.permissions[mod][act]);
+    const altMod = mod.replace(/-/g, '_');
+    const modPerms = (u.permissions && (u.permissions[mod] || u.permissions[altMod])) || null;
+    if (modPerms && modPerms[act] !== undefined) {
+      t.checked = Boolean(modPerms[act]);
     } else {
       if (u.role === 'ReadOnly') {
         t.checked = (act === 'view');
@@ -20575,7 +21973,7 @@ async function submitCreateUserForm() {
       // Create mode: Check duplicates & register
       const userRes = await API.getUsersWithStats();
       const existingUsers = (userRes && userRes.data) ? userRes.data : (State.getStoredUsers ? State.getStoredUsers() : []);
-      const isDup = existingUsers.some(u => 
+      const isDup = existingUsers.some(u =>
         (effectiveUsername && u.username && u.username.toLowerCase().trim() === effectiveUsername.toLowerCase().trim()) ||
         (effectiveEmail && u.email && u.email.toLowerCase().trim() === effectiveEmail.toLowerCase().trim())
       );
@@ -20812,7 +22210,12 @@ function openNewTenantModal() {
       else i.value = '';
     });
   }
-  openModal('modal-create-tenant');
+  try {
+    window._isOpeningNewTenantModal = true;
+    openModal('modal-create-tenant');
+  } finally {
+    window._isOpeningNewTenantModal = false;
+  }
 }
 window.openNewTenantModal = openNewTenantModal;
 
@@ -20941,49 +22344,49 @@ async function renderSuperAdminSubscriptionsHTML() {
           </thead>
           <tbody>
             ${overview.map(o => {
-              const sub = o.subscription;
-              let statusBadge = '';
-              if (sub.status === 'Suspended') {
-                statusBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171;">⛔ Suspended</span>';
-              } else if (sub.is_trial && sub.status === 'Trial') {
-                statusBadge = `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd;">⏳ Trial (${o.trialDaysRemaining}d left)</span>`;
-              } else {
-                statusBadge = '<span class="badge badge-won">✓ Paid (Active)</span>';
-              }
+    const sub = o.subscription;
+    let statusBadge = '';
+    if (sub.status === 'Suspended') {
+      statusBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171;">⛔ Suspended</span>';
+    } else if (sub.is_trial && sub.status === 'Trial') {
+      statusBadge = `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd;">⏳ Trial (${o.trialDaysRemaining}d left)</span>`;
+    } else {
+      statusBadge = '<span class="badge badge-won">✓ Paid (Active)</span>';
+    }
 
-              const cycleLabel = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
-              const planBadge = (sub.plan_type === 'Advance') 
-                ? `<span class="badge badge-won">Advance (${cycleLabel})</span>` 
-                : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic')
-                  ? '<span class="badge badge-ready">Starter Plan</span>' 
-                  : '<span class="badge" style="background:#f3e8ff; color:#7e22ce;">Custom Plan</span>';
+    const cycleLabel = sub.billing_cycle ? (sub.billing_cycle.charAt(0).toUpperCase() + sub.billing_cycle.slice(1).replace('_', '-')) : 'Monthly';
+    const planBadge = (sub.plan_type === 'Advance')
+      ? `<span class="badge badge-won">Advance (${cycleLabel})</span>`
+      : (sub.plan_type === 'Starter' || sub.plan_type === 'Basic')
+        ? '<span class="badge badge-ready">Starter Plan</span>'
+        : '<span class="badge" style="background:#f3e8ff; color:#7e22ce;">Custom Plan</span>';
 
-              const isUnlimitedTenders = (
-                sub.tender_limit === 'unlimited' || 
-                sub.tender_limit === -1 || 
-                sub.is_unlimited_tenders ||
-                sub.plan_type === 'Advance' || 
-                sub.plan_type === 'Enterprise'
-              );
-              const isUnlimitedCdrs = (
-                sub.bid_security_limit === 'unlimited' || 
-                sub.bid_security_limit === -1 || 
-                sub.is_unlimited_cdrs ||
-                sub.plan_type === 'Advance' || 
-                sub.plan_type === 'Enterprise'
-              );
+    const isUnlimitedTenders = (
+      sub.tender_limit === 'unlimited' ||
+      sub.tender_limit === -1 ||
+      sub.is_unlimited_tenders ||
+      sub.plan_type === 'Advance' ||
+      sub.plan_type === 'Enterprise'
+    );
+    const isUnlimitedCdrs = (
+      sub.bid_security_limit === 'unlimited' ||
+      sub.bid_security_limit === -1 ||
+      sub.is_unlimited_cdrs ||
+      sub.plan_type === 'Advance' ||
+      sub.plan_type === 'Enterprise'
+    );
 
-              const tenderQuotaDisplay = isUnlimitedTenders 
-                ? `📑 ${o.tenderCount} / ∞ (Unlimited)` 
-                : `📑 ${o.tenderCount} / ${sub.tender_limit || 5} Tenders`;
+    const tenderQuotaDisplay = isUnlimitedTenders
+      ? `📑 ${o.tenderCount} / ∞ (Unlimited)`
+      : `📑 ${o.tenderCount} / ${sub.tender_limit || 5} Tenders`;
 
-              const bidSecQuotaDisplay = isUnlimitedCdrs 
-                ? `🏦 ${o.bidSecurityCount} / ∞ (Unlimited)` 
-                : `🏦 ${o.bidSecurityCount} / ${sub.bid_security_limit || 10} CDRs`;
+    const bidSecQuotaDisplay = isUnlimitedCdrs
+      ? `🏦 ${o.bidSecurityCount} / ∞ (Unlimited)`
+      : `🏦 ${o.bidSecurityCount} / ${sub.bid_security_limit || 10} CDRs`;
 
-              const renewalDateDisplay = sub.trial_end_date || sub.current_period_end || (o.tenant.trial_ends_at ? o.tenant.trial_ends_at.split('T')[0].split(' ')[0] : 'N/A');
+    const renewalDateDisplay = sub.trial_end_date || sub.current_period_end || (o.tenant.trial_ends_at ? o.tenant.trial_ends_at.split('T')[0].split(' ')[0] : 'N/A');
 
-              return `
+    return `
                 <tr>
                   <td>
                     <strong>${o.tenant.company_name}</strong><br>
@@ -21023,7 +22426,7 @@ async function renderSuperAdminSubscriptionsHTML() {
                   </td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -21043,17 +22446,17 @@ async function renderMySubscriptionHTML() {
   const isTrial = sub.is_trial || sub.status === 'Trial';
 
   const isUnlimitedTenders = (
-    sub.tender_limit === 'unlimited' || 
-    sub.tender_limit === -1 || 
+    sub.tender_limit === 'unlimited' ||
+    sub.tender_limit === -1 ||
     sub.is_unlimited_tenders ||
-    sub.plan_type === 'Advance' || 
+    sub.plan_type === 'Advance' ||
     sub.plan_type === 'Enterprise'
   );
   const isUnlimitedCdrs = (
-    sub.bid_security_limit === 'unlimited' || 
-    sub.bid_security_limit === -1 || 
+    sub.bid_security_limit === 'unlimited' ||
+    sub.bid_security_limit === -1 ||
     sub.is_unlimited_cdrs ||
-    sub.plan_type === 'Advance' || 
+    sub.plan_type === 'Advance' ||
     sub.plan_type === 'Enterprise'
   );
 
@@ -21073,8 +22476,8 @@ async function renderMySubscriptionHTML() {
   const tenderPct = isUnlimitedTenders ? 100 : Math.min(100, (tendersUsed / (parseInt(tenderLimitVal, 10) || 1)) * 100);
 
   const allSecurities = State.getTenantEntityList ? State.getTenantEntityList('bidSecurities') : [];
-  const secUsed = (State.liveCdrsCount !== undefined) 
-    ? State.liveCdrsCount 
+  const secUsed = (State.liveCdrsCount !== undefined)
+    ? State.liveCdrsCount
     : (allSecurities.filter(b => b.tenant_id === (sub.tenant_id || State.currentUser?.tenant_id)).length || (quota.bid_securities_created || 0));
   const secLimitVal = isUnlimitedCdrs ? 'Unlimited' : (sub.bid_security_limit || 10);
   const secQuotaMax = secLimitVal;
@@ -21176,8 +22579,8 @@ async function renderMySubscriptionHTML() {
       </div>
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding-top: 10px;">
         ${State.MODULE_CATALOG.map(m => {
-          const isActive = State.isModuleActiveForTenant(m.key);
-          return `
+    const isActive = State.isModuleActiveForTenant(m.key);
+    return `
             <div style="border: 1px solid ${isActive ? '#bbf7d0' : '#e2e8f0'}; background: ${isActive ? '#f0fdf4' : '#f8fafc'}; padding: 14px; border-radius: var(--radius-md);">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
                 <span style="font-size: 1.4rem;">${m.icon}</span>
@@ -21187,7 +22590,7 @@ async function renderMySubscriptionHTML() {
               <div style="font-size: 0.75rem; color: #64748b; line-height: 1.4;">${m.desc}</div>
             </div>
           `;
-        }).join('')}
+  }).join('')}
       </div>
     </div>
 
@@ -21294,7 +22697,7 @@ function openConfigureSubscriptionModal(tenantId) {
 
   document.getElementById('sub-tenant-id').value = tenantId;
   document.getElementById('sub-tenant-name-display').innerText = tenant.company_name;
-  
+
   // Set Plan Radio
   const normalizedPlan = (sub.plan_type === 'Basic' || sub.plan_type === 'Starter') ? 'Starter' : sub.plan_type;
   const radios = document.getElementsByName('sub-plan-choice');
@@ -21337,15 +22740,15 @@ function openConfigureSubscriptionModal(tenantId) {
   // Set Included Companies & Seats (Custom per client)
   const incCoInput = document.getElementById('sub-included-companies');
   if (incCoInput) {
-    incCoInput.value = sub.free_companies_limit !== undefined 
-      ? sub.free_companies_limit 
+    incCoInput.value = sub.free_companies_limit !== undefined
+      ? sub.free_companies_limit
       : (tenant.free_business_profile_limit || (normalizedPlan === 'Advance' ? 3 : 1));
   }
 
   const incUsersInput = document.getElementById('sub-included-users');
   if (incUsersInput) {
-    incUsersInput.value = sub.free_users_limit !== undefined 
-      ? sub.free_users_limit 
+    incUsersInput.value = sub.free_users_limit !== undefined
+      ? sub.free_users_limit
       : (tenant.free_employee_limit || (normalizedPlan === 'Advance' ? 3 : 1));
   }
 
@@ -21378,13 +22781,108 @@ function openConfigureSubscriptionModal(tenantId) {
   openModal('modal-configure-subscription');
 }
 
+function applySubscriptionPackagePreset(pkgKey) {
+  const PKG_CONFIGS = {
+    full: {
+      modules: ['mod_tenders', 'mod_notifications', 'mod_inventory', 'mod_templates', 'mod_crm', 'mod_finance', 'mod_tax_compliance', 'mod_hrm', 'mod_payroll', 'mod_manufacturing', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_fbr_invoicing', 'mod_finance_kpi'],
+      basePrice: 35000,
+      companies: 3,
+      users: 5
+    },
+    tender_suite: {
+      modules: ['mod_tenders', 'mod_notifications', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_templates'],
+      basePrice: 15000,
+      companies: 1,
+      users: 2
+    },
+    tender_radar: {
+      modules: ['mod_notifications', 'mod_templates'],
+      basePrice: 4500,
+      companies: 1,
+      users: 1
+    },
+    warehouse_pro: {
+      modules: ['mod_inventory', 'mod_supply_dc', 'mod_templates'],
+      basePrice: 8500,
+      companies: 1,
+      users: 2
+    },
+    crm_sales: {
+      modules: ['mod_crm', 'mod_quotations', 'mod_templates'],
+      basePrice: 7500,
+      companies: 1,
+      users: 2
+    },
+    financials_tax: {
+      modules: ['mod_finance', 'mod_tax_compliance', 'mod_fbr_invoicing', 'mod_finance_kpi', 'mod_templates'],
+      basePrice: 14500,
+      companies: 2,
+      users: 3
+    },
+    hrm_payroll: {
+      modules: ['mod_hrm', 'mod_payroll', 'mod_templates'],
+      basePrice: 9500,
+      companies: 1,
+      users: 2
+    },
+    manufacturing: {
+      modules: ['mod_manufacturing', 'mod_inventory', 'mod_templates'],
+      basePrice: 12500,
+      companies: 1,
+      users: 2
+    }
+  };
+
+  const cfg = PKG_CONFIGS[pkgKey];
+  if (!cfg) return;
+
+  const customRadio = document.querySelector('input[name="sub-plan-choice"][value="Custom"]');
+  if (customRadio) {
+    customRadio.checked = true;
+    onPlanSelectionChanged('Custom', false);
+  }
+
+  const basePriceInput = document.getElementById('sub-custom-base-price');
+  if (basePriceInput) basePriceInput.value = cfg.basePrice;
+
+  const incCoInput = document.getElementById('sub-included-companies');
+  if (incCoInput) incCoInput.value = cfg.companies;
+
+  const incUsersInput = document.getElementById('sub-included-users');
+  if (incUsersInput) incUsersInput.value = cfg.users;
+
+  const checkboxes = document.querySelectorAll('.sub-mod-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = cfg.modules.includes(cb.value);
+  });
+
+  recalcSubscriptionBillPreview();
+}
+window.applySubscriptionPackagePreset = applySubscriptionPackagePreset;
+
 function renderSubModulesChecklist(sub) {
   const container = document.getElementById('sub-modules-checklist');
   if (!container) return;
 
   const activeKeys = sub.active_modules || ['mod_tenders', 'mod_quotations', 'mod_bid_security', 'mod_costing_eval', 'mod_supply_dc', 'mod_inventory', 'mod_fbr_invoicing', 'mod_finance_kpi'];
 
-  container.innerHTML = State.MODULE_CATALOG.map(m => {
+  const presetButtonsHTML = `
+    <div style="grid-column: 1 / -1; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
+      <div style="font-size: 0.76rem; font-weight: 700; color: #475569; margin-bottom: 6px;">⚡ 1-Click Standalone Commercial Packages:</div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem; font-weight: 700; background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe;" onclick="applySubscriptionPackagePreset('full')">👑 Full Suite</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('tender_suite')">📑 Tender Suite</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('tender_radar')">📡 Tender Radar</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('crm_sales')">🎯 Sales CRM</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('warehouse_pro')">🏬 Warehouse Pro</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('financials_tax')">📒 Financials &amp; TaxGuard</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('hrm_payroll')">👥 HRM &amp; Payroll</button>
+        <button type="button" class="secondary-btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="applySubscriptionPackagePreset('manufacturing')">🏭 Manufacturing ERP</button>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = presetButtonsHTML + State.MODULE_CATALOG.map(m => {
     const isChecked = activeKeys.includes(m.key);
     const customFee = (sub.custom_module_fees && sub.custom_module_fees[m.key] !== undefined) ? sub.custom_module_fees[m.key] : m.benchmarkFee;
     return `
@@ -21434,7 +22932,7 @@ function onPlanSelectionChanged(planType, resetLimits = true) {
     if (basePriceInput) basePriceInput.value = 14000;
   } else {
     if (cycleContainer) cycleContainer.style.display = 'block';
-    
+
     // Check cycle radio
     let selectedCycle = 'monthly';
     const cycleRadios = document.getElementsByName('sub-billing-cycle');
@@ -21583,6 +23081,9 @@ async function submitConfigureSubscriptionForm() {
 
   try {
     const res = await API.configureTenantSubscription(payload);
+    if (window.API && typeof window.API.saveTenantActiveModules === 'function') {
+      await window.API.saveTenantActiveModules(tenantId, activeModules, activeModules).catch(() => { });
+    }
     if (res && res.success) {
       closeModal('modal-configure-subscription');
       showToast(res.message || 'Subscription saved successfully.', 'success');
@@ -21811,7 +23312,7 @@ async function submitTenderLossForm() {
   // 3. Automated Bid Security / CDR Release Trigger (Replenish Available Bank Line)
   const securities = State.getTenantEntityList('bidSecurities');
   const linkedSecs = securities.filter(s => s.opportunity_id === oppId && s.status === 'Active');
-  
+
   for (const sec of linkedSecs) {
     await API.releaseBidSecurity(sec.id, 'Auto-Release on Tender Loss (' + (grievanceTrack || stage) + ')');
   }
@@ -21900,6 +23401,7 @@ async function openTender360Cockpit(oppId) {
           <option value="Technical Disqualified" ${opp.status === 'Technical Disqualified' ? 'selected' : ''}>Disqualified</option>
           <option value="Withdrawn" ${opp.status === 'Withdrawn' ? 'selected' : ''}>Withdrawn</option>
         </select>
+        <button type="button" class="secondary-btn" style="padding:4px 10px; font-size:0.8rem; background:#7c3aed; color:#ffffff; border:1px solid #6d28d9; font-weight:700;" onclick="window.ModularERP && ModularERP.openTenderIntelModal('${opp.id}')" title="Mandatory PPRA Document Checklist & Competitor Post-Opening Bids">📋 PPRA Checklist & Competitor Bids</button>
         <button type="button" class="secondary-btn" style="padding:4px 10px; font-size:0.8rem; background:#ffffff; color:#0f172a; border:1px solid #cbd5e1; font-weight:600;" onclick="closeModal('modal-tender-360-cockpit'); openEditTenderModal('${opp.id}')" title="Edit Tender Scope & Line Items">✏️ Edit Tender</button>
         <button type="button" class="primary-btn" style="padding:4px 10px; font-size:0.8rem; background:#059669;" onclick="handleUpdateTenderStatus('${opp.id}', 'Won', '${encodeURIComponent(opp.tender_name || opp.title)}')">🏆 Mark Won</button>
         <button type="button" class="danger-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="handleUpdateTenderStatus('${opp.id}', 'Lost', '${encodeURIComponent(opp.tender_name || opp.title)}', ${parseFloat(opp.estimated_value || 0)})">❌ Mark Lost</button>
@@ -21991,8 +23493,8 @@ async function openTender360Cockpit(oppId) {
             ${pos.length === 0 ? `
               <tr><td colspan="6" style="text-align:center; padding:14px; color:var(--text-muted);">No POs issued yet.</td></tr>
             ` : pos.map(p => {
-              const matchedDCs = dcs.filter(d => d.purchase_order_id === p.id);
-              return `
+    const matchedDCs = dcs.filter(d => d.purchase_order_id === p.id);
+    return `
                 <tr>
                   <td><strong>${p.po_number}</strong></td>
                   <td>${p.delivery_location || 'Customer Site'}</td>
@@ -22002,7 +23504,7 @@ async function openTender360Cockpit(oppId) {
                   <td><span class="badge badge-won">${p.status || 'Issued'}</span></td>
                 </tr>
               `;
-            }).join('')}
+  }).join('')}
           </tbody>
         </table>
       </div>
@@ -22141,7 +23643,7 @@ function toggleGrnDtlFields(checked) {
 function openGrnModal(dcId, poId) {
   const form = document.getElementById('form-grn-inspection');
   if (form) form.reset();
-  
+
   const dcIdEl = document.getElementById('grn-dc-id');
   const poIdEl = document.getElementById('grn-po-id');
   const dateEl = document.getElementById('grn-date');
@@ -22642,7 +24144,7 @@ function deleteTenderDiaryEntry(oppId, memoId) {
       showToast('Diary memo removed', 'info');
       openTenderDiaryModal(oppId);
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 window.deleteTenderDiaryEntry = deleteTenderDiaryEntry;
 
@@ -22854,6 +24356,5 @@ window.submitNewTenderForm = submitNewTenderForm;
 window.submitCreateUserForm = submitCreateUserForm;
 window.submitOnboardCompanyForm = submitOnboardCompanyForm;
 window.syncCompanyAbbrevAndPrefix = syncCompanyAbbrevAndPrefix;
-
 
 

@@ -4,6 +4,641 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 
+const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ''));
+
+// Initialize Enterprise Reporting Schema
+const initReportsSchema = async () => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS saved_report_presets (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL,
+        user_id UUID REFERENCES users(id),
+        report_key VARCHAR(100) NOT NULL,
+        preset_name VARCHAR(150) NOT NULL,
+        filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+        is_public BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS report_execution_logs (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL,
+        user_id UUID REFERENCES users(id),
+        report_key VARCHAR(100) NOT NULL,
+        report_name VARCHAR(150),
+        parameters JSONB DEFAULT '{}'::jsonb,
+        execution_time_ms INTEGER DEFAULT 0,
+        rows_count INTEGER DEFAULT 0,
+        status VARCHAR(30) DEFAULT 'SUCCESS',
+        error_message TEXT,
+        executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_execution_logs_tenant ON report_execution_logs(tenant_id, executed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_saved_report_presets_tid ON saved_report_presets(tenant_id, report_key);
+    `);
+  } catch (err) {
+    console.warn('Reports schema initialization warning:', err.message);
+  }
+};
+initReportsSchema();
+
+// Master Enterprise Report Catalogue Definition
+const REPORT_CATALOGUE = [
+  // 1. Finance & Accounting
+  {
+    key: 'trial_balance',
+    name: 'Trial Balance Ledger',
+    module: 'finance',
+    category: 'General Ledger',
+    description: 'Double-entry audit verification showing total debit and credit balances per account code.',
+    parameters: [
+      { key: 'asOfDate', label: 'As of Date', type: 'date', default: 'today' },
+      { key: 'accountType', label: 'Account Category', type: 'select', options: ['All', 'Asset', 'Liability', 'Equity', 'Revenue', 'Expense'] }
+    ],
+    columns: [
+      { key: 'account_code', label: 'Account Code', align: 'left', width: '15%' },
+      { key: 'account_name', label: 'Account Title', align: 'left', width: '35%' },
+      { key: 'account_type', label: 'Classification', align: 'left', width: '15%' },
+      { key: 'debit', label: 'Total Debit (PKR)', align: 'right', width: '17%', isNumeric: true },
+      { key: 'credit', label: 'Total Credit (PKR)', align: 'right', width: '18%', isNumeric: true }
+    ]
+  },
+  {
+    key: 'receivables_aging',
+    name: 'Accounts Receivable Aging Ledger',
+    module: 'finance',
+    category: 'Receivables',
+    description: 'Detailed analysis of unpaid client invoices categorized into 0-30, 31-60, 61-90, and 90+ days aging buckets.',
+    parameters: [
+      { key: 'asOfDate', label: 'As of Date', type: 'date', default: 'today' }
+    ],
+    columns: [
+      { key: 'customer_name', label: 'Client / Buyer Name', align: 'left', width: '28%' },
+      { key: 'current_due', label: 'Current (0-30d)', align: 'right', width: '18%', isNumeric: true },
+      { key: 'days_31_60', label: '31 - 60 Days', align: 'right', width: '18%', isNumeric: true },
+      { key: 'days_61_90', label: '61 - 90 Days', align: 'right', width: '18%', isNumeric: true },
+      { key: 'days_over_90', label: 'Over 90 Days', align: 'right', width: '18%', isNumeric: true }
+    ]
+  },
+  {
+    key: 'tax_withholding_fbr',
+    name: 'FBR Withholding & Sales Tax Register',
+    module: 'finance',
+    category: 'Compliance',
+    description: 'Statutory Sales Tax (GST 18%) and Income Tax Withholding (Sec 153) deduction schedule for PRAL / FBR compliance.',
+    parameters: [
+      { key: 'startDate', label: 'From Date', type: 'date' },
+      { key: 'endDate', label: 'To Date', type: 'date' }
+    ],
+    columns: [
+      { key: 'invoice_number', label: 'Tax Invoice #', align: 'left', width: '15%' },
+      { key: 'invoice_date', label: 'Invoice Date', align: 'left', width: '12%' },
+      { key: 'customer_name', label: 'Client Name', align: 'left', width: '25%' },
+      { key: 'taxable_value', label: 'Taxable Value', align: 'right', width: '16%', isNumeric: true },
+      { key: 'sales_tax_amount', label: 'Sales Tax (GST)', align: 'right', width: '16%', isNumeric: true },
+      { key: 'total_amount', label: 'Gross Invoice Total', align: 'right', width: '16%', isNumeric: true }
+    ]
+  },
+
+  // 2. Inventory & Supply Chain
+  {
+    key: 'stock_valuation',
+    name: 'Inventory Stock Valuation Ledger',
+    module: 'inventory',
+    category: 'Valuation',
+    description: 'Comprehensive item SKU on-hand inventory balances with unit cost prices and total valuation in PKR.',
+    parameters: [
+      { key: 'category', label: 'Product Category', type: 'text' }
+    ],
+    columns: [
+      { key: 'sku', label: 'SKU Code', align: 'left', width: '15%' },
+      { key: 'name', label: 'Product / Item Name', align: 'left', width: '35%' },
+      { key: 'category', label: 'Category', align: 'left', width: '15%' },
+      { key: 'current_stock', label: 'Stock On Hand', align: 'center', width: '15%', isNumeric: true },
+      { key: 'valuation_pkr', label: 'Total Valuation (PKR)', align: 'right', width: '20%', isNumeric: true }
+    ]
+  },
+  {
+    key: 'low_stock_reorder',
+    name: 'Low Stock & Reorder Warning Register',
+    module: 'inventory',
+    category: 'Alerts',
+    description: 'Items where available warehouse stock has reached or fallen below safety buffer thresholds.',
+    parameters: [],
+    columns: [
+      { key: 'sku', label: 'SKU Code', align: 'left', width: '15%' },
+      { key: 'name', label: 'Item Name', align: 'left', width: '35%' },
+      { key: 'current_stock', label: 'Current Stock', align: 'center', width: '15%', isNumeric: true },
+      { key: 'reorder_level', label: 'Reorder Level', align: 'center', width: '15%', isNumeric: true },
+      { key: 'stock_deficit', label: 'Deficit Quantity', align: 'center', width: '20%', isNumeric: true }
+    ]
+  },
+
+  // 3. Tenders & BoQ Bidding
+  {
+    key: 'bid_securities_register',
+    name: 'Bid Securities & Guarantees Register',
+    module: 'tender',
+    category: 'Securities',
+    description: 'Audit log of Call Deposit Receipts (CDRs) and Bank Guarantees, issuing banks, validity periods, and release status.',
+    parameters: [
+      { key: 'status', label: 'Security Status', type: 'select', options: ['All', 'Active', 'Released', 'Pending'] }
+    ],
+    columns: [
+      { key: 'instrument_number', label: 'CDR / Guarantee #', align: 'left', width: '18%' },
+      { key: 'bank_name', label: 'Issuing Bank', align: 'left', width: '22%' },
+      { key: 'tender_title', label: 'Associated Tender', align: 'left', width: '30%' },
+      { key: 'status', label: 'Status', align: 'center', width: '12%' },
+      { key: 'amount', label: 'Amount (PKR)', align: 'right', width: '18%', isNumeric: true }
+    ]
+  },
+  {
+    key: 'tender_winloss_analytics',
+    name: 'Tender Pipeline & Win/Loss Analytics',
+    module: 'tender',
+    category: 'Analytics',
+    description: 'Tender bidding conversion rates, won vs. lost opportunities, and total won contract value.',
+    parameters: [
+      { key: 'startDate', label: 'From Date', type: 'date' },
+      { key: 'endDate', label: 'To Date', type: 'date' }
+    ],
+    columns: [
+      { key: 'title', label: 'Tender Title', align: 'left', width: '35%' },
+      { key: 'organization', label: 'Procuring Agency', align: 'left', width: '25%' },
+      { key: 'submission_date', label: 'Submission Date', align: 'left', width: '12%' },
+      { key: 'status', label: 'Outcome Status', align: 'center', width: '13%' },
+      { key: 'estimated_value', label: 'Bid Value (PKR)', align: 'right', width: '15%', isNumeric: true }
+    ]
+  },
+
+  // 4. CRM & Leads
+  {
+    key: 'crm_lead_pipeline',
+    name: 'CRM Commercial Lead Pipeline',
+    module: 'crm',
+    category: 'Sales Pipeline',
+    description: 'Active commercial leads, customer stages, estimated contract values, and closing probabilities.',
+    parameters: [
+      { key: 'stage', label: 'Deal Stage', type: 'select', options: ['All', 'Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] }
+    ],
+    columns: [
+      { key: 'title', label: 'Deal / Lead Title', align: 'left', width: '30%' },
+      { key: 'company_name', label: 'Prospect Company', align: 'left', width: '25%' },
+      { key: 'stage', label: 'Stage', align: 'center', width: '15%' },
+      { key: 'lead_source', label: 'Source', align: 'left', width: '12%' },
+      { key: 'deal_value', label: 'Estimated Deal (PKR)', align: 'right', width: '18%', isNumeric: true }
+    ]
+  },
+
+  // 5. HRM & Payroll
+  {
+    key: 'payroll_monthly_summary',
+    name: 'Monthly Payroll & Tax Deduction Register',
+    module: 'payroll',
+    category: 'Payroll',
+    description: 'Employee gross compensation, statutory FBR Sec 149 salary tax deductions, and net disbursed amounts.',
+    parameters: [
+      { key: 'monthYear', label: 'Payroll Period (YYYY-MM)', type: 'text' }
+    ],
+    columns: [
+      { key: 'employee_code', label: 'Emp ID', align: 'left', width: '12%' },
+      { key: 'employee_name', label: 'Employee Name', align: 'left', width: '28%' },
+      { key: 'department', label: 'Department', align: 'left', width: '18%' },
+      { key: 'gross_salary', label: 'Gross Salary', align: 'right', width: '14%', isNumeric: true },
+      { key: 'income_tax_deducted', label: 'FBR Tax (Sec 149)', align: 'right', width: '14%', isNumeric: true },
+      { key: 'net_salary', label: 'Net Take-Home', align: 'right', width: '14%', isNumeric: true }
+    ]
+  },
+
+  // 6. Manufacturing
+  {
+    key: 'mfg_work_order_summary',
+    name: 'Manufacturing Work Order Status & Output',
+    module: 'manufacturing',
+    category: 'Production',
+    description: 'Production batches, target vs completed quantities, work center routing, and batch statuses.',
+    parameters: [
+      { key: 'status', label: 'Order Status', type: 'select', options: ['All', 'Draft', 'Confirmed', 'In Production', 'Completed', 'Cancelled'] }
+    ],
+    columns: [
+      { key: 'wo_number', label: 'Work Order #', align: 'left', width: '18%' },
+      { key: 'product_name', label: 'Assembly / SKU', align: 'left', width: '32%' },
+      { key: 'target_qty', label: 'Target Qty', align: 'center', width: '14%', isNumeric: true },
+      { key: 'completed_qty', label: 'Completed Qty', align: 'center', width: '14%', isNumeric: true },
+      { key: 'status', label: 'Status', align: 'center', width: '22%' }
+    ]
+  }
+];
+
+// GET /api/reports/catalogue — Return available report catalogue
+router.get('/catalogue', authenticate, (req, res) => {
+  res.json({ success: true, data: REPORT_CATALOGUE });
+});
+
+// GET /api/reports/saved-presets — Return saved filter presets
+router.get('/saved-presets', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const { report_key } = req.query;
+    let sql = `SELECT * FROM saved_report_presets WHERE tenant_id = $1`;
+    const params = [tenantId];
+    if (report_key && report_key !== 'all') {
+      sql += ` AND report_key = $2`;
+      params.push(report_key);
+    }
+    sql += ` ORDER BY created_at DESC`;
+    const result = await db.query(sql, params);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/reports/saved-presets — Save a filter configuration preset
+router.post('/saved-presets', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const { report_key, preset_name, filters = {}, is_public = false } = req.body;
+    if (!report_key || !preset_name) {
+      return res.status(400).json({ success: false, message: 'report_key and preset_name are required' });
+    }
+
+    const result = await db.query(`
+      INSERT INTO saved_report_presets (tenant_id, user_id, report_key, preset_name, filters, is_public)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [tenantId, isUuid(req.user?.id) ? req.user.id : null, report_key, preset_name.trim(), filters, !!is_public]);
+
+    res.status(201).json({ success: true, data: result.rows[0], message: 'Report preset saved' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/reports/saved-presets/:id — Delete a saved preset
+router.delete('/saved-presets/:id', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    await db.query(`DELETE FROM saved_report_presets WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId]);
+    res.json({ success: true, message: 'Preset deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/reports/execution-logs — Audit log of recent report executions
+router.get('/execution-logs', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(`
+      SELECT rel.*, u.full_name as executed_by_name
+      FROM report_execution_logs rel
+      LEFT JOIN users u ON rel.user_id = u.id
+      WHERE rel.tenant_id = $1
+      ORDER BY rel.executed_at DESC
+      LIMIT 100
+    `, [tenantId]);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/reports/execute — Unified Dynamic Report Runner with logging & isolation
+router.post('/execute', authenticate, async (req, res) => {
+  const startTime = Date.now();
+  const tenantId = await resolveTenantId(req, db);
+  const { report_key, filters = {} } = req.body;
+
+  const repMeta = REPORT_CATALOGUE.find(r => r.key === report_key);
+  if (!repMeta) {
+    return res.status(404).json({ success: false, message: `Report "${report_key}" not recognized in catalogue` });
+  }
+
+  let rows = [];
+  let summary = {};
+  let status = 'SUCCESS';
+  let errorMessage = null;
+
+  try {
+    // 1. Trial Balance
+    if (report_key === 'trial_balance') {
+      const q = await db.query(`
+        SELECT 
+          a.account_code, 
+          a.account_name, 
+          a.account_type,
+          COALESCE(SUM(jl.debit), 0) as debit,
+          COALESCE(SUM(jl.credit), 0) as credit
+        FROM coa_accounts a
+        LEFT JOIN journal_entry_lines jl ON a.id = jl.account_id
+        LEFT JOIN journal_entries je ON jl.journal_entry_id = je.id AND COALESCE(je.is_posted, TRUE) = TRUE
+        WHERE a.tenant_id = $1
+        GROUP BY a.id, a.account_code, a.account_name, a.account_type
+        ORDER BY a.account_code ASC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        debit: parseFloat(r.debit || 0),
+        credit: parseFloat(r.credit || 0)
+      }));
+      const totalDebit = rows.reduce((acc, r) => acc + r.debit, 0);
+      const totalCredit = rows.reduce((acc, r) => acc + r.credit, 0);
+      summary = {
+        debit: totalDebit,
+        credit: totalCredit,
+        is_balanced: Math.abs(totalDebit - totalCredit) < 0.01,
+        total_accounts: rows.length
+      };
+    }
+
+    // 2. Receivables Aging
+    else if (report_key === 'receivables_aging') {
+      const q = await db.query(`
+        SELECT 
+          c.business_name as customer_name,
+          COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date <= 30 THEN (i.total_amount - COALESCE(i.paid_amount, 0)) ELSE 0 END), 0) as current_due,
+          COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date BETWEEN 31 AND 60 THEN (i.total_amount - COALESCE(i.paid_amount, 0)) ELSE 0 END), 0) as days_31_60,
+          COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date BETWEEN 61 AND 90 THEN (i.total_amount - COALESCE(i.paid_amount, 0)) ELSE 0 END), 0) as days_61_90,
+          COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date > 90 THEN (i.total_amount - COALESCE(i.paid_amount, 0)) ELSE 0 END), 0) as days_over_90
+        FROM customers c
+        JOIN invoices i ON c.id = i.customer_id
+        WHERE i.tenant_id = $1 AND i.status != 'Paid'
+        GROUP BY c.id, c.business_name
+        ORDER BY c.business_name ASC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        customer_name: r.customer_name,
+        current_due: parseFloat(r.current_due || 0),
+        days_31_60: parseFloat(r.days_31_60 || 0),
+        days_61_90: parseFloat(r.days_61_90 || 0),
+        days_over_90: parseFloat(r.days_over_90 || 0)
+      }));
+      summary = {
+        current_due: rows.reduce((acc, r) => acc + r.current_due, 0),
+        days_31_60: rows.reduce((acc, r) => acc + r.days_31_60, 0),
+        days_61_90: rows.reduce((acc, r) => acc + r.days_61_90, 0),
+        days_over_90: rows.reduce((acc, r) => acc + r.days_over_90, 0)
+      };
+    }
+
+    // 3. FBR Tax Withholding Register
+    else if (report_key === 'tax_withholding_fbr') {
+      const q = await db.query(`
+        SELECT 
+          i.invoice_number,
+          TO_CHAR(i.invoice_date, 'YYYY-MM-DD') as invoice_date,
+          c.business_name as customer_name,
+          COALESCE(i.subtotal, i.total_amount / 1.18) as taxable_value,
+          COALESCE(i.tax_amount, i.total_amount - (i.total_amount / 1.18)) as sales_tax_amount,
+          i.total_amount
+        FROM invoices i
+        LEFT JOIN customers c ON i.customer_id = c.id
+        WHERE i.tenant_id = $1
+        ORDER BY i.invoice_date DESC
+        LIMIT 200
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        taxable_value: parseFloat(r.taxable_value || 0),
+        sales_tax_amount: parseFloat(r.sales_tax_amount || 0),
+        total_amount: parseFloat(r.total_amount || 0)
+      }));
+      summary = {
+        taxable_value: rows.reduce((acc, r) => acc + r.taxable_value, 0),
+        sales_tax_amount: rows.reduce((acc, r) => acc + r.sales_tax_amount, 0),
+        total_amount: rows.reduce((acc, r) => acc + r.total_amount, 0)
+      };
+    }
+
+    // 4. Stock Valuation Ledger
+    else if (report_key === 'stock_valuation') {
+      const q = await db.query(`
+        SELECT 
+          sku, 
+          name, 
+          COALESCE(category, 'General') as category,
+          COALESCE(current_stock, 0) as current_stock,
+          (COALESCE(current_stock, 0) * COALESCE(cost_price, 0)) as valuation_pkr
+        FROM products_services
+        WHERE tenant_id = $1
+        ORDER BY valuation_pkr DESC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        current_stock: parseFloat(r.current_stock || 0),
+        valuation_pkr: parseFloat(r.valuation_pkr || 0)
+      }));
+      summary = {
+        current_stock: rows.reduce((acc, r) => acc + r.current_stock, 0),
+        valuation_pkr: rows.reduce((acc, r) => acc + r.valuation_pkr, 0),
+        total_skus: rows.length
+      };
+    }
+
+    // 5. Low Stock Register
+    else if (report_key === 'low_stock_reorder') {
+      const q = await db.query(`
+        SELECT 
+          sku, 
+          name, 
+          COALESCE(current_stock, 0) as current_stock,
+          COALESCE(reorder_point, 5) as reorder_level,
+          GREATEST(0, COALESCE(reorder_point, 5) - COALESCE(current_stock, 0)) as stock_deficit
+        FROM products_services
+        WHERE tenant_id = $1 AND COALESCE(current_stock, 0) <= COALESCE(reorder_point, 5)
+        ORDER BY stock_deficit DESC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        current_stock: parseFloat(r.current_stock || 0),
+        reorder_level: parseFloat(r.reorder_level || 0),
+        stock_deficit: parseFloat(r.stock_deficit || 0)
+      }));
+      summary = {
+        critical_items_count: rows.length,
+        total_deficit: rows.reduce((acc, r) => acc + r.stock_deficit, 0)
+      };
+    }
+
+    // 6. Bid Securities Register
+    else if (report_key === 'bid_securities_register') {
+      const q = await db.query(`
+        SELECT 
+          bs.instrument_number,
+          bs.bank_name,
+          COALESCE(o.title, 'General Procurement') as tender_title,
+          bs.status,
+          bs.amount
+        FROM bid_securities bs
+        LEFT JOIN opportunities o ON bs.tender_id = o.id
+        WHERE bs.tenant_id = $1
+        ORDER BY bs.created_at DESC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        amount: parseFloat(r.amount || 0)
+      }));
+      summary = {
+        amount: rows.reduce((acc, r) => acc + r.amount, 0),
+        active_count: rows.filter(r => r.status === 'Active' || r.status === 'Submitted').length
+      };
+    }
+
+    // 7. Tender Win/Loss Analytics
+    else if (report_key === 'tender_winloss_analytics') {
+      const q = await db.query(`
+        SELECT 
+          title,
+          COALESCE(organization, 'Government Agency') as organization,
+          TO_CHAR(submission_date, 'YYYY-MM-DD') as submission_date,
+          status,
+          COALESCE(estimated_value, 0) as estimated_value
+        FROM opportunities
+        WHERE tenant_id = $1
+        ORDER BY created_at DESC
+        LIMIT 100
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        estimated_value: parseFloat(r.estimated_value || 0)
+      }));
+      const totalVal = rows.reduce((acc, r) => acc + r.estimated_value, 0);
+      const wonVal = rows.filter(r => String(r.status).toLowerCase() === 'won').reduce((acc, r) => acc + r.estimated_value, 0);
+      summary = {
+        estimated_value: totalVal,
+        won_value: wonVal,
+        total_tenders: rows.length,
+        win_rate_pct: rows.length > 0 ? ((rows.filter(r => String(r.status).toLowerCase() === 'won').length / rows.length) * 100).toFixed(1) : '0.0'
+      };
+    }
+
+    // 8. CRM Lead Pipeline
+    else if (report_key === 'crm_lead_pipeline') {
+      const q = await db.query(`
+        SELECT 
+          title,
+          COALESCE(company_name, 'Direct Client') as company_name,
+          stage,
+          lead_source,
+          COALESCE(estimated_deal_value, 0) as deal_value
+        FROM crm_leads
+        WHERE tenant_id = $1
+        ORDER BY estimated_deal_value DESC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        deal_value: parseFloat(r.deal_value || 0)
+      }));
+      summary = {
+        deal_value: rows.reduce((acc, r) => acc + r.deal_value, 0),
+        total_leads: rows.length
+      };
+    }
+
+    // 9. Payroll Monthly Summary
+    else if (report_key === 'payroll_monthly_summary') {
+      const q = await db.query(`
+        SELECT 
+          e.employee_code,
+          (e.first_name || ' ' || e.last_name) as employee_name,
+          COALESCE(e.department, 'Operations') as department,
+          COALESCE(p.gross_salary, e.base_salary, 0) as gross_salary,
+          COALESCE(p.tax_withheld, 0) as income_tax_deducted,
+          COALESCE(p.net_salary, e.base_salary, 0) as net_salary
+        FROM hrm_employees e
+        LEFT JOIN (
+          SELECT employee_id, gross_salary, tax_withheld, net_salary
+          FROM payroll_payslips
+          ORDER BY created_at DESC
+        ) p ON e.id = p.employee_id
+        WHERE e.tenant_id = $1 AND e.employment_status = 'Active'
+        ORDER BY e.employee_code ASC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        gross_salary: parseFloat(r.gross_salary || 0),
+        income_tax_deducted: parseFloat(r.income_tax_deducted || 0),
+        net_salary: parseFloat(r.net_salary || 0)
+      }));
+      summary = {
+        gross_salary: rows.reduce((acc, r) => acc + r.gross_salary, 0),
+        income_tax_deducted: rows.reduce((acc, r) => acc + r.income_tax_deducted, 0),
+        net_salary: rows.reduce((acc, r) => acc + r.net_salary, 0),
+        employee_count: rows.length
+      };
+    }
+
+    // 10. Manufacturing Work Order Summary
+    else if (report_key === 'mfg_work_order_summary') {
+      const q = await db.query(`
+        SELECT 
+          wo.work_order_number as wo_number,
+          p.name as product_name,
+          wo.quantity_to_produce as target_qty,
+          wo.quantity_produced as completed_qty,
+          wo.status
+        FROM mfg_work_orders wo
+        LEFT JOIN products_services p ON wo.product_id = p.id
+        WHERE wo.tenant_id = $1
+        ORDER BY wo.created_at DESC
+      `, [tenantId]);
+      rows = q.rows.map(r => ({
+        ...r,
+        target_qty: parseFloat(r.target_qty || 0),
+        completed_qty: parseFloat(r.completed_qty || 0)
+      }));
+      summary = {
+        target_qty: rows.reduce((acc, r) => acc + r.target_qty, 0),
+        completed_qty: rows.reduce((acc, r) => acc + r.completed_qty, 0),
+        total_orders: rows.length
+      };
+    }
+
+  } catch (err) {
+    status = 'FAILED';
+    errorMessage = err.message;
+    console.error(`Report execution error (${report_key}):`, err);
+  }
+
+  const executionTimeMs = Date.now() - startTime;
+
+  // Log execution asynchronously for audit & diagnostics
+  try {
+    await db.query(`
+      INSERT INTO report_execution_logs (
+        tenant_id, user_id, report_key, report_name, parameters, execution_time_ms, rows_count, status, error_message
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      tenantId, isUuid(req.user?.id) ? req.user.id : null,
+      report_key, repMeta.name, filters, executionTimeMs, rows.length, status, errorMessage
+    ]);
+  } catch (logErr) {
+    console.warn('Failed to insert report execution log:', logErr.message);
+  }
+
+  if (status === 'FAILED') {
+    return res.status(500).json({ success: false, message: errorMessage });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      report_key,
+      report_name: repMeta.name,
+      module: repMeta.module,
+      columns: repMeta.columns,
+      rows,
+      summary,
+      execution_time_ms: executionTimeMs,
+      rows_count: rows.length
+    }
+  });
+});
+
 // GET Executive Dashboard KPIs
 router.get('/dashboard-kpis', authenticate, requirePermission('reports', 'view'), async (req, res) => {
   const { business_profile_id } = req.query;
@@ -1210,6 +1845,118 @@ router.get('/supply-status', authenticate, requirePermission('reports', 'view'),
     });
   } catch (err) {
     console.error('Supply Status Report Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================================================
+// PHASE 4: SCHEDULED AUTOMATED EMAIL REPORTS & CROSS-MODULE EXECUTIVE BI
+// ============================================================================
+
+// GET Scheduled Reports
+router.get('/scheduled', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `SELECT * FROM scheduled_reports WHERE tenant_id = $1 ORDER BY created_at DESC`,
+      [tenantId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Create Scheduled Report Digest
+router.post('/scheduled', authenticate, async (req, res) => {
+  const { report_type, frequency, destination_emails, format, filter_criteria } = req.body;
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const emails = Array.isArray(destination_emails)
+      ? destination_emails
+      : String(destination_emails || '').split(',').map(s => s.trim()).filter(Boolean);
+
+    const result = await db.query(
+      `INSERT INTO scheduled_reports (tenant_id, report_type, frequency, destination_emails, format, filter_criteria, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,TRUE) RETURNING *`,
+      [
+        tenantId,
+        report_type || 'Executive Financial & Tender Digest',
+        frequency || 'Weekly',
+        emails,
+        format || 'PDF',
+        filter_criteria || {}
+      ]
+    );
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Scheduled Report
+router.delete('/scheduled/:id', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    await db.query(`DELETE FROM scheduled_reports WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId]);
+    res.json({ success: true, message: 'Scheduled report deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET Cross-Module Executive BI Telemetry
+router.get('/executive-bi', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const [oppStats, invStats, crmStats, hrmStats, mfgStats] = await Promise.all([
+      db.query(
+        `SELECT COUNT(*) as total,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'won') as won,
+                SUM(COALESCE(estimated_value, 0)) as pipeline_value
+         FROM opportunities WHERE tenant_id = $1`,
+        [tenantId]
+      ),
+      db.query(
+        `SELECT COUNT(*) as skus,
+                SUM(COALESCE(current_stock, 0) * COALESCE(cost_price, 0)) as valuation
+         FROM products_services WHERE tenant_id = $1`,
+        [tenantId]
+      ),
+      db.query(
+        `SELECT COUNT(*) as total_leads,
+                SUM(COALESCE(estimated_deal_value, 0)) as lead_pipeline_value
+         FROM crm_leads WHERE tenant_id = $1`,
+        [tenantId]
+      ),
+      db.query(
+        `SELECT COUNT(*) as active_employees FROM hrm_employees WHERE tenant_id = $1 AND employment_status = 'Active'`,
+        [tenantId]
+      ),
+      db.query(
+        `SELECT COUNT(*) as active_work_orders FROM mfg_work_orders WHERE tenant_id = $1 AND status IN ('Confirmed', 'In Production')`,
+        [tenantId]
+      )
+    ]);
+
+    const tTotal = parseInt(oppStats.rows[0]?.total || 0, 10);
+    const tWon = parseInt(oppStats.rows[0]?.won || 0, 10);
+    res.json({
+      success: true,
+      data: {
+        tender_win_rate_pct: tTotal > 0 ? ((tWon / tTotal) * 100).toFixed(1) : '0.0',
+        total_tenders: tTotal,
+        won_tenders: tWon,
+        tender_pipeline_value: parseFloat(oppStats.rows[0]?.pipeline_value || 0),
+        inventory_skus: parseInt(invStats.rows[0]?.skus || 0, 10),
+        inventory_valuation: parseFloat(invStats.rows[0]?.valuation || 0),
+        crm_leads_count: parseInt(crmStats.rows[0]?.total_leads || 0, 10),
+        crm_pipeline_value: parseFloat(crmStats.rows[0]?.lead_pipeline_value || 0),
+        active_employees: parseInt(hrmStats.rows[0]?.active_employees || 0, 10),
+        active_work_orders: parseInt(mfgStats.rows[0]?.active_work_orders || 0, 10)
+      }
+    });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });

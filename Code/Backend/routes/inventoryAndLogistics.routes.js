@@ -4,6 +4,8 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
 const logger = require('../services/logger.service');
+const inventoryValuationService = require('../services/inventoryValuationService');
+const { autoPostInventoryToGL } = require('../utils/glPoster');
 
 // ============================================================================
 // 1. WAREHOUSES & CURRENT STOCK
@@ -206,41 +208,58 @@ router.post('/procurements', authenticate, requirePermission('inventory', 'add')
     freight_charges,
     clearing_charges,
     other_charges,
-    base_purchase_price
+    base_purchase_price,
+    items
   } = req.body;
 
   if (!supplier_id || !procurement_type) {
     return res.status(400).json({ success: false, message: 'Supplier and Procurement Type are mandatory' });
   }
 
+  const client = await db.pool.connect();
   try {
+    await client.query('BEGIN');
+
     let tenantId = req.user?.tenantId;
     if (!tenantId) {
-      const tenantRes = await db.query(`SELECT id FROM tenants LIMIT 1`);
+      const tenantRes = await client.query(`SELECT id FROM tenants LIMIT 1`);
       tenantId = tenantRes.rows[0]?.id || 'a0000000-0000-0000-0000-000000000001';
     }
 
-    const base = parseFloat(base_purchase_price || 0);
+    // Resolve business_profile_id if not supplied
+    let bpId = business_profile_id;
+    if (!bpId) {
+      const bpRes = await client.query(`SELECT id FROM business_profiles WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`, [tenantId]);
+      bpId = bpRes.rows[0]?.id || null;
+    }
+
+    // If items provided, compute base purchase price
+    let computedBase = parseFloat(base_purchase_price || 0);
+    if (Array.isArray(items) && items.length > 0 && computedBase === 0) {
+      computedBase = items.reduce((sum, itm) => sum + (parseFloat(itm.ordered_quantity || itm.quantity || 0) * parseFloat(itm.unit_cost || itm.unit_price || 0)), 0);
+    }
+
     const exRate = parseFloat(exchange_rate || 1);
     const duty = parseFloat(customs_duty || 0);
     const freight = parseFloat(freight_charges || 0);
     const clearing = parseFloat(clearing_charges || 0);
     const other = parseFloat(other_charges || 0);
+    const landedCost = (computedBase * exRate) + duty + freight + clearing + other;
 
-    const landedCost = (base * exRate) + duty + freight + clearing + other;
+    const procNum = procurement_number || `PROC-${Date.now().toString().slice(-6)}`;
 
-    const result = await db.query(
+    const result = await client.query(
       `INSERT INTO procurements 
        (tenant_id, business_profile_id, purchase_order_id, supplier_id, procurement_type, procurement_number, currency, exchange_rate, origin_country, customs_duty, freight_charges, clearing_charges, other_charges, total_landed_cost, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         tenantId,
-        business_profile_id,
+        bpId,
         purchase_order_id || null,
         supplier_id,
         procurement_type,
-        procurement_number || `PROC-${Date.now().toString().slice(-6)}`,
+        procNum,
         currency || (procurement_type === 'Import' ? 'USD' : 'PKR'),
         exRate,
         origin_country || (procurement_type === 'Import' ? 'UAE' : 'Pakistan'),
@@ -252,11 +271,83 @@ router.post('/procurements', authenticate, requirePermission('inventory', 'add')
         'Ordered'
       ]
     );
+    const procurement = result.rows[0];
 
+    // Insert line items if provided
+    const insertedItems = [];
+    if (Array.isArray(items) && items.length > 0) {
+      for (const itm of items) {
+        const prodId = itm.product_id || itm.product_service_id;
+        if (!prodId) continue;
+        const oQty = parseFloat(itm.ordered_quantity || itm.quantity || 0);
+        if (oQty <= 0) continue;
+        const uCost = parseFloat(itm.unit_cost || itm.unit_price || 0);
+        const taxPct = parseFloat(itm.tax_percent || 0);
+        const totCost = parseFloat(itm.total_cost || (oQty * uCost));
+
+        const itemRes = await client.query(
+          `INSERT INTO procurement_items 
+           (tenant_id, procurement_id, product_id, ordered_quantity, received_quantity, unit_cost, tax_percent, total_cost, specifications, status)
+           VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, 'Pending')
+           RETURNING *`,
+          [tenantId, procurement.id, prodId, oQty, uCost, taxPct, totCost, itm.specifications || null]
+        );
+        insertedItems.push(itemRes.rows[0]);
+      }
+    }
+
+    await client.query('COMMIT');
     res.status(201).json({
       success: true,
-      data: result.rows[0],
-      message: `${procurement_type} Procurement logged. Landed cost: PKR ${landedCost.toLocaleString()}`
+      data: {
+        ...procurement,
+        items: insertedItems
+      },
+      message: `${procurement_type} Procurement order ${procNum} logged with ${insertedItems.length} line items. Landed cost: PKR ${landedCost.toLocaleString()}`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET single procurement with items
+router.get('/procurements/:id', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const procRes = await db.query(
+      `SELECT pr.*, s.supplier_name, s.origin as supplier_origin, s.contact_person, s.phone as supplier_phone,
+              po.po_number, bp.business_name
+       FROM procurements pr
+       JOIN suppliers s ON pr.supplier_id = s.id
+       JOIN business_profiles bp ON pr.business_profile_id = bp.id
+       LEFT JOIN purchase_orders po ON pr.purchase_order_id = po.id
+       WHERE pr.id::text = $1 AND (pr.tenant_id::text = $2 OR $3 = 'SuperAdmin')`,
+      [req.params.id, String(tid), req.user.role]
+    );
+
+    if (procRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Procurement order not found' });
+    }
+
+    const itemsRes = await db.query(
+      `SELECT pi.*, p.name as product_name, p.sku, p.unit,
+              (pi.ordered_quantity - pi.received_quantity) as backorder_quantity
+       FROM procurement_items pi
+       JOIN products_services p ON pi.product_id = p.id
+       WHERE pi.procurement_id::text = $1
+       ORDER BY pi.created_at ASC`,
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...procRes.rows[0],
+        items: itemsRes.rows
+      }
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -668,7 +759,7 @@ router.post('/delivery-challans', authenticate, requirePermission('delivery_chal
     }
   } catch (err) {
     if (logger && logger.error) {
-      try { logger.error('[POST /delivery-challans Error]:', err); } catch (_) {}
+      try { logger.error('[POST /delivery-challans Error]:', err); } catch (_) { }
     }
     console.error('[POST /delivery-challans Error]:', err);
     if (!res.headersSent) {
@@ -800,6 +891,8 @@ router.post('/inventory/receive-stock', authenticate, requirePermission('invento
   const {
     warehouse_id,
     supplier_id,
+    procurement_id,
+    opportunity_id,
     reference_type,
     reference_number,
     inward_date,
@@ -826,9 +919,31 @@ router.post('/inventory/receive-stock', authenticate, requirePermission('invento
     }
 
     const refNum = reference_number || `GRN-${Date.now().toString().slice(-6)}`;
-    const refType = reference_type || 'SUPPLIER_INWARD';
+    const refType = reference_type || (procurement_id ? 'PROCUREMENT_PO' : 'SUPPLIER_INWARD');
     const receivedDate = parseSafeDate(inward_date) || new Date().toISOString().split('T')[0];
     const createdTxRows = [];
+
+    // Calculate total received value
+    let totalGrnValue = 0;
+    items.forEach(itm => {
+      totalGrnValue += (parseFloat(itm.quantity || 0) * parseFloat(itm.unit_cost || 0));
+    });
+
+    // 1. Create Master GRN record
+    const grnMasterRes = await client.query(
+      `INSERT INTO goods_receipt_notes (
+        tenant_id, grn_number, grn_date, warehouse_id, supplier_id,
+        procurement_id, opportunity_id, reference_type, reference_number,
+        received_by, total_received_value, remarks, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'Completed')
+      RETURNING *`,
+      [
+        tenantId, refNum, receivedDate, warehouse_id, supplier_id || null,
+        procurement_id || null, opportunity_id || null, refType, refNum,
+        req.user?.id || null, totalGrnValue, remarks || null
+      ]
+    );
+    const grnRecord = grnMasterRes.rows[0];
 
     for (const itm of items) {
       const prodId = itm.product_id || itm.product_service_id;
@@ -844,18 +959,52 @@ router.post('/inventory/receive-stock', authenticate, requirePermission('invento
       const expDate = parseSafeDate(itm.expiry_date || itm.doe);
       const rack = (itm.storage_location || '').trim() || null;
       const itemRemarks = itm.remarks || remarks || `Inward Receipt against ${refNum}`;
+      const lineTotal = Number((qty * unitCost).toFixed(4));
 
-      // 1. Insert audited inventory transaction
+      // 2. Insert audited inventory transaction
       const txRes = await client.query(
         `INSERT INTO inventory_transactions 
-         (tenant_id, product_id, warehouse_id, supplier_id, transaction_type, quantity, unit_cost, batch_number, expiry_date, reference_type, reference_number, storage_location, remarks, created_by, created_at, brand_name, manufacturing_date)
-         VALUES ($1, $2, $3, $4, 'STOCK_IN', $5::numeric, $6::numeric, $7, $8::date, $9, $10, $11, $12, $13, $14, $15, $16::date)
+         (tenant_id, product_id, warehouse_id, supplier_id, transaction_type, quantity, unit_cost, batch_number, expiry_date, reference_type, reference_number, reference_id, storage_location, remarks, created_by, created_at, brand_name, manufacturing_date)
+         VALUES ($1, $2, $3, $4, 'STOCK_IN', $5::numeric, $6::numeric, $7, $8::date, $9, $10, $11, $12, $13, $14, $15, $16, $17::date)
          RETURNING *`,
-        [tenantId, prodId, warehouse_id, supplier_id || null, qty, unitCost, batchNo, expDate, refType, refNum, rack, itemRemarks, req.user?.id || null, receivedDate, itemBrand, mfgDate]
+        [tenantId, prodId, warehouse_id, supplier_id || null, qty, unitCost, batchNo, expDate, refType, refNum, grnRecord.id, rack, itemRemarks, req.user?.id || null, receivedDate, itemBrand, mfgDate]
       );
       createdTxRows.push(txRes.rows[0]);
 
-      // 2. Upsert warehouse_stock
+      // 3. Insert into goods_receipt_note_items
+      await client.query(
+        `INSERT INTO goods_receipt_note_items (
+          tenant_id, grn_id, procurement_item_id, product_id, ordered_quantity,
+          received_quantity, rejected_quantity, unit_cost, total_value,
+          batch_number, storage_location, manufacturing_date, expiry_date, remarks
+        ) VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11::date, $12::date, $13)`,
+        [
+          tenantId, grnRecord.id, itm.procurement_item_id || null, prodId,
+          parseFloat(itm.ordered_quantity || qty), qty, unitCost, lineTotal,
+          batchNo, rack, mfgDate, expDate, itemRemarks
+        ]
+      );
+
+      // 4. Update procurement_items received_quantity if procurement_id is linked
+      if (itm.procurement_item_id || procurement_id) {
+        let pItemClause = itm.procurement_item_id ? `id = $1` : `procurement_id = $1 AND product_id = $2`;
+        let pItemParams = itm.procurement_item_id ? [itm.procurement_item_id, qty] : [procurement_id, prodId, qty];
+
+        await client.query(
+          itm.procurement_item_id
+            ? `UPDATE procurement_items 
+               SET received_quantity = received_quantity + $2,
+                   status = CASE WHEN (received_quantity + $2) >= ordered_quantity THEN 'Received' ELSE 'Partially_Received' END
+               WHERE id = $1`
+            : `UPDATE procurement_items 
+               SET received_quantity = received_quantity + $3,
+                   status = CASE WHEN (received_quantity + $3) >= ordered_quantity THEN 'Received' ELSE 'Partially_Received' END
+               WHERE procurement_id = $1 AND product_id = $2`,
+          pItemParams
+        );
+      }
+
+      // 5. Upsert warehouse_stock
       await client.query(
         `INSERT INTO warehouse_stock (tenant_id, warehouse_id, product_id, batch_number, quantity_on_hand, quantity_reserved, storage_location, brand_name, manufacturing_date, expiry_date)
          VALUES ($1, $2, $3, $4, $5::numeric, 0, $6, $7, $8::date, $9::date)
@@ -870,7 +1019,7 @@ router.post('/inventory/receive-stock', authenticate, requirePermission('invento
         [tenantId, warehouse_id, prodId, batchNo, qty, rack, itemBrand, mfgDate, expDate]
       );
 
-      // 3. Update products_services (current_stock and weighted average cost)
+      // 6. Update products_services (current_stock and weighted average cost)
       await client.query(
         `UPDATE products_services
          SET cost_price = CASE 
@@ -885,15 +1034,52 @@ router.post('/inventory/receive-stock', authenticate, requirePermission('invento
         [unitCost, qty, itemBrand, prodId]
       );
 
-      // 4. FIFO Active Batch Sync: Old batch stays active until its quantity reaches zero
+      // 7. FIFO Active Batch Sync: Old batch stays active until its quantity reaches zero
       await syncActiveBatchForProduct(client, prodId);
     }
 
+    // 8. If linked to procurement, check overall status
+    if (procurement_id) {
+      const remainingRes = await client.query(
+        `SELECT COUNT(*) as pending_count FROM procurement_items
+         WHERE procurement_id = $1 AND received_quantity < ordered_quantity`,
+        [procurement_id]
+      );
+      const isComplete = parseInt(remainingRes.rows[0]?.pending_count || 0, 10) === 0;
+      await client.query(
+        `UPDATE procurements SET status = $1, updated_at = NOW() WHERE id = $2`,
+        [isComplete ? 'Received' : 'Partially_Received', procurement_id]
+      );
+    }
+
     await client.query('COMMIT');
+
+    // 9. Non-blocking idempotent GL Auto-posting Hook
+    try {
+      if (typeof autoPostInventoryToGL === 'function' && totalGrnValue > 0) {
+        await autoPostInventoryToGL({
+          tenantId,
+          transactionType: 'STOCK_IN',
+          referenceType: 'Inventory GRN',
+          referenceId: grnRecord.id,
+          referenceNumber: refNum,
+          totalAmount: totalGrnValue,
+          date: receivedDate,
+          narration: `Inward Goods Receipt Note ${refNum}`,
+          userId: req.user?.id || null
+        });
+      }
+    } catch (glErr) {
+      console.warn('[GL Auto-Post GRN Note]: Non-blocking error:', glErr.message);
+    }
+
     res.status(201).json({
       success: true,
-      data: createdTxRows,
-      message: `Successfully received ${createdTxRows.length} item(s) into warehouse with Reference ${refNum}.`
+      data: {
+        grn: grnRecord,
+        transactions: createdTxRows
+      },
+      message: `Successfully received ${createdTxRows.length} item(s) into warehouse with Reference ${refNum}. Total Landed Inward Value: PKR ${totalGrnValue.toLocaleString()}`
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1320,7 +1506,7 @@ router.get('/inventory/stock-adjustment/item-details', optionalAuth, async (req,
         [tenantId]
       );
       openTenders = oppRes.rows;
-    } catch (e) {}
+    } catch (e) { }
 
     res.json({
       success: true,
@@ -1474,6 +1660,530 @@ router.post('/inventory/stock-adjustment', authenticate, requirePermission('inve
     res.status(500).json({ success: false, error: err.message, message: 'Failed to adjust stock: ' + err.message });
   } finally {
     client.release();
+  }
+});
+
+// ============================================================================
+// PHASE 3: INTER-WAREHOUSE STOCK TRANSFERS, PHYSICAL AUDITS & VALUATION LEDGER
+// ============================================================================
+
+// GET Inter-Warehouse Stock Transfers
+router.get('/transfers', authenticate, requirePermission('stock_transfers', 'view'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `SELECT t.*,
+              fw.warehouse_name as from_warehouse_name,
+              tw.warehouse_name as to_warehouse_name,
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                  'id', ti.id,
+                  'product_id', ti.product_id,
+                  'item_name', p.name,
+                  'sku', p.sku,
+                  'quantity', ti.quantity,
+                  'unit_cost', ti.unit_cost,
+                  'batch_number', ti.batch_number
+                ))
+                FROM inventory_transfer_items ti
+                LEFT JOIN products_services p ON ti.product_id = p.id
+                WHERE ti.transfer_id = t.id
+              ), '[]'::json) as items
+       FROM inventory_transfers t
+       LEFT JOIN warehouses fw ON t.from_warehouse_id = fw.id
+       LEFT JOIN warehouses tw ON t.to_warehouse_id = tw.id
+       WHERE t.tenant_id = $1
+       ORDER BY t.transfer_date DESC, t.created_at DESC`,
+      [tenantId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Create & Execute Inter-Warehouse Stock Transfer (Delegated to Enterprise Valuation Service)
+router.post('/transfers', authenticate, requirePermission('stock_transfers', 'add'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const transfer = await inventoryValuationService.executeStockTransfer({
+      tenantId,
+      fromWarehouseId: req.body.from_warehouse_id,
+      toWarehouseId: req.body.to_warehouse_id,
+      transferDate: req.body.transfer_date,
+      transferNumber: req.body.transfer_number,
+      driverName: req.body.driver_name,
+      vehicleNumber: req.body.vehicle_number,
+      notes: req.body.notes,
+      items: req.body.items || [],
+      userId: req.user?.id || null
+    });
+    res.status(201).json({ success: true, data: transfer, message: `Stock Transfer ${transfer.transfer_number} completed and warehouse balances updated.` });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// GET Physical Stock Reconciliation & Adjustments
+router.get('/adjustments', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const result = await db.query(
+      `SELECT a.*, w.warehouse_name,
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                  'id', ai.id,
+                  'product_id', ai.product_id,
+                  'item_name', p.name,
+                  'sku', p.sku,
+                  'system_stock', ai.system_stock,
+                  'physical_stock', ai.physical_stock,
+                  'difference_qty', ai.difference_qty,
+                  'unit_cost', ai.unit_cost
+                ))
+                FROM inventory_adjustment_items ai
+                LEFT JOIN products_services p ON ai.product_id = p.id
+                WHERE ai.adjustment_id = a.id
+              ), '[]'::json) as items
+       FROM inventory_adjustments a
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       WHERE a.tenant_id = $1
+       ORDER BY a.adjustment_date DESC, a.created_at DESC`,
+      [tenantId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Physical Stock Audit & Reconciliation Adjustment (Delegated to Enterprise Valuation Service)
+router.post('/adjustments', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const adj = await inventoryValuationService.executeStockAdjustment({
+      tenantId,
+      warehouseId: req.body.warehouse_id,
+      adjustmentDate: req.body.adjustment_date,
+      adjustmentNumber: req.body.adjustment_number,
+      adjustmentType: req.body.adjustment_type || 'Physical Count Audit',
+      remarks: req.body.remarks,
+      items: req.body.items || [],
+      userId: req.user?.id || null
+    });
+    res.status(201).json({ success: true, data: adj, message: `Stock Reconciliation ${adj.adjustment_number} posted.` });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// GET Stock Valuation Ledger (FIFO / Weighted Avg) & Automated Low-Stock Reorder Alerts
+router.get('/valuation-and-alerts', authenticate, async (req, res) => {
+  try {
+    const tenantId = await resolveTenantId(req, db);
+    const prodRes = await db.query(
+      `SELECT p.id, p.sku, p.item_name, p.category, p.unit, p.current_stock, p.reorder_level,
+              p.cost_price as weighted_avg_cost, p.selling_price,
+              (COALESCE(p.current_stock, 0) * COALESCE(p.cost_price, 0)) as total_inventory_value,
+              CASE
+                WHEN COALESCE(p.current_stock, 0) <= 0 THEN 'Out of Stock'
+                WHEN COALESCE(p.current_stock, 0) <= COALESCE(p.reorder_level, 5) THEN 'Low Stock Reorder Alert'
+                ELSE 'Healthy'
+              END as stock_health
+       FROM products_services p
+       WHERE p.tenant_id = $1 AND p.item_type != 'Service'
+       ORDER BY (COALESCE(p.current_stock, 0) <= COALESCE(p.reorder_level, 5)) DESC, total_inventory_value DESC`,
+      [tenantId]
+    );
+
+    const rows = prodRes.rows;
+    const totalValuation = rows.reduce((s, r) => s + parseFloat(r.total_inventory_value || 0), 0);
+    const lowStockAlerts = rows.filter(r => r.stock_health !== 'Healthy');
+
+    res.json({
+      success: true,
+      data: {
+        total_inventory_valuation: totalValuation,
+        total_skus: rows.length,
+        low_stock_count: lowStockAlerts.length,
+        low_stock_alerts: lowStockAlerts,
+        valuation_ledger: rows
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================================================
+// 5. GOODS RECEIPT NOTES (GRN), SUPPLIER RETURNS (RTV) & REQUISITIONS
+// ============================================================================
+
+// GET list of Goods Receipt Notes
+router.get('/inventory/grn-notes', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `SELECT grn.*, w.warehouse_name, s.supplier_name, pr.procurement_number,
+              (SELECT COUNT(*) FROM goods_receipt_note_items gni WHERE gni.grn_id = grn.id) as item_count
+       FROM goods_receipt_notes grn
+       JOIN warehouses w ON grn.warehouse_id = w.id
+       LEFT JOIN suppliers s ON grn.supplier_id = s.id
+       LEFT JOIN procurements pr ON grn.procurement_id = pr.id
+       WHERE grn.tenant_id::text = $1 OR $2 = 'SuperAdmin'
+       ORDER BY grn.grn_date DESC, grn.created_at DESC`,
+      [String(tid), req.user.role]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET single Goods Receipt Note with items
+router.get('/inventory/grn-notes/:id', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const grnRes = await db.query(
+      `SELECT grn.*, w.warehouse_name, s.supplier_name, pr.procurement_number
+       FROM goods_receipt_notes grn
+       JOIN warehouses w ON grn.warehouse_id = w.id
+       LEFT JOIN suppliers s ON grn.supplier_id = s.id
+       LEFT JOIN procurements pr ON grn.procurement_id = pr.id
+       WHERE grn.id::text = $1 AND (grn.tenant_id::text = $2 OR $3 = 'SuperAdmin')`,
+      [req.params.id, String(tid), req.user.role]
+    );
+    if (grnRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'GRN record not found' });
+    }
+
+    const itemsRes = await db.query(
+      `SELECT gni.*, p.name as product_name, p.sku, p.unit
+       FROM goods_receipt_note_items gni
+       JOIN products_services p ON gni.product_id = p.id
+       WHERE gni.grn_id::text = $1
+       ORDER BY gni.created_at ASC`,
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...grnRes.rows[0],
+        items: itemsRes.rows
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Supplier Return (RTV)
+router.post('/inventory/supplier-returns', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const { warehouse_id, supplier_id, procurement_id, grn_id, return_date, reason, items } = req.body;
+  if (!warehouse_id || !supplier_id || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'Warehouse, Supplier, and at least one item line are required for supplier return.' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const tid = resolveTenantId(req);
+    const rtvNumber = `RTV-${Date.now().toString().slice(-6)}`;
+    const rtvDate = parseSafeDate(return_date) || new Date().toISOString().slice(0, 10);
+
+    let totalReturnValue = 0;
+    items.forEach(i => {
+      totalReturnValue += (parseFloat(i.quantity || 0) * parseFloat(i.unit_cost || 0));
+    });
+
+    const rtvRes = await client.query(
+      `INSERT INTO supplier_returns (
+        tenant_id, return_number, return_date, warehouse_id, supplier_id,
+        procurement_id, grn_id, reason, total_return_value, status, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Completed', $10)
+      RETURNING *`,
+      [tid, rtvNumber, rtvDate, warehouse_id, supplier_id, procurement_id || null, grn_id || null, reason || null, totalReturnValue, req.user?.id || null]
+    );
+    const rtv = rtvRes.rows[0];
+
+    for (const itm of items) {
+      const prodId = itm.product_id;
+      const qty = parseFloat(itm.quantity || 0);
+      if (qty <= 0) continue;
+      const cost = parseFloat(itm.unit_cost || 0);
+      const batchNo = itm.batch_number || 'STANDARD';
+      const lineVal = Number((qty * cost).toFixed(4));
+
+      // Negative stock check on return
+      await inventoryValuationService.checkNegativeStockPolicy(client, tid, prodId, warehouse_id, qty);
+
+      // Insert line item
+      await client.query(
+        `INSERT INTO supplier_return_items (
+          tenant_id, supplier_return_id, product_id, quantity, unit_cost, total_value, batch_number, reason
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [tid, rtv.id, prodId, qty, cost, lineVal, batchNo, itm.reason || reason || null]
+      );
+
+      // Deduct warehouse_stock
+      await client.query(
+        `UPDATE warehouse_stock
+         SET quantity_on_hand = GREATEST(0, quantity_on_hand - $1), updated_at = NOW()
+         WHERE warehouse_id = $2 AND product_id = $3 AND batch_number = $4`,
+        [qty, warehouse_id, prodId, batchNo]
+      );
+
+      // Deduct product master current_stock
+      await client.query(
+        `UPDATE products_services SET current_stock = GREATEST(0, current_stock - $1), updated_at = NOW() WHERE id = $2`,
+        [qty, prodId]
+      );
+
+      // Log transaction
+      await client.query(
+        `INSERT INTO inventory_transactions (
+          tenant_id, product_id, warehouse_id, supplier_id, transaction_type, quantity,
+          unit_cost, batch_number, reference_type, reference_number, reference_id, remarks, created_by
+        ) VALUES ($1, $2, $3, $4, 'SUPPLIER_RETURN', $5, $6, $7, 'SUPPLIER_RETURN', $8, $9, $10, $11)`,
+        [tid, prodId, warehouse_id, supplier_id, qty, cost, batchNo, rtvNumber, rtv.id, `RTV to Supplier: ${reason || ''}`, req.user?.id || null]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // GL Auto-post
+    try {
+      if (typeof autoPostInventoryToGL === 'function' && totalReturnValue > 0) {
+        await autoPostInventoryToGL({
+          tenantId: tid,
+          transactionType: 'SUPPLIER_RETURN',
+          referenceType: 'Supplier Return (RTV)',
+          referenceId: rtv.id,
+          referenceNumber: rtvNumber,
+          totalAmount: totalReturnValue,
+          date: rtvDate,
+          narration: `Return to Vendor ${rtvNumber} for ${reason || 'Defective/Excess Stock'}`,
+          userId: req.user?.id || null
+        });
+      }
+    } catch (glErr) {
+      console.warn('[GL Auto-Post RTV Note]: Non-blocking error:', glErr.message);
+    }
+
+    res.status(201).json({
+      success: true,
+      data: rtv,
+      message: `Supplier Return Order ${rtvNumber} recorded. PKR ${totalReturnValue.toLocaleString()} inventory relieved.`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET list of supplier returns
+router.get('/inventory/supplier-returns', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `SELECT sr.*, w.warehouse_name, s.supplier_name,
+              (SELECT COUNT(*) FROM supplier_return_items sri WHERE sri.supplier_return_id = sr.id) as item_count
+       FROM supplier_returns sr
+       JOIN warehouses w ON sr.warehouse_id = w.id
+       JOIN suppliers s ON sr.supplier_id = s.id
+       WHERE sr.tenant_id::text = $1 OR $2 = 'SuperAdmin'
+       ORDER BY sr.return_date DESC, sr.created_at DESC`,
+      [String(tid), req.user.role]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET purchase requisitions
+router.get('/procurements/requisitions', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `SELECT pr.*, u.full_name as requester_name, o.opportunity_number, o.tender_name,
+              (SELECT COUNT(*) FROM purchase_requisition_items pri WHERE pri.requisition_id = pr.id) as item_count,
+              (SELECT COALESCE(SUM(pri.estimated_total), 0) FROM purchase_requisition_items pri WHERE pri.requisition_id = pr.id) as total_estimated_cost
+       FROM purchase_requisitions pr
+       LEFT JOIN users u ON pr.requested_by = u.id
+       LEFT JOIN opportunities o ON pr.opportunity_id = o.id
+       WHERE pr.tenant_id::text = $1 OR $2 = 'SuperAdmin'
+       ORDER BY pr.requisition_date DESC, pr.created_at DESC`,
+      [String(tid), req.user.role]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST create purchase requisition
+router.post('/procurements/requisitions', authenticate, requirePermission('inventory', 'add'), async (req, res) => {
+  const { department_name, required_by_date, priority, opportunity_id, notes, items } = req.body;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'At least one item is required for purchase requisition.' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const tid = resolveTenantId(req);
+    const reqNumber = `REQ-${Date.now().toString().slice(-6)}`;
+
+    const hdrRes = await client.query(
+      `INSERT INTO purchase_requisitions (
+        tenant_id, requisition_number, requisition_date, required_by_date,
+        department_name, requested_by, status, priority, opportunity_id, notes
+      ) VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, 'Pending', $6, $7, $8)
+      RETURNING *`,
+      [
+        tid, reqNumber, parseSafeDate(required_by_date), department_name || 'Procurement',
+        req.user?.id || null, priority || 'Medium', opportunity_id || null, notes || null
+      ]
+    );
+    const requisition = hdrRes.rows[0];
+
+    const insertedItems = [];
+    for (const itm of items) {
+      const prodId = itm.product_id;
+      const qty = parseFloat(itm.requested_quantity || itm.quantity || 0);
+      if (qty <= 0) continue;
+      const unitCost = parseFloat(itm.estimated_unit_cost || itm.cost_price || 0);
+      const estTotal = Number((qty * unitCost).toFixed(4));
+
+      const itemRes = await client.query(
+        `INSERT INTO purchase_requisition_items (
+          tenant_id, requisition_id, product_id, requested_quantity, estimated_unit_cost, estimated_total, specifications
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [tid, requisition.id, prodId, qty, unitCost, estTotal, itm.specifications || null]
+      );
+      insertedItems.push(itemRes.rows[0]);
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      success: true,
+      data: { ...requisition, items: insertedItems },
+      message: `Purchase Requisition ${reqNumber} submitted with ${insertedItems.length} item(s).`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT update requisition status (Approve / Reject / Convert)
+router.put('/procurements/requisitions/:id/status', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  const { status, notes } = req.body;
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `UPDATE purchase_requisitions
+       SET status = $1, approved_by = $2, approved_at = CASE WHEN $1 = 'Approved' THEN NOW() ELSE approved_at END,
+           notes = COALESCE($3, notes), updated_at = NOW()
+       WHERE id::text = $4 AND (tenant_id::text = $5 OR $6 = 'SuperAdmin')
+       RETURNING *`,
+      [status, req.user?.id || null, notes || null, req.params.id, String(tid), req.user.role]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Requisition not found or unauthorized' });
+    }
+    res.json({ success: true, data: result.rows[0], message: `Requisition status updated to ${status}.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET tenant inventory settings
+router.get('/inventory/settings', authenticate, async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `SELECT * FROM tenant_inventory_settings WHERE tenant_id::text = $1`,
+      [String(tid)]
+    );
+    if (result.rows.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          tenant_id: tid,
+          default_valuation_method: 'WEIGHTED_AVG',
+          allow_negative_stock: false,
+          auto_post_gl: true,
+          low_stock_threshold_percent: 20.0
+        }
+      });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT update tenant inventory settings
+router.put('/inventory/settings', authenticate, requirePermission('inventory', 'edit'), async (req, res) => {
+  const { default_valuation_method, allow_negative_stock, auto_post_gl, low_stock_threshold_percent, default_warehouse_id } = req.body;
+  try {
+    const tid = resolveTenantId(req);
+    const result = await db.query(
+      `INSERT INTO tenant_inventory_settings (
+        tenant_id, default_valuation_method, allow_negative_stock, auto_post_gl,
+        low_stock_threshold_percent, default_warehouse_id, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      ON CONFLICT (tenant_id)
+      DO UPDATE SET
+        default_valuation_method = COALESCE($2, tenant_inventory_settings.default_valuation_method),
+        allow_negative_stock = COALESCE($3, tenant_inventory_settings.allow_negative_stock),
+        auto_post_gl = COALESCE($4, tenant_inventory_settings.auto_post_gl),
+        low_stock_threshold_percent = COALESCE($5, tenant_inventory_settings.low_stock_threshold_percent),
+        default_warehouse_id = COALESCE($6, tenant_inventory_settings.default_warehouse_id),
+        updated_at = NOW()
+      RETURNING *`,
+      [
+        tid,
+        default_valuation_method || 'WEIGHTED_AVG',
+        allow_negative_stock === true,
+        auto_post_gl !== false,
+        low_stock_threshold_percent ? parseFloat(low_stock_threshold_percent) : 20.0,
+        isUuid(default_warehouse_id) ? default_warehouse_id : null
+      ]
+    );
+    res.json({ success: true, data: result.rows[0], message: 'Inventory configuration settings saved.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET inventory valuation report
+router.get('/inventory/valuation-report', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const { warehouse_id } = req.query;
+    const report = await inventoryValuationService.getValuationReport(tid, warehouse_id);
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET inventory reorder alerts
+router.get('/inventory/reorder-alerts', authenticate, requirePermission('inventory', 'view'), async (req, res) => {
+  try {
+    const tid = resolveTenantId(req);
+    const alerts = await inventoryValuationService.getReorderAlerts(tid);
+    res.json(alerts);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
